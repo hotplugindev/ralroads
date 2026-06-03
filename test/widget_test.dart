@@ -12,14 +12,14 @@ import 'package:ralroads/services/route_storage_service.dart';
 import 'package:ralroads/services/settings_service.dart';
 
 void main() {
-  testWidgets('ralroads home shows primary actions', (
+  testWidgets('RalRoads home shows primary actions', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
       RalroadsApp(storage: RouteStorageService(), settings: SettingsService()),
     );
 
-    expect(find.text('ralroads'), findsWidgets);
+    expect(find.text('RalRoads'), findsWidgets);
     expect(find.text('Plan Route'), findsOneWidget);
     expect(find.text('Saved Routes'), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);

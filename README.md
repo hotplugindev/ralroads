@@ -1,6 +1,6 @@
-# ralroads
+# RalRoads
 
-ralroads is a personal pocket co-driver Flutter app for exploring a map,
+RalRoads is a personal pocket co-driver Flutter app for exploring a map,
 planning road routes, generating local rally-style pacenotes from route
 geometry, and speaking those notes while driving.
 
@@ -29,12 +29,16 @@ invalid or rejected, route planning shows a helpful error instead of crashing.
 
 There is no automatic GPX-provider fallback in this version.
 
-## Map
+## Map And Drive Mode
 
 The map planner supports visible start, destination, and waypoint pins for
 long-pressed route points. The Locate Me button asks for foreground location
 permission, moves the map to the current GPS location, and shows a blue
 current-location marker when available.
+
+Drive mode is map-based: it displays the route, updates the current position
+marker, highlights color-coded pacenote danger zones, and keeps spoken callouts
+with compact navigation controls on top of the map.
 
 ## Developer Mode
 

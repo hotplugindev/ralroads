@@ -34,7 +34,7 @@ class RalroadsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ralroads',
+      title: 'RalRoads',
       themeMode: ThemeMode.system,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
@@ -69,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ralroads'),
+        title: const Text('RalRoads'),
         actions: [
           IconButton(
             tooltip: 'Settings',
@@ -95,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'ralroads',
+                  'RalRoads',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.displaySmall,
                 ),
@@ -885,16 +885,29 @@ class DriveScreen extends StatefulWidget {
 }
 
 class _DriveScreenState extends State<DriveScreen> {
+  static const _mapStyle = 'https://tiles.openfreemap.org/styles/liberty';
+
   final _matcher = GpsRouteMatcher();
   final _voice = VoiceService();
   late List<PaceNote> _notes;
   StreamSubscription<Position>? _positionSubscription;
+  maplibre.MapLibreMapController? _controller;
+  maplibre.Line? _baseRouteLine;
+  final List<maplibre.Line> _dangerLines = [];
+  final List<maplibre.Circle> _noteMarkers = [];
+  final List<maplibre.Symbol> _noteLabels = [];
+  maplibre.Circle? _currentOuterCircle;
+  maplibre.Circle? _currentInnerCircle;
+  maplibre.Symbol? _currentArrow;
+  Position? _lastPosition;
   int _lastMatchedIndex = 0;
   double _distanceAlongRoute = 0;
   double _distanceFromRoute = 0;
   double _speedMps = 0;
   String? _permissionMessage;
   bool _voiceEnabled = true;
+  bool _followLocation = true;
+  PaceNote? _lastSpokenNote;
 
   PaceNote? get _nextNote {
     for (final note in _notes) {
@@ -928,65 +941,172 @@ class _DriveScreenState extends State<DriveScreen> {
     final distanceToNote = nextNote == null
         ? null
         : math.max(0.0, nextNote.distanceFromStart - _distanceAlongRoute);
+    final offRoute = _distanceFromRoute > 60 && _lastPosition != null;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Drive')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: Stack(
         children: [
-          if (_permissionMessage != null) ...[
-            Text(
-              _permissionMessage!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-            const SizedBox(height: 16),
-          ],
-          _DriveMetric(
-            label: 'Distance along route',
-            value: _formatDistance(_distanceAlongRoute),
+          maplibre.MapLibreMap(
+            styleString: _mapStyle,
+            initialCameraPosition: _initialDriveCameraPosition(),
+            myLocationEnabled: false,
+            onMapCreated: (controller) {
+              _controller = controller;
+              _drawNavigationRoute();
+              final position = _lastPosition;
+              if (position != null) {
+                _updateCurrentLocationMarker(position);
+              }
+            },
           ),
-          _DriveMetric(
-            label: 'Distance from route',
-            value: _formatDistance(_distanceFromRoute),
-          ),
-          _DriveMetric(label: 'Speed', value: _formatSpeed(_speedMps)),
-          const SizedBox(height: 16),
-          Text('Next pacenote', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          Text(
-            nextNote?.text ?? 'No upcoming notes',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            distanceToNote == null
-                ? 'Route complete'
-                : '${_formatDistance(distanceToNote)} to note',
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _resetNotes,
-                  icon: const Icon(Icons.restart_alt),
-                  label: const Text('Reset'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _toggleVoice,
-                  icon: Icon(
-                    _voiceEnabled ? Icons.volume_up : Icons.volume_off,
+          Positioned(
+            top: 12,
+            left: 12,
+            right: 12,
+            child: SafeArea(
+              child: Row(
+                children: [
+                  FloatingActionButton.small(
+                    heroTag: 'drive-back',
+                    tooltip: 'Back',
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Icon(Icons.arrow_back),
                   ),
-                  label: Text(_voiceEnabled ? 'Pause Voice' : 'Resume Voice'),
+                  const Spacer(),
+                  FloatingActionButton.small(
+                    heroTag: 'drive-follow',
+                    tooltip: _followLocation ? 'Disable follow' : 'Recenter',
+                    onPressed: _toggleFollowMode,
+                    child: Icon(
+                      _followLocation ? Icons.gps_fixed : Icons.my_location,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 12,
+            child: SafeArea(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface.withAlpha(235),
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: const [
+                    BoxShadow(
+                      blurRadius: 14,
+                      color: Colors.black38,
+                      offset: Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (_permissionMessage != null) ...[
+                        Text(
+                          _permissionMessage!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      if (offRoute) ...[
+                        Text(
+                          'Off route',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      Text(
+                        _lastSpokenNote == null
+                            ? 'Current callout: none'
+                            : 'Current callout: ${_lastSpokenNote!.text}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        nextNote?.text ?? 'No upcoming callouts',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              distanceToNote == null
+                                  ? 'Route complete'
+                                  : '${_formatDistance(distanceToNote)} to callout',
+                            ),
+                          ),
+                          Text(_formatSpeed(_speedMps)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'RalRoads is only an assistance tool. Always follow traffic laws and road conditions.',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _resetNotes,
+                              icon: const Icon(Icons.restart_alt),
+                              label: const Text('Reset'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: _toggleVoice,
+                              icon: Icon(
+                                _voiceEnabled
+                                    ? Icons.volume_up
+                                    : Icons.volume_off,
+                              ),
+                              label: Text(_voiceEnabled ? 'Pause' : 'Resume'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  maplibre.CameraPosition _initialDriveCameraPosition() {
+    if (widget.routePoints.isEmpty) {
+      return const maplibre.CameraPosition(
+        target: maplibre.LatLng(43.8, 11.2),
+        zoom: 5,
+      );
+    }
+
+    final first = widget.routePoints.first;
+    return maplibre.CameraPosition(
+      target: maplibre.LatLng(first.lat, first.lon),
+      zoom: 12,
     );
   }
 
@@ -1030,12 +1150,17 @@ class _DriveScreenState extends State<DriveScreen> {
     );
 
     setState(() {
+      _lastPosition = position;
       _lastMatchedIndex = match.nearestIndex;
       _distanceAlongRoute = match.distanceAlongRoute;
       _distanceFromRoute = match.distanceFromRoute;
       _speedMps = position.speed.isFinite ? math.max(0, position.speed) : 0;
     });
 
+    _updateCurrentLocationMarker(position);
+    if (_followLocation) {
+      _followPosition(position);
+    }
     _maybeSpeakNextNote();
   }
 
@@ -1062,6 +1187,7 @@ class _DriveScreenState extends State<DriveScreen> {
     _voice.speak(note.text);
     setState(() {
       _notes[noteIndex] = note.copyWith(spoken: true);
+      _lastSpokenNote = note;
     });
   }
 
@@ -1069,6 +1195,7 @@ class _DriveScreenState extends State<DriveScreen> {
     setState(() {
       _notes = _notes.map((note) => note.copyWith(spoken: false)).toList();
       _lastMatchedIndex = 0;
+      _lastSpokenNote = null;
     });
   }
 
@@ -1077,6 +1204,222 @@ class _DriveScreenState extends State<DriveScreen> {
       _voiceEnabled = !_voiceEnabled;
     });
     _voice.setEnabled(_voiceEnabled);
+  }
+
+  Future<void> _drawNavigationRoute() async {
+    final controller = _controller;
+    if (controller == null || widget.routePoints.length < 2) {
+      return;
+    }
+
+    final oldBaseLine = _baseRouteLine;
+    if (oldBaseLine != null) {
+      await controller.removeLine(oldBaseLine);
+    }
+    if (_dangerLines.isNotEmpty) {
+      await controller.removeLines(_dangerLines);
+      _dangerLines.clear();
+    }
+    if (_noteLabels.isNotEmpty) {
+      await controller.removeSymbols(_noteLabels);
+      _noteLabels.clear();
+    }
+    if (_noteMarkers.isNotEmpty) {
+      await controller.removeCircles(_noteMarkers);
+      _noteMarkers.clear();
+    }
+
+    _baseRouteLine = await controller.addLine(
+      maplibre.LineOptions(
+        geometry: widget.routePoints
+            .map((point) => maplibre.LatLng(point.lat, point.lon))
+            .toList(),
+        lineColor: '#607D8B',
+        lineWidth: 6,
+        lineOpacity: 0.85,
+      ),
+    );
+
+    for (final note in widget.pacenotes) {
+      final segment = routeSegmentBetweenDistances(
+        widget.routePoints,
+        note.distanceFromStart - 25,
+        note.distanceFromStart + 45,
+      );
+      if (segment.length >= 2) {
+        final line = await controller.addLine(
+          maplibre.LineOptions(
+            geometry: segment
+                .map((point) => maplibre.LatLng(point.lat, point.lon))
+                .toList(),
+            lineColor: colorForPaceNoteSeverity(note.severity),
+            lineWidth: 8,
+            lineOpacity: 0.95,
+          ),
+        );
+        _dangerLines.add(line);
+      }
+
+      final markerPoint = nearestRoutePointAtDistance(
+        widget.routePoints,
+        note.distanceFromStart,
+      );
+      if (markerPoint != null) {
+        final coordinates = maplibre.LatLng(markerPoint.lat, markerPoint.lon);
+        final circle = await controller.addCircle(
+          maplibre.CircleOptions(
+            geometry: coordinates,
+            circleRadius: 8,
+            circleColor: colorForPaceNoteSeverity(note.severity),
+            circleStrokeColor: '#FFFFFF',
+            circleStrokeWidth: 2,
+          ),
+        );
+        final label = await controller.addSymbol(
+          maplibre.SymbolOptions(
+            geometry: coordinates,
+            textField: shortCalloutLabel(note),
+            textSize: 11,
+            textColor: '#FFFFFF',
+            textHaloColor: '#263238',
+            textHaloWidth: 2,
+            textAnchor: 'top',
+            textOffset: const Offset(0, 1.2),
+            zIndex: 20,
+          ),
+        );
+        _noteMarkers.add(circle);
+        _noteLabels.add(label);
+      }
+    }
+
+    await _fitNavigationCameraToRoute();
+  }
+
+  Future<void> _fitNavigationCameraToRoute() async {
+    final controller = _controller;
+    if (controller == null || widget.routePoints.isEmpty) {
+      return;
+    }
+
+    await controller.animateCamera(
+      maplibre.CameraUpdate.newLatLngBounds(
+        routeBoundsFromPoints(widget.routePoints),
+        left: 48,
+        top: 80,
+        right: 48,
+        bottom: 260,
+      ),
+    );
+  }
+
+  Future<void> _updateCurrentLocationMarker(Position position) async {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+
+    final coordinates = maplibre.LatLng(position.latitude, position.longitude);
+    final oldArrow = _currentArrow;
+    if (oldArrow != null) {
+      await controller.removeSymbol(oldArrow);
+    }
+    final oldInner = _currentInnerCircle;
+    if (oldInner != null) {
+      await controller.removeCircle(oldInner);
+    }
+    final oldOuter = _currentOuterCircle;
+    if (oldOuter != null) {
+      await controller.removeCircle(oldOuter);
+    }
+
+    final outer = await controller.addCircle(
+      maplibre.CircleOptions(
+        geometry: coordinates,
+        circleRadius: 13,
+        circleColor: '#1E88E5',
+        circleOpacity: 0.28,
+        circleStrokeColor: '#FFFFFF',
+        circleStrokeWidth: 2,
+      ),
+    );
+    final inner = await controller.addCircle(
+      maplibre.CircleOptions(
+        geometry: coordinates,
+        circleRadius: 7,
+        circleColor: '#1565C0',
+        circleStrokeColor: '#FFFFFF',
+        circleStrokeWidth: 2,
+      ),
+    );
+    final arrow = await controller.addSymbol(
+      maplibre.SymbolOptions(
+        geometry: coordinates,
+        textField: '▲',
+        textSize: 18,
+        textColor: '#FFFFFF',
+        textHaloColor: '#0D47A1',
+        textHaloWidth: 2,
+        textRotate: _headingForPosition(position),
+        textAnchor: 'center',
+        zIndex: 100,
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _currentOuterCircle = outer;
+      _currentInnerCircle = inner;
+      _currentArrow = arrow;
+    });
+  }
+
+  Future<void> _followPosition(Position position) async {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+
+    await controller.animateCamera(
+      maplibre.CameraUpdate.newLatLngZoom(
+        maplibre.LatLng(position.latitude, position.longitude),
+        16,
+      ),
+      duration: const Duration(milliseconds: 450),
+    );
+  }
+
+  void _toggleFollowMode() {
+    if (_followLocation) {
+      setState(() {
+        _followLocation = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _followLocation = true;
+    });
+
+    final position = _lastPosition;
+    if (position != null) {
+      _followPosition(position);
+    } else {
+      _fitNavigationCameraToRoute();
+    }
+  }
+
+  double _headingForPosition(Position position) {
+    if (position.heading.isFinite && position.heading >= 0) {
+      return position.heading;
+    }
+    if (_lastMatchedIndex >= 0 &&
+        _lastMatchedIndex < widget.routePoints.length) {
+      return widget.routePoints[_lastMatchedIndex].heading;
+    }
+    return 0;
   }
 }
 
@@ -1136,25 +1479,131 @@ class _SummaryRow extends StatelessWidget {
   }
 }
 
-class _DriveMetric extends StatelessWidget {
-  const _DriveMetric({required this.label, required this.value});
+maplibre.LatLngBounds routeBoundsFromPoints(List<RoutePoint> points) {
+  var minLat = points.first.lat;
+  var maxLat = points.first.lat;
+  var minLon = points.first.lon;
+  var maxLon = points.first.lon;
 
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label),
-          Text(value, style: Theme.of(context).textTheme.titleMedium),
-        ],
-      ),
-    );
+  for (final point in points) {
+    minLat = math.min(minLat, point.lat);
+    maxLat = math.max(maxLat, point.lat);
+    minLon = math.min(minLon, point.lon);
+    maxLon = math.max(maxLon, point.lon);
   }
+
+  return maplibre.LatLngBounds(
+    southwest: maplibre.LatLng(minLat, minLon),
+    northeast: maplibre.LatLng(maxLat, maxLon),
+  );
+}
+
+List<RoutePoint> routeSegmentBetweenDistances(
+  List<RoutePoint> points,
+  double startMeters,
+  double endMeters,
+) {
+  if (points.isEmpty) {
+    return const [];
+  }
+
+  final start = math.min(startMeters, endMeters);
+  final end = math.max(startMeters, endMeters);
+  final segment = points
+      .where(
+        (point) =>
+            point.distanceFromStart >= start && point.distanceFromStart <= end,
+      )
+      .toList();
+
+  if (segment.length >= 2) {
+    return segment;
+  }
+
+  RoutePoint? before;
+  RoutePoint? after;
+  for (final point in points) {
+    if (point.distanceFromStart <= start) {
+      before = point;
+    }
+    if (point.distanceFromStart >= end) {
+      after = point;
+      break;
+    }
+  }
+
+  final fallback = <RoutePoint>[];
+  if (before != null) {
+    fallback.add(before);
+  }
+  fallback.addAll(segment);
+  if (after != null && after != before) {
+    fallback.add(after);
+  }
+
+  if (fallback.length >= 2) {
+    return fallback;
+  }
+
+  final nearest = nearestRoutePointAtDistance(points, (start + end) / 2);
+  final nearestIndex = nearest == null ? -1 : points.indexOf(nearest);
+  if (nearestIndex <= 0 && points.length >= 2) {
+    return points.take(2).toList();
+  }
+  if (nearestIndex >= points.length - 1 && points.length >= 2) {
+    return points.skip(points.length - 2).toList();
+  }
+  if (nearestIndex > 0) {
+    return points.sublist(nearestIndex - 1, nearestIndex + 1);
+  }
+  return fallback;
+}
+
+RoutePoint? nearestRoutePointAtDistance(
+  List<RoutePoint> points,
+  double distanceMeters,
+) {
+  if (points.isEmpty) {
+    return null;
+  }
+
+  var nearest = points.first;
+  var nearestDelta = (nearest.distanceFromStart - distanceMeters).abs();
+  for (final point in points.skip(1)) {
+    final delta = (point.distanceFromStart - distanceMeters).abs();
+    if (delta < nearestDelta) {
+      nearest = point;
+      nearestDelta = delta;
+    }
+  }
+  return nearest;
+}
+
+String colorForPaceNoteSeverity(int severity) {
+  switch (severity) {
+    case 1:
+      return '#D50000';
+    case 2:
+      return '#FF3D00';
+    case 3:
+      return '#FF9800';
+    case 4:
+      return '#FFC107';
+    case 5:
+      return '#8BC34A';
+    case 6:
+      return '#2E7D32';
+    default:
+      return '#FF9800';
+  }
+}
+
+String shortCalloutLabel(PaceNote note) {
+  final direction = note.direction.toLowerCase().startsWith('l') ? 'L' : 'R';
+  if (note.severity == 1) {
+    return '${direction}H';
+  }
+  return '$direction${note.severity}';
 }
 
 String _formatDistance(double meters) {
