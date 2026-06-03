@@ -1051,6 +1051,7 @@ class SavedRoutesScreen extends StatefulWidget {
 
 class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
   late List<SavedRoute> _routes;
+  bool _renameDialogOpen = false;
 
   @override
   void initState() {
@@ -1076,18 +1077,22 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
                   leading: const Icon(Icons.route),
                   trailing: PopupMenuButton<_SavedRouteAction>(
                     tooltip: 'Route actions',
-                    onSelected: (action) {
-                      switch (action) {
-                        case _SavedRouteAction.rename:
-                          _renameRoute(route);
-                        case _SavedRouteAction.delete:
-                          _deleteRoute(route);
-                      }
-                    },
-                    itemBuilder: (context) => const [
+                    itemBuilder: (context) => [
                       PopupMenuItem(
                         value: _SavedRouteAction.rename,
-                        child: ListTile(
+                        onTap: () {
+                          if (_renameDialogOpen) {
+                            return;
+                          }
+                          // Defer until the popup menu route is fully dismissed.
+                          Future<void>.microtask(() {
+                            if (!mounted) {
+                              return;
+                            }
+                            _renameRoute(route);
+                          });
+                        },
+                        child: const ListTile(
                           contentPadding: EdgeInsets.zero,
                           leading: Icon(Icons.edit),
                           title: Text('Rename'),
@@ -1095,7 +1100,15 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
                       ),
                       PopupMenuItem(
                         value: _SavedRouteAction.delete,
-                        child: ListTile(
+                        onTap: () {
+                          Future<void>.microtask(() {
+                            if (!mounted) {
+                              return;
+                            }
+                            _deleteRoute(route);
+                          });
+                        },
+                        child: const ListTile(
                           contentPadding: EdgeInsets.zero,
                           leading: Icon(Icons.delete_outline),
                           title: Text('Delete'),
@@ -1132,64 +1145,22 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
   }
 
   Future<void> _renameRoute(SavedRoute route) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final controller = TextEditingController(text: route.name);
-    String? errorText;
+    if (_renameDialogOpen) {
+      return;
+    }
+    _renameDialogOpen = true;
     String? newName;
     try {
       newName = await showDialog<String>(
         context: context,
-        builder: (dialogContext) {
-          void submit(StateSetter setDialogState) {
-            final candidate = controller.text.trim();
-            if (candidate.isEmpty) {
-              setDialogState(() {
-                errorText = 'Enter a route name';
-              });
-              return;
-            }
-            Navigator.of(dialogContext).pop(candidate);
-          }
-
-          return StatefulBuilder(
-            builder: (context, setDialogState) {
-              return AlertDialog(
-                title: const Text('Rename route'),
-                content: TextField(
-                  controller: controller,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    labelText: 'Route name',
-                    errorText: errorText,
-                  ),
-                  textInputAction: TextInputAction.done,
-                  onChanged: (_) {
-                    if (errorText == null) {
-                      return;
-                    }
-                    setDialogState(() {
-                      errorText = null;
-                    });
-                  },
-                  onSubmitted: (_) => submit(setDialogState),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                  FilledButton(
-                    onPressed: () => submit(setDialogState),
-                    child: const Text('Save'),
-                  ),
-                ],
-              );
-            },
-          );
-        },
+        builder: (_) => _RenameRouteDialog(initialName: route.name),
       );
     } finally {
-      controller.dispose();
+      _renameDialogOpen = false;
+    }
+
+    if (!mounted) {
+      return;
     }
 
     if (newName == null || newName.isEmpty) {
@@ -1203,7 +1174,86 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
     setState(() {
       _routes = widget.storage.getRoutes();
     });
-    messenger.showSnackBar(const SnackBar(content: Text('Route renamed')));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Route renamed')));
+    });
+  }
+}
+
+class _RenameRouteDialog extends StatefulWidget {
+  const _RenameRouteDialog({required this.initialName});
+
+  final String initialName;
+
+  @override
+  State<_RenameRouteDialog> createState() => _RenameRouteDialogState();
+}
+
+class _RenameRouteDialogState extends State<_RenameRouteDialog> {
+  late final TextEditingController _controller;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final candidate = _controller.text.trim();
+    if (candidate.isEmpty) {
+      setState(() {
+        _errorText = 'Enter a route name';
+      });
+      return;
+    }
+    Navigator.of(context).pop(candidate);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Rename route'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: InputDecoration(
+          labelText: 'Route name',
+          errorText: _errorText,
+        ),
+        textInputAction: TextInputAction.done,
+        onChanged: (_) {
+          if (_errorText == null) {
+            return;
+          }
+          setState(() {
+            _errorText = null;
+          });
+        },
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Save'),
+        ),
+      ],
+    );
   }
 }
 
