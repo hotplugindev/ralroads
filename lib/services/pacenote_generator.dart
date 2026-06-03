@@ -80,10 +80,16 @@ class PacenoteGenerator {
       final beforeIdx = _indexNearDistance(points, points[i].distanceFromStart - 15.0);
       final afterIdx = _indexNearDistance(points, points[i].distanceFromStart + 15.0);
       final delta = normalizeAngleDeltaDegrees(points[beforeIdx].heading, points[afterIdx].heading);
-      if (delta <= -8.0) {
-        pointTypes.add('L');
-      } else if (delta >= 8.0) {
-        pointTypes.add('R');
+      final distDiff = points[afterIdx].distanceFromStart - points[beforeIdx].distanceFromStart;
+      
+      double r = 9999.0;
+      if (distDiff > 0) {
+        final thetaRad = (delta.abs() * math.pi) / 180.0;
+        r = thetaRad > 0.0001 ? distDiff / thetaRad : 9999.0;
+      }
+
+      if (r < 120.0) {
+        pointTypes.add(delta < 0 ? 'L' : 'R');
       } else {
         pointTypes.add('S');
       }
@@ -127,10 +133,13 @@ class PacenoteGenerator {
           notes.add(PaceNote(
             id: 'note-straight-$noteCount-${seg.startDistance.round()}',
             distanceFromStart: seg.startDistance,
+            startDistance: seg.startDistance,
+            endDistance: seg.endDistance,
             direction: 'straight',
             severity: 0,
-            type: PaceNoteType.corner,
+            type: PaceNoteType.straight,
             text: 'straight $distToShow',
+            distanceMeters: distToShow,
           ));
           noteCount++;
         }
@@ -149,7 +158,7 @@ class PacenoteGenerator {
           severity = 3;
         } else if (r < 75.0) {
           severity = 4;
-        } else if (r < 125.0) {
+        } else if (r < 120.0) {
           severity = 5;
         } else {
           severity = 6;
@@ -158,6 +167,7 @@ class PacenoteGenerator {
         final mid = seg.startIndex + (seg.endIndex - seg.startIndex) ~/ 2;
         final firstHalfRadius = _calculateRadiusInfo(points, seg.startIndex, mid).avgRadius;
         final secondHalfRadius = _calculateRadiusInfo(points, mid, seg.endIndex).avgRadius;
+        
         bool tightens = false;
         bool opens = false;
         if (secondHalfRadius < firstHalfRadius * 0.75) {
@@ -166,34 +176,8 @@ class PacenoteGenerator {
           opens = true;
         }
 
-        String mainText = '';
-        if (severity == 1) {
-          mainText = 'hairpin $direction';
-        } else if (severity == 2) {
-          mainText = '$direction 2';
-        } else if (severity == 3) {
-          mainText = '$direction 3';
-        } else if (severity == 4) {
-          mainText = 'medium $direction';
-        } else if (severity == 5) {
-          mainText = 'easy $direction';
-        } else {
-          mainText = 'very easy $direction';
-        }
-
-        if (seg.length > 180) {
-          mainText = '$mainText very long';
-        } else if (seg.length > 100) {
-          mainText = '$mainText long';
-        } else if (seg.length < 35) {
-          mainText = '$mainText short';
-        }
-
-        if (tightens) {
-          mainText = '$mainText tightens';
-        } else if (opens) {
-          mainText = '$mainText opens';
-        }
+        final isShort = seg.length < 35.0;
+        final isLong = seg.length > 100.0;
 
         int baseSpeed = 90;
         switch (severity) {
@@ -205,22 +189,68 @@ class PacenoteGenerator {
           case 6: baseSpeed = 90; break;
         }
 
+        // Apply safety speed margin
+        int recommendedSpeed = baseSpeed;
+        if (baseSpeed <= 45) {
+          recommendedSpeed = baseSpeed - 5;
+        } else {
+          recommendedSpeed = baseSpeed - 10;
+        }
+
+        final noteType = severity == 1
+            ? (direction == 'left' ? PaceNoteType.hairpinLeft : PaceNoteType.hairpinRight)
+            : (direction == 'left' ? PaceNoteType.left : PaceNoteType.right);
+
         notes.add(PaceNote(
           id: 'note-curve-$noteCount-${seg.startDistance.round()}',
-          distanceFromStart: (seg.startDistance + seg.endDistance) / 2,
+          distanceFromStart: seg.startDistance,
+          startDistance: seg.startDistance,
+          endDistance: seg.endDistance,
           direction: direction,
           severity: severity,
-          type: severity == 1 ? PaceNoteType.hairpin : PaceNoteType.corner,
+          type: noteType,
           tightens: tightens,
           opens: opens,
-          text: mainText,
-          recommendedSpeedKmh: baseSpeed,
+          text: '', // rallyText getter provides display/speech text
+          recommendedSpeedKmh: recommendedSpeed,
+          isShort: isShort,
+          isLong: isLong,
         ));
         noteCount++;
       }
     }
 
-    return notes;
+    // Link corners (into relation)
+    final linkedNotes = <PaceNote>[];
+    for (var i = 0; i < notes.length; i++) {
+      var note = notes[i];
+      if (i < notes.length - 1) {
+        final next = notes[i + 1];
+        final gap = next.distanceFromStart - note.distanceFromStart;
+        
+        final canLinkSelf = note.type == PaceNoteType.left ||
+                            note.type == PaceNoteType.right ||
+                            note.type == PaceNoteType.hairpinLeft ||
+                            note.type == PaceNoteType.hairpinRight ||
+                            note.type == PaceNoteType.keepLeft ||
+                            note.type == PaceNoteType.keepRight ||
+                            note.type == PaceNoteType.straight;
+        
+        final canLinkNext = next.type == PaceNoteType.left ||
+                            next.type == PaceNoteType.right ||
+                            next.type == PaceNoteType.hairpinLeft ||
+                            next.type == PaceNoteType.hairpinRight ||
+                            next.type == PaceNoteType.keepLeft ||
+                            next.type == PaceNoteType.keepRight;
+                            
+        if (gap <= 85.0 && canLinkSelf && canLinkNext) {
+          note = note.copyWith(intoNoteId: next.id);
+        }
+      }
+      linkedNotes.add(note);
+    }
+
+    return linkedNotes;
   }
 
   List<PaceNote> refinePacenotesWithRoadContext({
@@ -256,7 +286,7 @@ class PacenoteGenerator {
             text: 'Roundabout ahead',
             tightens: false,
             opens: false,
-            recommendedSpeedKmh: 35,
+            recommendedSpeedKmh: 30, // 35 km/h base with 5 km/h safety margin applied
           ),
         );
         continue;
@@ -272,17 +302,33 @@ class PacenoteGenerator {
         final direction = note.direction.toLowerCase().startsWith('l')
             ? 'left'
             : 'right';
-        refined.add(
-          note.copyWith(
-            id: '${note.id}-junction',
-            type: PaceNoteType.junction,
-            severity: 4,
-            text: 'At junction, $direction',
-            tightens: false,
-            opens: false,
-            recommendedSpeedKmh: 30,
-          ),
-        );
+            
+        if (note.severity >= 5) {
+          final isLeft = direction == 'left';
+          refined.add(
+            note.copyWith(
+              id: '${note.id}-keep',
+              type: isLeft ? PaceNoteType.keepLeft : PaceNoteType.keepRight,
+              direction: direction,
+              text: isLeft ? 'keep left' : 'keep right',
+              tightens: false,
+              opens: false,
+              recommendedSpeedKmh: 40,
+            ),
+          );
+        } else {
+          refined.add(
+            note.copyWith(
+              id: '${note.id}-junction',
+              type: PaceNoteType.junction,
+              direction: direction,
+              text: 'At junction, $direction',
+              tightens: false,
+              opens: false,
+              recommendedSpeedKmh: 30,
+            ),
+          );
+        }
         continue;
       }
 
@@ -303,7 +349,6 @@ class PacenoteGenerator {
 
       refined.add(
         note.copyWith(
-          type: note.severity == 1 ? PaceNoteType.hairpin : note.type,
           recommendedSpeedKmh: speed,
         ),
       );
@@ -339,7 +384,7 @@ class PacenoteGenerator {
     list = _mergeConsecutiveSameType(list);
 
     for (var i = 0; i < list.length; i++) {
-      if ((list[i].type == 'L' || list[i].type == 'R') && list[i].length < 12.0) {
+      if ((list[i].type == 'L' || list[i].type == 'R') && list[i].length < 15.0) {
         list[i].type = 'S';
       }
     }
@@ -353,7 +398,7 @@ class PacenoteGenerator {
         if (i < list.length - 2 &&
             list[i].type != 'S' &&
             list[i + 1].type == 'S' &&
-            list[i + 1].length < 30.0 &&
+            list[i + 1].length < 35.0 &&
             list[i + 2].type == list[i].type) {
           final newSeg = _RouteSegment(
             type: list[i].type,
@@ -376,8 +421,68 @@ class PacenoteGenerator {
       final seg = list[i];
       if (seg.type == 'L' || seg.type == 'R') {
         final totalHeadingChange = _calculateTotalHeadingChange(points, seg.startIndex, seg.endIndex);
-        if (totalHeadingChange.abs() < 10.0) {
+        if (totalHeadingChange.abs() < 12.0) {
           seg.type = 'S';
+        }
+      }
+    }
+    list = _mergeConsecutiveSameType(list);
+
+    // Filter out insignificant flat-out wiggles (severity 6) that don't need warning,
+    // unless they are long or lead directly into a sharp corner (severity <= 4)
+    for (var i = 0; i < list.length; i++) {
+      final seg = list[i];
+      if (seg.type == 'L' || seg.type == 'R') {
+        final radiusInfo = _calculateRadiusInfo(points, seg.startIndex, seg.endIndex);
+        final totalHeadingChange = _calculateTotalHeadingChange(points, seg.startIndex, seg.endIndex);
+
+        int severity = 6;
+        final r = radiusInfo.minRadius;
+        if (r < 18.0 && totalHeadingChange.abs() >= 75.0 && seg.length < 55.0) {
+          severity = 1;
+        } else if (r < 25.0) {
+          severity = 2;
+        } else if (r < 45.0) {
+          severity = 3;
+        } else if (r < 75.0) {
+          severity = 4;
+        } else if (r < 120.0) {
+          severity = 5;
+        } else {
+          severity = 6;
+        }
+
+        if (severity == 6) {
+          final isLong = seg.length > 100.0;
+          var leadsIntoSharp = false;
+          for (var j = i + 1; j < list.length; j++) {
+            final nextSeg = list[j];
+            final gap = nextSeg.startDistance - seg.endDistance;
+            if (gap > 85.0) break;
+            if (nextSeg.type == 'L' || nextSeg.type == 'R') {
+              final nextRadiusInfo = _calculateRadiusInfo(points, nextSeg.startIndex, nextSeg.endIndex);
+              final nextTotalHeading = _calculateTotalHeadingChange(points, nextSeg.startIndex, nextSeg.endIndex);
+              int nextSeverity = 6;
+              final nr = nextRadiusInfo.minRadius;
+              if (nr < 18.0 && nextTotalHeading.abs() >= 75.0 && nextSeg.length < 55.0) {
+                nextSeverity = 1;
+              } else if (nr < 25.0) {
+                nextSeverity = 2;
+              } else if (nr < 45.0) {
+                nextSeverity = 3;
+              } else if (nr < 75.0) {
+                nextSeverity = 4;
+              }
+              if (nextSeverity <= 4) {
+                leadsIntoSharp = true;
+              }
+              break;
+            }
+          }
+
+          if (!isLong && !leadsIntoSharp) {
+            seg.type = 'S';
+          }
         }
       }
     }

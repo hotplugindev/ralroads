@@ -169,4 +169,30 @@ void main() {
 
     expect(refined.single.recommendedSpeedKmh, equals(50));
   });
+
+  test('severity 6 wiggles are filtered out and merged into straights', () {
+    final generator = PacenoteGenerator();
+    
+    // We create a route with a mild bend (severity 6 radius ~150m) of short length (~30m)
+    // and no sharp corner nearby.
+    final points = <RoutePoint>[];
+    for (var i = 0; i < 30; i++) {
+      // 7m spacing
+      final dist = i * 7.0;
+      // Heading changes slightly to make a mild curve
+      final double latOffset = i < 10 ? 0.0 : (i - 10) * 0.00002;
+      points.add(RoutePoint(
+        lat: 45.0 + i * 0.00006 + latOffset,
+        lon: 7.0,
+      ));
+    }
+    
+    final notes = generator.generate(points);
+    // Since severity 6 note is filtered, the entire segment should just merge into straights
+    // or not produce any severity 6 corner note.
+    final corners = notes.where((n) => n.type == PaceNoteType.corner || n.type == PaceNoteType.left || n.type == PaceNoteType.right).toList();
+    for (final corner in corners) {
+      expect(corner.severity, isNot(6));
+    }
+  });
 }

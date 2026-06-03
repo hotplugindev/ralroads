@@ -69,6 +69,11 @@ class SettingsService {
 
   bool get showSpeedCameras => _getBool(_showSpeedCamerasKey, false);
 
+  bool get mapHeadingUp => _getBool('map_heading_up', true);
+
+  Future<void> setMapHeadingUp(bool value) =>
+      _setBool('map_heading_up', value);
+
   Future<void> setShowSpeedLimits(bool value) =>
       _setBool(_showSpeedLimitsKey, value);
 

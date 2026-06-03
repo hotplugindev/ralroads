@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -188,8 +190,6 @@ class MapPlannerScreen extends StatefulWidget {
 }
 
 class _MapPlannerScreenState extends State<MapPlannerScreen> {
-  static const _mapStyle = 'https://tiles.openfreemap.org/styles/liberty';
-
   late final OrsService _orsService;
   final _pacenoteGenerator = PacenoteGenerator();
   final List<RoutePoint> _selectedPoints = [];
@@ -228,7 +228,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       body: Stack(
         children: [
           maplibre.MapLibreMap(
-            styleString: _mapStyle,
+            styleString: getMapStyle(context),
             initialCameraPosition: const maplibre.CameraPosition(
               target: maplibre.LatLng(43.8, 11.2),
               zoom: 5,
@@ -256,111 +256,142 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
             right: 12,
             bottom: 12,
             child: SafeArea(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface.withAlpha(242),
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: const [
-                    BoxShadow(
-                      blurRadius: 18,
-                      color: Colors.black26,
-                      offset: Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.route,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              '${_selectedPoints.length} point${_selectedPoints.length == 1 ? '' : 's'} selected',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ),
-                        ],
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface.withOpacity(0.85),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5),
                       ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 6,
-                        children: [
-                          _PlannerStatusChip(
-                            icon: Icons.flag,
-                            label: 'Start',
-                            selected: _selectedPoints.isNotEmpty,
-                          ),
-                          _PlannerStatusChip(
-                            icon: Icons.place,
-                            label: 'Destination',
-                            selected: hasEnoughPoints,
-                          ),
-                          _PlannerStatusChip(
-                            icon: Icons.more_horiz,
-                            label:
-                                '$waypointCount waypoint${waypointCount == 1 ? '' : 's'}',
-                            selected: waypointCount > 0,
-                          ),
-                        ],
-                      ),
-                      if (_error != null) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          _error!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
+                      boxShadow: const [
+                        BoxShadow(
+                          blurRadius: 18,
+                          color: Colors.black26,
+                          offset: Offset(0, 8),
                         ),
                       ],
-                      const SizedBox(height: 14),
-                      Row(
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _building ? null : _clear,
-                              icon: const Icon(Icons.clear),
-                              label: const Text('Clear'),
-                            ),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.route,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '${_selectedPoints.length} point${_selectedPoints.length == 1 ? '' : 's'} selected',
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: _building
-                                  ? null
-                                  : hasEnoughPoints && hasApiKey
-                                  ? _buildRoute
-                                  : hasEnoughPoints
-                                  ? _showMissingKeyPrompt
-                                  : null,
-                              icon: _building
-                                  ? const SizedBox.square(
-                                      dimension: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.alt_route),
-                              label: Text(
-                                !hasEnoughPoints
-                                    ? 'Select start and destination'
-                                    : hasApiKey
-                                    ? 'Build Route'
-                                    : 'Add API Key to Build Route',
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _PlannerStatusCard(
+                                  icon: Icons.flag,
+                                  label: 'Start',
+                                  selected: _selectedPoints.isNotEmpty,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _PlannerStatusCard(
+                                  icon: Icons.more_horiz,
+                                  label: waypointCount == 0 ? 'No waypoints' : '$waypointCount waypoint${waypointCount == 1 ? '' : 's'}',
+                                  selected: waypointCount > 0,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _PlannerStatusCard(
+                                  icon: Icons.place,
+                                  label: 'Destination',
+                                  selected: hasEnoughPoints,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_error != null) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              _error!,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
+                          ],
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              if (_selectedPoints.isNotEmpty) ...[
+                                OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: _building ? null : _clear,
+                                  child: const Text('Clear'),
+                                ),
+                                const SizedBox(width: 12),
+                              ],
+                              Expanded(
+                                child: FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 14),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: _building
+                                      ? null
+                                      : hasEnoughPoints && hasApiKey
+                                      ? _buildRoute
+                                      : hasEnoughPoints
+                                      ? _showMissingKeyPrompt
+                                      : null,
+                                  icon: _building
+                                      ? const SizedBox.square(
+                                          dimension: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Icon(Icons.alt_route),
+                                  label: Text(
+                                    !hasEnoughPoints
+                                        ? 'Select start & destination'
+                                        : hasApiKey
+                                        ? 'Build Route'
+                                        : 'Add API Key to Build Route',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -838,14 +869,22 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     }
   }
 
+  Color _parseHexColor(String hex) {
+    return Color(int.parse(hex.substring(1), radix: 16) + 0xFF000000);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final routeName = widget.savedRoute?.name ?? 'Route preview';
 
     return Scaffold(
-      appBar: AppBar(title: Text(routeName)),
+      appBar: AppBar(
+        title: Text(routeName, style: const TextStyle(fontWeight: FontWeight.bold)),
+        elevation: 0,
+      ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         children: [
           _SummaryPanel(
             totalDistance: _totalDistance,
@@ -857,6 +896,12 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
             children: [
               Expanded(
                 child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -871,64 +916,95 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                     );
                   },
                   icon: const Icon(Icons.navigation),
-                  label: const Text('Start Drive'),
+                  label: const Text('Start Drive', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    side: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+                  ),
                   onPressed: () => _saveRoute(context),
                   icon: const Icon(Icons.save),
-                  label: const Text('Save Route'),
+                  label: const Text('Save Route', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 24),
-          Text('Pacenotes', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
           _buildRoadInformation(context),
           const SizedBox(height: 24),
+          Text(
+            'Pacenotes',
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
           if (_pacenotes.isEmpty)
-            const Text('No notable corners were found for this route.')
+            Card(
+              elevation: 0,
+              color: theme.colorScheme.surfaceContainerLow,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No notable curves were found for this route.'),
+              ),
+            )
           else
             ..._pacenotes.map(
               (note) {
                 final color = Color(
                   int.parse(colorForPaceNote(note).substring(1), radix: 16) + 0xFF000000,
                 );
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    backgroundColor: color,
-                    foregroundColor: Colors.white,
-                    child: note.direction == 'straight'
-                        ? const Icon(Icons.straight, size: 20)
-                        : Text(shortCalloutLabel(note)),
+                return Card(
+                  elevation: 0,
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  color: theme.colorScheme.surfaceContainerLow.withOpacity(0.6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: theme.colorScheme.outlineVariant.withOpacity(0.3),
+                    ),
                   ),
-                  title: Text(note.text),
-                  subtitle: Row(
-                    children: [
-                      Text(_formatDistance(note.distanceFromStart)),
-                      if (note.recommendedSpeedKmh != null) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Suggested ${note.recommendedSpeedKmh} km/h',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  child: ListTile(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      alignment: Alignment.center,
+                      child: note.type == PaceNoteType.straight
+                          ? Icon(Icons.straight, size: 20, color: color)
+                          : Text(
+                              shortCalloutLabel(note),
+                              style: TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
                             ),
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
+                    title: Text(
+                      note.rallyText,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    subtitle: Text(
+                      'At ${_formatDistance(note.distanceFromStart)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                      ),
+                    ),
                   ),
                 );
               },
@@ -977,75 +1053,228 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
   Widget _buildRoadInformation(BuildContext context) {
     final visibleWarnings = _visibleRoadWarnings;
     final visibleSpeedLimits = _visibleSpeedLimitSegments;
+    final theme = Theme.of(context);
+
+    if (_roadInfoLoading) {
+      return Card(
+        elevation: 0,
+        color: theme.colorScheme.surfaceContainerLow,
+        child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            children: [
+              SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 12),
+              Text('Loading road details...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_roadInfoFailed) {
+      return Card(
+        elevation: 0,
+        color: theme.colorScheme.surfaceContainerLow,
+        child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text('Road information unavailable.'),
+        ),
+      );
+    }
+
+    if (visibleWarnings.isEmpty && visibleSpeedLimits.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Parse speed limits
+    final speedLimits = <int>{};
+    for (final segment in visibleSpeedLimits) {
+      if (segment.parsedKmh != null) {
+        speedLimits.add(segment.parsedKmh!);
+      }
+    }
+
+    // Count warnings
+    final warningCounts = <RoadWarningType, int>{};
+    for (final warning in visibleWarnings) {
+      warningCounts[warning.type] = (warningCounts[warning.type] ?? 0) + 1;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 24),
-        Text('Road information', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 8),
-        if (_roadInfoLoading)
-          const ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: SizedBox.square(
-              dimension: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
+        Card(
+          elevation: 0,
+          color: theme.colorScheme.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: theme.colorScheme.outlineVariant.withOpacity(0.5),
             ),
-            title: Text('Loading road warnings...'),
-          )
-        else if (_roadInfoFailed)
-          const Text('Road warnings unavailable.')
-        else if (visibleWarnings.isEmpty && visibleSpeedLimits.isEmpty)
-          const Text('No road warnings found for this route.')
-        else ...[
-          Text(_speedLimitSummary(visibleSpeedLimits)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Speed limits section
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Icon(Icons.speed, size: 18, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'SPEED LIMITS',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (speedLimits.isEmpty)
+                  Text(
+                    'No speed limits found',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                    ),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: speedLimits.map((speed) {
+                      return _SpeedLimitSign(speed: speed);
+                    }).toList(),
+                  ),
+                
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(height: 1),
+                ),
+
+                // Warning Counts summary
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Icon(Icons.warning_amber_rounded, size: 18, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'ROAD WARNINGS & FEATURES',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (warningCounts.isEmpty)
+                  Text(
+                    'No warnings or features detected',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                    ),
+                  )
+                else
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: warningCounts.entries.map((entry) {
+                      final color = _parseHexColor(colorForRoadWarning(entry.key));
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: color.withOpacity(0.2), width: 1),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(iconForRoadWarning(entry.key), size: 12, color: color),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${entry.value} ${shortRoadWarningLabel(entry.key)}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: color,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        
+        // Detailed warnings list
+        if (visibleWarnings.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Text(
+            'Road Details',
+            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 8),
-          Text(_warningCountSummary(visibleWarnings)),
-          const SizedBox(height: 8),
-          ...visibleWarnings
-              .take(12)
-              .map(
-                (warning) => ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(iconForRoadWarning(warning.type)),
-                  title: Text(warning.text),
-                  subtitle: Text(_formatDistance(warning.distanceFromStart)),
+          ...visibleWarnings.take(12).map((warning) {
+            final color = _parseHexColor(colorForRoadWarning(warning.type));
+            return Card(
+              elevation: 0,
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              color: theme.colorScheme.surfaceContainerLow.withOpacity(0.6),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: theme.colorScheme.outlineVariant.withOpacity(0.3),
                 ),
               ),
+              child: ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    iconForRoadWarning(warning.type),
+                    color: color,
+                    size: 16,
+                  ),
+                ),
+                title: Text(
+                  warning.text,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                subtitle: Text(
+                  'At ${_formatDistance(warning.distanceFromStart)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                  ),
+                ),
+              ),
+            );
+          }),
         ],
       ],
     );
-  }
-
-  String _speedLimitSummary(List<SpeedLimitSegment> segments) {
-    if (segments.isEmpty) {
-      return 'Speed limits: none found';
-    }
-    final values = <String>{};
-    for (final segment in segments) {
-      values.add(
-        segment.parsedKmh == null
-            ? segment.rawMaxspeed
-            : '${segment.parsedKmh} km/h',
-      );
-    }
-    return 'Speed limits: ${values.join(', ')}';
-  }
-
-  String _warningCountSummary(List<RoadWarning> warnings) {
-    final counts = <RoadWarningType, int>{};
-    for (final warning in warnings) {
-      counts[warning.type] = (counts[warning.type] ?? 0) + 1;
-    }
-
-    if (counts.isEmpty) {
-      return 'Warnings: none';
-    }
-
-    return counts.entries
-        .map((entry) => '${labelForRoadWarningType(entry.key)}: ${entry.value}')
-        .join(' • ');
   }
 
   Future<void> _saveRoute(BuildContext context) async {
@@ -1096,79 +1325,196 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Saved Routes')),
+      appBar: AppBar(
+        title: const Text('Saved Routes', style: TextStyle(fontWeight: FontWeight.bold)),
+        elevation: 0,
+      ),
       body: _routes.isEmpty
           ? const Center(child: Text('No saved routes yet.'))
-          : ListView.separated(
-              padding: const EdgeInsets.all(12),
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _routes.length,
               itemBuilder: (context, index) {
                 final route = _routes[index];
-                return ListTile(
-                  title: Text(route.name),
-                  subtitle: Text(
-                    '${_formatDate(route.createdAt)} • ${_formatDistance(route.totalDistance)} • ${route.pacenotes.length} notes',
+                return Card(
+                  elevation: 0,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  color: theme.colorScheme.surfaceContainerLow,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(
+                      color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                    ),
                   ),
-                  leading: const Icon(Icons.route),
-                  trailing: PopupMenuButton<_SavedRouteAction>(
-                    tooltip: 'Route actions',
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: _SavedRouteAction.rename,
-                        onTap: () {
-                          if (_renameDialogOpen) {
-                            return;
-                          }
-                          // Defer until the popup menu route is fully dismissed.
-                          Future<void>.microtask(() {
-                            if (!mounted) {
-                              return;
-                            }
-                            _renameRoute(route);
-                          });
-                        },
-                        child: const ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(Icons.edit),
-                          title: Text('Rename'),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => RoutePreviewScreen(
+                            storage: widget.storage,
+                            settings: widget.settings,
+                            points: route.points,
+                            pacenotes: route.pacenotes,
+                            savedRoute: route,
+                          ),
                         ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  theme.colorScheme.primary,
+                                  theme.colorScheme.primary.withOpacity(0.7),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: theme.colorScheme.primary.withOpacity(0.2),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.route,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  route.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  _formatDate(route.createdAt),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 4,
+                                  children: [
+                                    _buildRouteBadge(
+                                      context,
+                                      icon: Icons.straighten,
+                                      label: _formatDistance(route.totalDistance),
+                                    ),
+                                    _buildRouteBadge(
+                                      context,
+                                      icon: Icons.speaker_notes_outlined,
+                                      label: '${route.pacenotes.length} notes',
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          PopupMenuButton<_SavedRouteAction>(
+                            tooltip: 'Route actions',
+                            icon: Icon(
+                              Icons.more_vert,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            itemBuilder: (context) => [
+                              PopupMenuItem(
+                                value: _SavedRouteAction.rename,
+                                onTap: () {
+                                  if (_renameDialogOpen) {
+                                    return;
+                                  }
+                                  Future<void>.microtask(() {
+                                    if (!mounted) {
+                                      return;
+                                    }
+                                    _renameRoute(route);
+                                  });
+                                },
+                                child: const ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Icon(Icons.edit),
+                                  title: Text('Rename'),
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: _SavedRouteAction.delete,
+                                onTap: () {
+                                  Future<void>.microtask(() {
+                                    if (!mounted) {
+                                      return;
+                                    }
+                                    _deleteRoute(route);
+                                  });
+                                },
+                                child: const ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Icon(Icons.delete_outline),
+                                  title: Text('Delete'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      PopupMenuItem(
-                        value: _SavedRouteAction.delete,
-                        onTap: () {
-                          Future<void>.microtask(() {
-                            if (!mounted) {
-                              return;
-                            }
-                            _deleteRoute(route);
-                          });
-                        },
-                        child: const ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(Icons.delete_outline),
-                          title: Text('Delete'),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => RoutePreviewScreen(
-                          storage: widget.storage,
-                          settings: widget.settings,
-                          points: route.points,
-                          pacenotes: route.pacenotes,
-                          savedRoute: route,
-                        ),
-                      ),
-                    );
-                  },
                 );
               },
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemCount: _routes.length,
             ),
+    );
+  }
+
+  Widget _buildRouteBadge(BuildContext context, {required IconData icon, required String label}) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 12,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1315,8 +1661,6 @@ class DriveScreen extends StatefulWidget {
 }
 
 class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
-  static const _mapStyle = 'https://tiles.openfreemap.org/styles/liberty';
-
   final _matcher = GpsRouteMatcher();
   final _voice = VoiceService();
   late List<PaceNote> _notes;
@@ -1340,11 +1684,13 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   String? _permissionMessage;
   bool _voiceEnabled = true;
   bool _followLocation = true;
-  bool _staticMapDrawn = false;
+  String? _lastLoadedStyle;
+  bool _carImageLoaded = false;
   double _lastGoodHeading = 0;
   double? _lastVisualLat;
   double? _lastVisualLon;
   bool _gpsWeak = false;
+  Timer? _recenterTimer;
 
   PaceNote? get _nextNote {
     for (final note in _notes) {
@@ -1398,6 +1744,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _recenterTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     try {
       WakelockPlus.disable();
@@ -1438,19 +1785,24 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     return Scaffold(
       body: Stack(
         children: [
-          maplibre.MapLibreMap(
-            styleString: _mapStyle,
-            initialCameraPosition: _initialDriveCameraPosition(),
-            myLocationEnabled: false,
-            onMapCreated: (controller) {
-              _controller = controller;
+          Listener(
+            onPointerDown: (_) {
+              if (_followLocation) {
+                setState(() {
+                  _followLocation = false;
+                });
+              }
+              _startRecenterTimer();
             },
-            onStyleLoadedCallback: _drawStaticMapLayers,
-            onCameraTrackingDismissed: () {
-              setState(() {
-                _followLocation = false;
-              });
-            },
+            child: maplibre.MapLibreMap(
+              styleString: getMapStyle(context),
+              initialCameraPosition: _initialDriveCameraPosition(),
+              myLocationEnabled: false,
+              onMapCreated: (controller) {
+                _controller = controller;
+              },
+              onStyleLoadedCallback: _drawStaticMapLayers,
+            ),
           ),
           if (widget.routePoints.isEmpty)
             Positioned(
@@ -1627,14 +1979,14 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     if (defaultTargetPlatform == TargetPlatform.android) {
       locationSettings = AndroidSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 1,
-        intervalDuration: const Duration(milliseconds: 500),
+        distanceFilter: 0,
+        intervalDuration: const Duration(milliseconds: 100),
         forceLocationManager: false,
       );
     } else {
       locationSettings = const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 1,
+        distanceFilter: 0,
       );
     }
 
@@ -1701,8 +2053,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         visualLat = _lastVisualLat! + (position.latitude - _lastVisualLat!) * fraction;
         visualLon = _lastVisualLon! + (position.longitude - _lastVisualLon!) * fraction;
       }
-      visualLat = _lastVisualLat! * 0.55 + visualLat * 0.45;
-      visualLon = _lastVisualLon! * 0.55 + visualLon * 0.45;
+      visualLat = _lastVisualLat! * 0.25 + visualLat * 0.75;
+      visualLon = _lastVisualLon! * 0.25 + visualLon * 0.75;
     }
     _lastVisualLat = visualLat;
     _lastVisualLon = visualLon;
@@ -1732,8 +2084,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
     final distanceToNote = note.distanceFromStart - _distanceAlongRoute;
     final triggerDistance = _speedMps > 1
-        ? math.max(80.0, _speedMps * 6.0)
-        : 80.0;
+        ? math.max(50.0, _speedMps * 4.5)
+        : 50.0;
 
     if (distanceToNote > triggerDistance) {
       return;
@@ -1744,33 +2096,28 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       return;
     }
 
-    String speakText = note.text;
-    if (note.recommendedSpeedKmh != null) {
-      speakText = '$speakText, suggested ${note.recommendedSpeedKmh}';
-    }
+    String speakText = note.rallyText;
 
     final List<int> spokenIndices = [noteIndex];
     var currentIdx = noteIndex;
     var linkCount = 0;
 
-    while (currentIdx < _notes.length - 1 && linkCount < 2) {
-      final nextNote = _notes[currentIdx + 1];
-      final gap = nextNote.distanceFromStart - _notes[currentIdx].distanceFromStart;
-
-      if (gap <= 80.0 &&
-          _notes[currentIdx].type == PaceNoteType.corner &&
-          nextNote.type == PaceNoteType.corner) {
-        String nextText = nextNote.text;
-        if (nextNote.recommendedSpeedKmh != null) {
-          nextText = '$nextText, suggested ${nextNote.recommendedSpeedKmh}';
-        }
-        speakText = '$speakText into $nextText';
-        currentIdx++;
-        spokenIndices.add(currentIdx);
-        linkCount++;
-      } else {
+    while (linkCount < 2) {
+      final currentNote = _notes[currentIdx];
+      if (currentNote.intoNoteId == null) {
         break;
       }
+      
+      final nextIdx = _notes.indexWhere((n) => n.id == currentNote.intoNoteId);
+      if (nextIdx == -1 || nextIdx <= currentIdx || _notes[nextIdx].spoken) {
+        break;
+      }
+      
+      final nextNote = _notes[nextIdx];
+      speakText = '$speakText into ${nextNote.rallyText}';
+      currentIdx = nextIdx;
+      spokenIndices.add(nextIdx);
+      linkCount++;
     }
 
     _voice.speak(speakText);
@@ -1839,10 +2186,15 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     );
 
     for (final note in widget.pacenotes) {
+      if (note.type == PaceNoteType.straight) {
+        continue;
+      }
+      final start = note.startDistance ?? (note.distanceFromStart - 25);
+      final end = note.endDistance ?? (note.distanceFromStart + 45);
       final segment = routeSegmentBetweenDistances(
         widget.routePoints,
-        note.distanceFromStart - 25,
-        note.distanceFromStart + 45,
+        start,
+        end,
       );
       if (segment.length >= 2) {
         final line = await controller.addLine(
@@ -1860,7 +2212,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
       final markerPoint = nearestRoutePointAtDistance(
         widget.routePoints,
-        note.distanceFromStart,
+        note.startDistance ?? note.distanceFromStart,
       );
       if (markerPoint != null) {
         final coordinates = maplibre.LatLng(markerPoint.lat, markerPoint.lon);
@@ -1923,18 +2275,47 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _drawStaticMapLayers() async {
-    if (_staticMapDrawn) {
+    final currentStyle = getMapStyle(context);
+    if (_lastLoadedStyle == currentStyle) {
       return;
     }
-    _staticMapDrawn = true;
+    _lastLoadedStyle = currentStyle;
+
+    _currentArrow = null;
+    _currentInnerCircle = null;
+    _currentOuterCircle = null;
+    _carImageLoaded = false;
 
     try {
+      final bytes = await generateChevronImageBytes();
+      await _controller?.addImage('car_chevron', bytes);
+      if (mounted) {
+        setState(() {
+          _carImageLoaded = true;
+        });
+      }
+
       await _drawNavigationRoute();
       final position = _lastPosition;
       if (position != null) {
         final lat = _lastVisualLat ?? position.latitude;
         final lon = _lastVisualLon ?? position.longitude;
         await _updateCurrentLocationMarker(position, lat, lon);
+      } else if (widget.routePoints.isNotEmpty) {
+        final first = widget.routePoints.first;
+        final mockPosition = Position(
+          latitude: first.lat,
+          longitude: first.lon,
+          timestamp: DateTime.now(),
+          accuracy: 0.0,
+          altitude: 0.0,
+          heading: first.heading,
+          speed: 0.0,
+          speedAccuracy: 0.0,
+          altitudeAccuracy: 0.0,
+          headingAccuracy: 0.0,
+        );
+        await _updateCurrentLocationMarker(mockPosition, first.lat, first.lon);
       }
     } catch (error) {
       if (!mounted) {
@@ -1965,63 +2346,62 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
   Future<void> _updateCurrentLocationMarker(Position position, double visualLat, double visualLon) async {
     final controller = _controller;
-    if (controller == null) {
+    if (!_carImageLoaded || controller == null) {
       return;
     }
 
     final coordinates = maplibre.LatLng(visualLat, visualLon);
     final heading = _headingForPosition(position);
 
-    final existingOuter = _currentOuterCircle;
-    final existingInner = _currentInnerCircle;
     final existingArrow = _currentArrow;
-    if (existingOuter != null &&
-        existingInner != null &&
-        existingArrow != null) {
+    final existingCircle = _currentInnerCircle;
+    if (existingArrow != null && existingCircle != null) {
       await controller.updateCircle(
-        existingOuter,
-        maplibre.CircleOptions(geometry: coordinates),
-      );
-      await controller.updateCircle(
-        existingInner,
-        maplibre.CircleOptions(geometry: coordinates),
+        existingCircle,
+        maplibre.CircleOptions(
+          geometry: coordinates,
+        ),
       );
       await controller.updateSymbol(
         existingArrow,
-        maplibre.SymbolOptions(geometry: coordinates, textRotate: heading),
+        OverlapSymbolOptions(
+          geometry: coordinates,
+          iconRotate: heading,
+        ),
       );
+      
+      final existingOuter = _currentOuterCircle;
+      if (existingOuter != null) {
+        try { await controller.removeCircle(existingOuter); } catch (_) {}
+        _currentOuterCircle = null;
+      }
       return;
     }
 
-    final outer = await controller.addCircle(
+    if (existingCircle != null) {
+      try { await controller.removeCircle(existingCircle); } catch (_) {}
+    }
+    if (existingArrow != null) {
+      try { await controller.removeSymbol(existingArrow); } catch (_) {}
+    }
+
+    final circle = await controller.addCircle(
       maplibre.CircleOptions(
         geometry: coordinates,
-        circleRadius: 25,
-        circleColor: '#00A876',
-        circleOpacity: 0.94,
+        circleRadius: 10,
+        circleColor: '#1E88E5',
         circleStrokeColor: '#FFFFFF',
-        circleStrokeWidth: 3,
+        circleStrokeWidth: 2,
+        circleOpacity: 0.9,
       ),
     );
-    final inner = await controller.addCircle(
-      maplibre.CircleOptions(
-        geometry: coordinates,
-        circleRadius: 18,
-        circleColor: '#1565C0',
-        circleStrokeColor: '#FFFFFF',
-        circleStrokeWidth: 1,
-      ),
-    );
+
     final arrow = await controller.addSymbol(
-      maplibre.SymbolOptions(
+      OverlapSymbolOptions(
         geometry: coordinates,
-        textField: '▲',
-        textSize: 34,
-        textColor: '#FFFFFF',
-        textHaloColor: '#0D47A1',
-        textHaloWidth: 2,
-        textRotate: heading,
-        textAnchor: 'center',
+        iconImage: 'car_chevron',
+        iconSize: 0.8,
+        iconRotate: heading,
         zIndex: 100,
       ),
     );
@@ -2030,9 +2410,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       return;
     }
     setState(() {
-      _currentOuterCircle = outer;
-      _currentInnerCircle = inner;
       _currentArrow = arrow;
+      _currentInnerCircle = circle;
+      _currentOuterCircle = null;
     });
   }
 
@@ -2042,17 +2422,46 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       return;
     }
 
-    // Direct camera move or extremely short animation to avoid stacking and lag
+    final double targetBearing = widget.settings.mapHeadingUp ? _lastGoodHeading : 0.0;
+    final double targetTilt = widget.settings.mapHeadingUp ? 30.0 : 0.0;
+
     await controller.animateCamera(
-      maplibre.CameraUpdate.newLatLngZoom(
-        maplibre.LatLng(lat, lon),
-        16,
+      maplibre.CameraUpdate.newCameraPosition(
+        maplibre.CameraPosition(
+          target: maplibre.LatLng(lat, lon),
+          zoom: 16.5,
+          bearing: targetBearing,
+          tilt: targetTilt,
+        ),
       ),
-      duration: const Duration(milliseconds: 150),
+      duration: const Duration(milliseconds: 90),
     );
   }
 
+Future<Uint8List> generateChevronImageBytes() async {
+  final recorder = ui.PictureRecorder();
+  final canvas = ui.Canvas(recorder, const ui.Rect.fromLTWH(0, 0, 64, 64));
+  
+  // White chevron arrow pointing UP
+  final chevronPaint = ui.Paint()
+    ..color = const ui.Color(0xFFFFFFFF)
+    ..style = ui.PaintingStyle.fill;
+  final chevronPath = ui.Path()
+    ..moveTo(32, 16)
+    ..lineTo(44, 40)
+    ..lineTo(32, 33)
+    ..lineTo(20, 40)
+    ..close();
+  canvas.drawPath(chevronPath, chevronPaint);
+
+  final picture = recorder.endRecording();
+  final img = await picture.toImage(64, 64);
+  final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+  return byteData!.buffer.asUint8List();
+}
+
   void _toggleFollowMode() {
+    _recenterTimer?.cancel();
     if (_followLocation) {
       setState(() {
         _followLocation = false;
@@ -2069,6 +2478,17 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     } else {
       _fitNavigationCameraToRoute();
     }
+  }
+
+  void _startRecenterTimer() {
+    _recenterTimer?.cancel();
+    _recenterTimer = Timer(const Duration(seconds: 6), () {
+      if (mounted && !_followLocation) {
+        setState(() {
+          _followLocation = true;
+        });
+      }
+    });
   }
 
   double _headingForPosition(Position position) {
@@ -2131,51 +2551,142 @@ class _SummaryPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor),
-        borderRadius: BorderRadius.circular(8),
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+        ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            _SummaryRow(
-              label: 'Total distance',
-              value: _formatDistance(totalDistance),
-            ),
-            _SummaryRow(label: 'Route points', value: '$pointCount'),
-            _SummaryRow(label: 'Pacenotes', value: '$pacenoteCount'),
-          ],
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        child: IntrinsicHeight(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildMetricColumn(
+                context,
+                icon: Icons.straighten,
+                label: 'DISTANCE',
+                value: _formatDistance(totalDistance),
+              ),
+              _buildVerticalDivider(theme),
+              _buildMetricColumn(
+                context,
+                icon: Icons.analytics_outlined,
+                label: 'POINTS',
+                value: '$pointCount',
+              ),
+              _buildVerticalDivider(theme),
+              _buildMetricColumn(
+                context,
+                icon: Icons.speaker_notes_outlined,
+                label: 'PACENOTES',
+                value: '$pacenoteCount',
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
-}
 
-class _SummaryRow extends StatelessWidget {
-  const _SummaryRow({required this.label, required this.value});
+  Widget _buildVerticalDivider(ThemeData theme) {
+    return VerticalDivider(
+      width: 1,
+      thickness: 1,
+      color: theme.colorScheme.outlineVariant.withOpacity(0.3),
+    );
+  }
 
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildMetricColumn(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    final theme = Theme.of(context);
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              color: theme.colorScheme.primary,
+              size: 20,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.onSurface,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );
   }
 }
 
-class _PlannerStatusChip extends StatelessWidget {
-  const _PlannerStatusChip({
+class _SpeedLimitSign extends StatelessWidget {
+  const _SpeedLimitSign({required this.speed});
+  final int speed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.red, width: 3),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 2,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '$speed',
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _PlannerStatusCard extends StatelessWidget {
+  const _PlannerStatusCard({
     required this.icon,
     required this.label,
     required this.selected,
@@ -2187,19 +2698,44 @@ class _PlannerStatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Chip(
-      avatar: Icon(
-        icon,
-        size: 16,
-        color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      decoration: BoxDecoration(
+        color: selected
+            ? colorScheme.primary.withOpacity(0.12)
+            : colorScheme.surfaceContainerHighest.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: selected
+              ? colorScheme.primary.withOpacity(0.3)
+              : colorScheme.outlineVariant.withOpacity(0.2),
+          width: 1,
+        ),
       ),
-      label: Text(label),
-      visualDensity: VisualDensity.compact,
-      backgroundColor: selected
-          ? colorScheme.primaryContainer.withAlpha(170)
-          : colorScheme.surfaceContainerHighest.withAlpha(150),
-      side: BorderSide(color: colorScheme.outlineVariant),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 18,
+            color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant.withOpacity(0.5),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant.withOpacity(0.7),
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2218,70 +2754,97 @@ class _SpeedCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 108, maxWidth: 132),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colorScheme.surface.withAlpha(238),
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: const [
-            BoxShadow(
-              blurRadius: 12,
-              color: Colors.black26,
-              offset: Offset(0, 4),
+    final speedKmh = (speedMps * 3.6).round();
+    final limit = speedLimit?.parsedKmh;
+    final isOverSpeed = limit != null && speedKmh > limit;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withAlpha(238),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 10,
+            color: Colors.black26,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  '$speedKmh',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: isOverSpeed ? Colors.red.shade700 : colorScheme.onSurface,
+                    height: 1.0,
+                  ),
+                ),
+                Text(
+                  'km/h',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: isOverSpeed ? Colors.red.shade700 : colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FittedBox(
-                fit: BoxFit.scaleDown,
+            if (limit != null) ...[
+              const SizedBox(width: 14),
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.red.shade700, width: 4.5),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
+                    )
+                  ],
+                ),
+                alignment: Alignment.center,
                 child: Text(
-                  formatCurrentSpeed(speedMps),
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    height: 0.95,
+                  '$limit',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                    height: 1.0,
                   ),
                 ),
               ),
-              Text(
-                'km/h',
-                maxLines: 1,
-                style: Theme.of(context).textTheme.labelMedium,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Limit ${formatSpeedLimitSegment(speedLimit)}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-              if (gpsWeak) ...[
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.gps_off, size: 12, color: Colors.orange),
-                    const SizedBox(width: 4),
-                    Text(
-                      'GPS WEAK',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.orange[800],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
             ],
-          ),
+            if (gpsWeak) ...[
+              const SizedBox(width: 12),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.gps_off, size: 16, color: Colors.orange),
+                  const SizedBox(height: 2),
+                  Text(
+                    'GPS WEAK',
+                    style: TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange[800],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -2311,10 +2874,10 @@ class _DriveRoundButton extends StatelessWidget {
       tooltip: tooltip,
       backgroundColor: active
           ? colorScheme.primary
-          : colorScheme.surfaceContainerHighest.withAlpha(235),
+          : colorScheme.surface.withAlpha(220),
       foregroundColor: active
           ? colorScheme.onPrimary
-          : colorScheme.onSurfaceVariant,
+          : colorScheme.onSurface.withOpacity(0.55),
       onPressed: onPressed,
       child: Icon(icon),
     );
@@ -2341,38 +2904,16 @@ class _CalloutRow extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                note?.text ?? 'No more callouts',
+                note?.rallyText ?? 'No more callouts',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 2),
-              Row(
-                children: [
-                  Text(
-                    distanceMeters == null
-                        ? 'Route complete'
-                        : '${_formatDistance(distanceMeters!)} to callout',
-                  ),
-                  if (note != null && note.recommendedSpeedKmh != null) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        'Suggested ${note.recommendedSpeedKmh}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.onPrimaryContainer,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
+              Text(
+                distanceMeters == null
+                    ? 'Route complete'
+                    : '${_formatDistance(distanceMeters!)} to callout',
               ),
             ],
           ),
@@ -2395,9 +2936,12 @@ class _CalloutBadge extends StatelessWidget {
     final icon = switch (note.type) {
       PaceNoteType.roundabout => Icons.roundabout_right,
       PaceNoteType.junction => Icons.turn_right,
-      PaceNoteType.hairpin => Icons.warning_amber_rounded,
+      PaceNoteType.hairpinLeft || PaceNoteType.hairpinRight || PaceNoteType.hairpin => Icons.warning_amber_rounded,
       PaceNoteType.warning => Icons.warning_rounded,
-      PaceNoteType.corner => note.direction == 'straight' ? Icons.straight : null,
+      PaceNoteType.straight => Icons.straight,
+      PaceNoteType.keepLeft => Icons.turn_left,
+      PaceNoteType.keepRight => Icons.turn_right,
+      _ => null,
     };
 
     return Container(
@@ -2431,7 +2975,9 @@ class _WarningRow extends StatelessWidget {
       children: [
         Icon(
           iconForRoadWarning(warning.type),
-          color: colorScheme.primary,
+          color: Color(
+            int.parse(colorForRoadWarning(warning.type).substring(1), radix: 16) + 0xFF000000,
+          ),
           size: 22,
         ),
         const SizedBox(width: 8),
@@ -2567,15 +3113,15 @@ String colorForPaceNoteSeverity(int severity) {
 }
 
 String colorForPaceNote(PaceNote note) {
-  if (note.direction == 'straight') {
+  if (note.type == PaceNoteType.straight) {
     return '#9E9E9E';
   }
   return switch (note.type) {
     PaceNoteType.roundabout => '#7E57C2',
     PaceNoteType.junction => '#03A9F4',
     PaceNoteType.warning => '#1976D2',
-    PaceNoteType.corner ||
-    PaceNoteType.hairpin => colorForPaceNoteSeverity(note.severity),
+    PaceNoteType.keepLeft || PaceNoteType.keepRight => '#8E24AA',
+    _ => colorForPaceNoteSeverity(note.severity),
   };
 }
 
@@ -2585,7 +3131,7 @@ double smoothHeading(double previous, double next, double factor) {
 }
 
 String shortCalloutLabel(PaceNote note) {
-  if (note.direction == 'straight') {
+  if (note.type == PaceNoteType.straight) {
     return 'STR';
   }
   if (note.type == PaceNoteType.roundabout) {
@@ -2594,8 +3140,17 @@ String shortCalloutLabel(PaceNote note) {
   if (note.type == PaceNoteType.junction) {
     return 'JCT';
   }
+  if (note.type == PaceNoteType.keepLeft) {
+    return 'KPL';
+  }
+  if (note.type == PaceNoteType.keepRight) {
+    return 'KPR';
+  }
   final direction = note.direction.toLowerCase().startsWith('l') ? 'L' : 'R';
-  if (note.severity == 1) {
+  if (note.type == PaceNoteType.hairpinLeft ||
+      note.type == PaceNoteType.hairpinRight ||
+      note.type == PaceNoteType.hairpin ||
+      note.severity == 1) {
     return '${direction}H';
   }
   return '$direction${note.severity}';
@@ -2704,4 +3259,54 @@ String _formatDate(DateTime date) {
   final hour = local.hour.toString().padLeft(2, '0');
   final minute = local.minute.toString().padLeft(2, '0');
   return '$year-$month-$day $hour:$minute';
+}
+
+String getMapStyle(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return isDark
+      ? 'https://tiles.openfreemap.org/styles/dark'
+      : 'https://tiles.openfreemap.org/styles/positron';
+}
+
+class OverlapSymbolOptions extends maplibre.SymbolOptions {
+  const OverlapSymbolOptions({
+    super.iconSize,
+    super.iconImage,
+    super.iconRotate,
+    super.iconOffset,
+    super.iconAnchor,
+    super.fontNames,
+    super.textField,
+    super.textSize,
+    super.textMaxWidth,
+    super.textLetterSpacing,
+    super.textJustify,
+    super.textAnchor,
+    super.textRotate,
+    super.textTransform,
+    super.textOffset,
+    super.iconOpacity,
+    super.iconColor,
+    super.iconHaloColor,
+    super.iconHaloWidth,
+    super.iconHaloBlur,
+    super.textOpacity,
+    super.textColor,
+    super.textHaloColor,
+    super.textHaloWidth,
+    super.textHaloBlur,
+    super.geometry,
+    super.zIndex,
+    super.draggable,
+  });
+
+  @override
+  Map<String, dynamic> toJson([bool addGeometry = true]) {
+    final Map<String, dynamic> json = Map<String, dynamic>.from(super.toJson(addGeometry));
+    json['iconAllowOverlap'] = true;
+    json['iconIgnorePlacement'] = true;
+    json['textAllowOverlap'] = true;
+    json['textIgnorePlacement'] = true;
+    return json;
+  }
 }
