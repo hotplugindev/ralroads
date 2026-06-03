@@ -177,6 +177,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
             child: maplibre.MapLibreMap(
               styleString: getMapStyle(context, widget.settings),
               initialCameraPosition: _initialDriveCameraPosition(),
+              // Hide MapLibre attribution/info button by pushing it off-screen
+              attributionButtonPosition: maplibre.AttributionButtonPosition.bottomRight,
+              attributionButtonMargins: const math.Point(-1000, -1000),
               myLocationEnabled: false,
               onMapCreated: (controller) {
                 _controller = controller;

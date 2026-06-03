@@ -72,6 +72,9 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
               target: maplibre.LatLng(43.8, 11.2),
               zoom: 5,
             ),
+            // Hide MapLibre attribution/info button by pushing it off-screen
+            attributionButtonPosition: maplibre.AttributionButtonPosition.bottomRight,
+            attributionButtonMargins: const math.Point(-1000, -1000),
             myLocationEnabled: false,
             onMapCreated: (controller) {
               _controller = controller;
