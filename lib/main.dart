@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'models/pace_note.dart';
 import 'models/road_warning.dart';
@@ -891,12 +893,45 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
             const Text('No notable corners were found for this route.')
           else
             ..._pacenotes.map(
-              (note) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: CircleAvatar(child: Text(shortCalloutLabel(note))),
-                title: Text(note.text),
-                subtitle: Text(_formatDistance(note.distanceFromStart)),
-              ),
+              (note) {
+                final color = Color(
+                  int.parse(colorForPaceNote(note).substring(1), radix: 16) + 0xFF000000,
+                );
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    backgroundColor: color,
+                    foregroundColor: Colors.white,
+                    child: note.direction == 'straight'
+                        ? const Icon(Icons.straight, size: 20)
+                        : Text(shortCalloutLabel(note)),
+                  ),
+                  title: Text(note.text),
+                  subtitle: Row(
+                    children: [
+                      Text(_formatDistance(note.distanceFromStart)),
+                      if (note.recommendedSpeedKmh != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Suggested ${note.recommendedSpeedKmh} km/h',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              },
             ),
         ],
       ),
@@ -1279,7 +1314,7 @@ class DriveScreen extends StatefulWidget {
   State<DriveScreen> createState() => _DriveScreenState();
 }
 
-class _DriveScreenState extends State<DriveScreen> {
+class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   static const _mapStyle = 'https://tiles.openfreemap.org/styles/liberty';
 
   final _matcher = GpsRouteMatcher();
@@ -1307,6 +1342,9 @@ class _DriveScreenState extends State<DriveScreen> {
   bool _followLocation = true;
   bool _staticMapDrawn = false;
   double _lastGoodHeading = 0;
+  double? _lastVisualLat;
+  double? _lastVisualLon;
+  bool _gpsWeak = false;
 
   PaceNote? get _nextNote {
     for (final note in _notes) {
@@ -1345,6 +1383,12 @@ class _DriveScreenState extends State<DriveScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    try {
+      WakelockPlus.enable();
+    } catch (e) {
+      debugPrint('Wakelock enable failed: $e');
+    }
     _notes = widget.pacenotes
         .map((note) => note.copyWith(spoken: false))
         .toList();
@@ -1354,9 +1398,28 @@ class _DriveScreenState extends State<DriveScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    try {
+      WakelockPlus.disable();
+    } catch (e) {
+      debugPrint('Wakelock disable failed: $e');
+    }
     _positionSubscription?.cancel();
     _voice.stop();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    try {
+      if (state == AppLifecycleState.resumed) {
+        WakelockPlus.enable();
+      } else {
+        WakelockPlus.disable();
+      }
+    } catch (e) {
+      debugPrint('Wakelock toggle on lifecycle failed: $e');
+    }
   }
 
   @override
@@ -1423,7 +1486,7 @@ class _DriveScreenState extends State<DriveScreen> {
             top: 12,
             left: 72,
             child: SafeArea(
-              child: _SpeedCard(speedMps: _speedMps, speedLimit: currentLimit),
+              child: _SpeedCard(speedMps: _speedMps, speedLimit: currentLimit, gpsWeak: _gpsWeak),
             ),
           ),
           Positioned(
@@ -1560,12 +1623,23 @@ class _DriveScreenState extends State<DriveScreen> {
       return;
     }
 
-    const settings = LocationSettings(
-      accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 5,
-    );
+    final LocationSettings locationSettings;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      locationSettings = AndroidSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 1,
+        intervalDuration: const Duration(milliseconds: 500),
+        forceLocationManager: false,
+      );
+    } else {
+      locationSettings = const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 1,
+      );
+    }
+
     _positionSubscription = Geolocator.getPositionStream(
-      locationSettings: settings,
+      locationSettings: locationSettings,
     ).listen(_handlePosition);
   }
 
@@ -1577,18 +1651,75 @@ class _DriveScreenState extends State<DriveScreen> {
       lastMatchedIndex: _lastMatchedIndex,
     );
 
+    // Calculate speed fallback and smoothing
+    double calculatedSpeed = position.speed;
+    final prevPos = _lastPosition;
+    if (calculatedSpeed < 0 || calculatedSpeed.isNaN || !calculatedSpeed.isFinite) {
+      if (prevPos != null) {
+        final timeDiffSec = position.timestamp.difference(prevPos.timestamp).inMilliseconds / 1000.0;
+        if (timeDiffSec > 0.05) {
+          final dist = haversineDistanceMeters(
+            prevPos.latitude,
+            prevPos.longitude,
+            position.latitude,
+            position.longitude,
+          );
+          calculatedSpeed = dist / timeDiffSec;
+        } else {
+          calculatedSpeed = _speedMps;
+        }
+      } else {
+        calculatedSpeed = 0.0;
+      }
+    }
+
+    if (prevPos != null) {
+      final timeDiffSec = position.timestamp.difference(prevPos.timestamp).inMilliseconds / 1000.0;
+      if (timeDiffSec > 0.05) {
+        final acceleration = (calculatedSpeed - _speedMps).abs() / timeDiffSec;
+        if (acceleration > 15.0) {
+          calculatedSpeed = _speedMps + (calculatedSpeed > _speedMps ? 15.0 : -15.0) * timeDiffSec;
+          if (calculatedSpeed < 0) calculatedSpeed = 0;
+        }
+      }
+    }
+
+    final newSpeed = _speedMps * 0.65 + calculatedSpeed * 0.35;
+
+    // Smooth visual location marker position and filter out extreme GPS jumps
+    double visualLat = position.latitude;
+    double visualLon = position.longitude;
+    if (_lastVisualLat != null && _lastVisualLon != null) {
+      final dist = haversineDistanceMeters(
+        _lastVisualLat!,
+        _lastVisualLon!,
+        position.latitude,
+        position.longitude,
+      );
+      if (dist > 150.0) {
+        final fraction = 150.0 / dist;
+        visualLat = _lastVisualLat! + (position.latitude - _lastVisualLat!) * fraction;
+        visualLon = _lastVisualLon! + (position.longitude - _lastVisualLon!) * fraction;
+      }
+      visualLat = _lastVisualLat! * 0.55 + visualLat * 0.45;
+      visualLon = _lastVisualLon! * 0.55 + visualLon * 0.45;
+    }
+    _lastVisualLat = visualLat;
+    _lastVisualLon = visualLon;
+
     setState(() {
       _previousPosition = _lastPosition;
       _lastPosition = position;
       _lastMatchedIndex = match.nearestIndex;
       _distanceAlongRoute = match.distanceAlongRoute;
       _distanceFromRoute = match.distanceFromRoute;
-      _speedMps = position.speed.isFinite ? math.max(0, position.speed) : 0;
+      _speedMps = newSpeed;
+      _gpsWeak = position.accuracy > 20.0;
     });
 
-    _updateCurrentLocationMarker(position);
+    _updateCurrentLocationMarker(position, visualLat, visualLon);
     if (_followLocation) {
-      _followPosition(position);
+      _followPosition(visualLat, visualLon);
     }
     _maybeSpeakNextNote();
   }
@@ -1600,11 +1731,11 @@ class _DriveScreenState extends State<DriveScreen> {
     }
 
     final distanceToNote = note.distanceFromStart - _distanceAlongRoute;
-    final shouldSpeak = _speedMps > 1
-        ? distanceToNote / _speedMps <= 6
-        : distanceToNote <= 80;
+    final triggerDistance = _speedMps > 1
+        ? math.max(80.0, _speedMps * 6.0)
+        : 80.0;
 
-    if (!shouldSpeak) {
+    if (distanceToNote > triggerDistance) {
       return;
     }
 
@@ -1613,9 +1744,41 @@ class _DriveScreenState extends State<DriveScreen> {
       return;
     }
 
-    _voice.speak(note.text);
+    String speakText = note.text;
+    if (note.recommendedSpeedKmh != null) {
+      speakText = '$speakText, suggested ${note.recommendedSpeedKmh}';
+    }
+
+    final List<int> spokenIndices = [noteIndex];
+    var currentIdx = noteIndex;
+    var linkCount = 0;
+
+    while (currentIdx < _notes.length - 1 && linkCount < 2) {
+      final nextNote = _notes[currentIdx + 1];
+      final gap = nextNote.distanceFromStart - _notes[currentIdx].distanceFromStart;
+
+      if (gap <= 80.0 &&
+          _notes[currentIdx].type == PaceNoteType.corner &&
+          nextNote.type == PaceNoteType.corner) {
+        String nextText = nextNote.text;
+        if (nextNote.recommendedSpeedKmh != null) {
+          nextText = '$nextText, suggested ${nextNote.recommendedSpeedKmh}';
+        }
+        speakText = '$speakText into $nextText';
+        currentIdx++;
+        spokenIndices.add(currentIdx);
+        linkCount++;
+      } else {
+        break;
+      }
+    }
+
+    _voice.speak(speakText);
+
     setState(() {
-      _notes[noteIndex] = note.copyWith(spoken: true);
+      for (final idx in spokenIndices) {
+        _notes[idx] = _notes[idx].copyWith(spoken: true);
+      }
     });
   }
 
@@ -1769,7 +1932,9 @@ class _DriveScreenState extends State<DriveScreen> {
       await _drawNavigationRoute();
       final position = _lastPosition;
       if (position != null) {
-        await _updateCurrentLocationMarker(position);
+        final lat = _lastVisualLat ?? position.latitude;
+        final lon = _lastVisualLon ?? position.longitude;
+        await _updateCurrentLocationMarker(position, lat, lon);
       }
     } catch (error) {
       if (!mounted) {
@@ -1798,13 +1963,13 @@ class _DriveScreenState extends State<DriveScreen> {
     );
   }
 
-  Future<void> _updateCurrentLocationMarker(Position position) async {
+  Future<void> _updateCurrentLocationMarker(Position position, double visualLat, double visualLon) async {
     final controller = _controller;
     if (controller == null) {
       return;
     }
 
-    final coordinates = maplibre.LatLng(position.latitude, position.longitude);
+    final coordinates = maplibre.LatLng(visualLat, visualLon);
     final heading = _headingForPosition(position);
 
     final existingOuter = _currentOuterCircle;
@@ -1871,18 +2036,19 @@ class _DriveScreenState extends State<DriveScreen> {
     });
   }
 
-  Future<void> _followPosition(Position position) async {
+  Future<void> _followPosition(double lat, double lon) async {
     final controller = _controller;
     if (controller == null) {
       return;
     }
 
+    // Direct camera move or extremely short animation to avoid stacking and lag
     await controller.animateCamera(
       maplibre.CameraUpdate.newLatLngZoom(
-        maplibre.LatLng(position.latitude, position.longitude),
+        maplibre.LatLng(lat, lon),
         16,
       ),
-      duration: const Duration(milliseconds: 450),
+      duration: const Duration(milliseconds: 150),
     );
   }
 
@@ -1898,9 +2064,8 @@ class _DriveScreenState extends State<DriveScreen> {
       _followLocation = true;
     });
 
-    final position = _lastPosition;
-    if (position != null) {
-      _followPosition(position);
+    if (_lastVisualLat != null && _lastVisualLon != null) {
+      _followPosition(_lastVisualLat!, _lastVisualLon!);
     } else {
       _fitNavigationCameraToRoute();
     }
@@ -1908,10 +2073,12 @@ class _DriveScreenState extends State<DriveScreen> {
 
   double _headingForPosition(Position position) {
     double? candidate;
-    if (_speedMps > 0.8 && position.heading.isFinite && position.heading >= 0) {
+    // 1. GPS heading if available and valid
+    if (_speedMps > 0.8 && position.heading.isFinite && position.heading >= 0 && position.heading <= 360) {
       candidate = position.heading;
     }
 
+    // 2. Movement bearing between previous and current if distance > 3m
     final previous = _previousPosition;
     if (candidate == null && previous != null) {
       final movementMeters = haversineDistanceMeters(
@@ -1920,7 +2087,7 @@ class _DriveScreenState extends State<DriveScreen> {
         position.latitude,
         position.longitude,
       );
-      if (movementMeters >= 4) {
+      if (movementMeters >= 3.0) {
         candidate = bearingDegrees(
           previous.latitude,
           previous.longitude,
@@ -1930,6 +2097,7 @@ class _DriveScreenState extends State<DriveScreen> {
       }
     }
 
+    // 3. Nearest route segment bearing
     if (candidate == null &&
         _lastMatchedIndex >= 0 &&
         _lastMatchedIndex < widget.routePoints.length) {
@@ -1939,9 +2107,12 @@ class _DriveScreenState extends State<DriveScreen> {
       }
     }
 
+    // 4. Last good heading is candidate ?? _lastGoodHeading
     if (candidate != null) {
-      _lastGoodHeading = smoothHeading(_lastGoodHeading, candidate, 0.35);
-      return _lastGoodHeading;
+      // if stopped/very slow, keep last good heading
+      if (_speedMps > 0.3) {
+        _lastGoodHeading = smoothHeading(_lastGoodHeading, candidate, 0.4);
+      }
     }
     return _lastGoodHeading;
   }
@@ -2034,10 +2205,15 @@ class _PlannerStatusChip extends StatelessWidget {
 }
 
 class _SpeedCard extends StatelessWidget {
-  const _SpeedCard({required this.speedMps, required this.speedLimit});
+  const _SpeedCard({
+    required this.speedMps,
+    required this.speedLimit,
+    required this.gpsWeak,
+  });
 
   final double speedMps;
   final SpeedLimitSegment? speedLimit;
+  final bool gpsWeak;
 
   @override
   Widget build(BuildContext context) {
@@ -2086,6 +2262,24 @@ class _SpeedCard extends StatelessWidget {
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),
+              if (gpsWeak) ...[
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.gps_off, size: 12, color: Colors.orange),
+                    const SizedBox(width: 4),
+                    Text(
+                      'GPS WEAK',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange[800],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -2153,10 +2347,32 @@ class _CalloutRow extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 2),
-              Text(
-                distanceMeters == null
-                    ? 'Route complete'
-                    : '${_formatDistance(distanceMeters!)} to callout',
+              Row(
+                children: [
+                  Text(
+                    distanceMeters == null
+                        ? 'Route complete'
+                        : '${_formatDistance(distanceMeters!)} to callout',
+                  ),
+                  if (note != null && note.recommendedSpeedKmh != null) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Suggested ${note.recommendedSpeedKmh}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
@@ -2181,7 +2397,7 @@ class _CalloutBadge extends StatelessWidget {
       PaceNoteType.junction => Icons.turn_right,
       PaceNoteType.hairpin => Icons.warning_amber_rounded,
       PaceNoteType.warning => Icons.warning_rounded,
-      PaceNoteType.corner => null,
+      PaceNoteType.corner => note.direction == 'straight' ? Icons.straight : null,
     };
 
     return Container(
@@ -2351,6 +2567,9 @@ String colorForPaceNoteSeverity(int severity) {
 }
 
 String colorForPaceNote(PaceNote note) {
+  if (note.direction == 'straight') {
+    return '#9E9E9E';
+  }
   return switch (note.type) {
     PaceNoteType.roundabout => '#7E57C2',
     PaceNoteType.junction => '#03A9F4',
@@ -2366,6 +2585,9 @@ double smoothHeading(double previous, double next, double factor) {
 }
 
 String shortCalloutLabel(PaceNote note) {
+  if (note.direction == 'straight') {
+    return 'STR';
+  }
   if (note.type == PaceNoteType.roundabout) {
     return 'RAB';
   }

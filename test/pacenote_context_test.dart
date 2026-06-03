@@ -3,6 +3,7 @@ import 'package:ralroads/main.dart';
 import 'package:ralroads/models/pace_note.dart';
 import 'package:ralroads/models/road_warning.dart';
 import 'package:ralroads/models/route_point.dart';
+import 'package:ralroads/models/speed_limit_segment.dart';
 import 'package:ralroads/services/pacenote_generator.dart';
 
 void main() {
@@ -81,5 +82,91 @@ void main() {
 
     expect(refined.single.type, PaceNoteType.hairpin);
     expect(refined.single.text, 'Hairpin left');
+  });
+
+  test('junction warning converts curve to junction turn', () {
+    final generator = PacenoteGenerator();
+    final notes = [
+      const PaceNote(
+        id: 'n1',
+        distanceFromStart: 50,
+        direction: 'left',
+        severity: 3,
+        type: PaceNoteType.corner,
+        text: 'left 3',
+      ),
+    ];
+
+    final refined = generator.refinePacenotesWithRoadContext(
+      notes: notes,
+      routePoints: const [
+        RoutePoint(lat: 45, lon: 7, distanceFromStart: 0, heading: 0),
+        RoutePoint(lat: 45.0005, lon: 7.0005, distanceFromStart: 60, heading: 45),
+      ],
+      warnings: const [
+        RoadWarning(
+          id: 'w1',
+          type: RoadWarningType.stopSign,
+          lat: 45.00045,
+          lon: 7.00045,
+          distanceFromStart: 52,
+          text: 'Stop Sign',
+        ),
+      ],
+      speedLimits: const [],
+    );
+
+    expect(refined.single.type, PaceNoteType.junction);
+    expect(refined.single.text, 'At junction, left');
+  });
+
+  test('straight pacenote is generated for long segments', () {
+    final generator = PacenoteGenerator();
+    // Create points representing a straight line of ~150 meters
+    final points = <RoutePoint>[];
+    for (var i = 0; i < 20; i++) {
+      points.add(RoutePoint(lat: 45.0 + i * 0.0001, lon: 7.0));
+    }
+
+    final notes = generator.generate(points);
+    final straightNotes = notes.where((n) => n.direction == 'straight').toList();
+    expect(straightNotes.isNotEmpty, isTrue);
+    expect(straightNotes.first.text, contains('straight'));
+  });
+
+  test('advisory speed is capped by speed limit', () {
+    final generator = PacenoteGenerator();
+    final notes = [
+      const PaceNote(
+        id: 'n1',
+        distanceFromStart: 50,
+        direction: 'right',
+        severity: 5, // typically 75 km/h
+        type: PaceNoteType.corner,
+        text: 'right 5',
+        recommendedSpeedKmh: 75,
+      ),
+    ];
+
+    // Cap with speed limit segment of 50 km/h
+    final refined = generator.refinePacenotesWithRoadContext(
+      notes: notes,
+      routePoints: const [
+        RoutePoint(lat: 45, lon: 7, distanceFromStart: 0, heading: 0),
+        RoutePoint(lat: 45.0005, lon: 7.0005, distanceFromStart: 60, heading: 45),
+      ],
+      warnings: const [],
+      speedLimits: const [
+        SpeedLimitSegment(
+          id: 's1',
+          startDistance: 0,
+          endDistance: 100,
+          rawMaxspeed: '50',
+          parsedKmh: 50,
+        ),
+      ],
+    );
+
+    expect(refined.single.recommendedSpeedKmh, equals(50));
   });
 }

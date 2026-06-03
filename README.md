@@ -20,12 +20,15 @@ The app is built for enthusiasts who want more context than a simple blue line: 
 
 - Interactive route planning with start, destination, and waypoint selection
 - Live MapLibre navigation map using OpenFreeMap styling
-- Current GPS position with a driving marker and follow mode
-- Rally-style pacenotes and spoken TTS callouts
+- Smooth, responsive GPS position tracking with coordinate interpolation, movement fallback speed estimation, and outlier jump filtering
+- "GPS Weak" notification badge displayed automatically when accuracy degrades
+- Keeps the screen awake during active navigation using a lifecycle-aware wakelock
+- Continuous rally-style pacenote generation with geometry densification (curves, straights, opens/tightens) and recommended advisory speeds
+- Intelligent TTS callout grouping using "into" linking to prevent overlapping and improve pacing
 - Color-coded route danger zones for tighter or more important callouts
 - Current speed and current speed limit display
 - OpenStreetMap/Overpass road warnings and road metadata
-- Speed bumps, traffic lights, stop/give-way signs, surface changes, tunnels, bridges, and roundabouts
+- Speed bumps, traffic lights, stop/give-way signs, surface changes, tunnels, bridges, and roundabouts with conservative geometry detection
 - Optional speed camera warnings, disabled by default
 - Saved routes with local storage
 - Route renaming without losing geometry, pacenotes, warnings, or speed-limit data

@@ -11,6 +11,7 @@ class PaceNote {
     this.tightens = false,
     this.opens = false,
     this.spoken = false,
+    this.recommendedSpeedKmh,
   });
 
   final String id;
@@ -22,6 +23,7 @@ class PaceNote {
   final bool opens;
   final String text;
   final bool spoken;
+  final int? recommendedSpeedKmh;
 
   PaceNote copyWith({
     String? id,
@@ -33,6 +35,7 @@ class PaceNote {
     bool? opens,
     String? text,
     bool? spoken,
+    int? recommendedSpeedKmh,
   }) {
     return PaceNote(
       id: id ?? this.id,
@@ -44,6 +47,7 @@ class PaceNote {
       opens: opens ?? this.opens,
       text: text ?? this.text,
       spoken: spoken ?? this.spoken,
+      recommendedSpeedKmh: recommendedSpeedKmh ?? this.recommendedSpeedKmh,
     );
   }
 
@@ -58,6 +62,7 @@ class PaceNote {
       'opens': opens,
       'text': text,
       'spoken': spoken,
+      'recommendedSpeedKmh': recommendedSpeedKmh,
     };
   }
 
@@ -76,6 +81,9 @@ class PaceNote {
       opens: json['opens'] as bool? ?? false,
       text: json['text'] as String,
       spoken: json['spoken'] as bool? ?? false,
+      recommendedSpeedKmh: json['recommendedSpeedKmh'] != null
+          ? (json['recommendedSpeedKmh'] as num).toInt()
+          : null,
     );
   }
 }
