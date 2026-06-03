@@ -96,11 +96,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Image.asset(
                       'assets/branding/ralroads_logo.png',
-                      width: 160,
-                      height: 160,
+                      width: 204,
+                      height: 204,
                       fit: BoxFit.contain,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     Text(
                       'RalRoads',
                       textAlign: TextAlign.center,
@@ -256,32 +256,62 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
             child: SafeArea(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(8),
+                  color: Theme.of(context).colorScheme.surface.withAlpha(242),
+                  borderRadius: BorderRadius.circular(24),
                   boxShadow: const [
                     BoxShadow(
-                      blurRadius: 12,
+                      blurRadius: 18,
                       color: Colors.black26,
-                      offset: Offset(0, 4),
+                      offset: Offset(0, 8),
                     ),
                   ],
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        '${_selectedPoints.length} point${_selectedPoints.length == 1 ? '' : 's'} selected',
-                        style: Theme.of(context).textTheme.titleMedium,
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.route,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${_selectedPoints.length} point${_selectedPoints.length == 1 ? '' : 's'} selected',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Start ${_selectedPoints.isNotEmpty ? 'selected' : 'not selected'} • Destination ${hasEnoughPoints ? 'selected' : 'not selected'} • $waypointCount waypoint${waypointCount == 1 ? '' : 's'}',
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 6,
+                        children: [
+                          _PlannerStatusChip(
+                            icon: Icons.flag,
+                            label: 'Start',
+                            selected: _selectedPoints.isNotEmpty,
+                          ),
+                          _PlannerStatusChip(
+                            icon: Icons.place,
+                            label: 'Destination',
+                            selected: hasEnoughPoints,
+                          ),
+                          _PlannerStatusChip(
+                            icon: Icons.more_horiz,
+                            label:
+                                '$waypointCount waypoint${waypointCount == 1 ? '' : 's'}',
+                            selected: waypointCount > 0,
+                          ),
+                        ],
                       ),
                       if (_error != null) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
                         Text(
                           _error!,
                           style: TextStyle(
@@ -289,7 +319,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                           ),
                         ),
                       ],
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
                       Row(
                         children: [
                           Expanded(
@@ -353,10 +383,11 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       lon: coordinates.longitude,
     );
     final nextIndex = _selectedPoints.length;
+    final isWaypoint = nextIndex >= 2;
     final circle = await controller.addCircle(
       maplibre.CircleOptions(
         geometry: coordinates,
-        circleRadius: nextIndex < 2 ? 9 : 7,
+        circleRadius: isWaypoint ? 10 : 9,
         circleColor: _pinColorForIndex(nextIndex),
         circleStrokeColor: '#FFFFFF',
         circleStrokeWidth: 2,
@@ -367,12 +398,12 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       maplibre.SymbolOptions(
         geometry: coordinates,
         textField: _pinLabelForIndex(nextIndex),
-        textSize: nextIndex < 2 ? 13 : 12,
-        textColor: '#FFFFFF',
-        textHaloColor: '#263238',
-        textHaloWidth: 2,
-        textAnchor: 'top',
-        textOffset: const Offset(0, 1.25),
+        textSize: isWaypoint ? 14 : 13,
+        textColor: isWaypoint ? '#212121' : '#FFFFFF',
+        textHaloColor: isWaypoint ? '#FFFFFF' : '#263238',
+        textHaloWidth: isWaypoint ? 1 : 2,
+        textAnchor: isWaypoint ? 'center' : 'top',
+        textOffset: isWaypoint ? Offset.zero : const Offset(0, 1.25),
         zIndex: 10 + nextIndex,
       ),
     );
@@ -423,7 +454,9 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     });
 
     try {
-      final routePoints = await _orsService.buildRoute(_selectedPoints);
+      final orderedPoints = _orderedRoutePlanPoints();
+      _debugLogRouteOrder(orderedPoints);
+      final routePoints = await _orsService.buildRoute(orderedPoints);
       final pacenotes = _pacenoteGenerator.generate(routePoints);
       await _drawRoute(routePoints);
       await _fitCameraToRoute(routePoints);
@@ -471,6 +504,36 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
         });
       }
     }
+  }
+
+  List<RoutePoint> _orderedRoutePlanPoints() {
+    if (_selectedPoints.length <= 2) {
+      return List<RoutePoint>.from(_selectedPoints);
+    }
+
+    return [
+      _selectedPoints.first,
+      ..._selectedPoints.skip(2),
+      _selectedPoints[1],
+    ];
+  }
+
+  void _debugLogRouteOrder(List<RoutePoint> points) {
+    assert(() {
+      // ignore: avoid_print
+      print('Routing order:');
+      for (var i = 0; i < points.length; i++) {
+        final label = i == 0
+            ? 'Start'
+            : i == points.length - 1
+            ? 'Destination'
+            : 'Stop $i';
+        final point = points[i];
+        // ignore: avoid_print
+        print('${i + 1} $label: ${point.lat}, ${point.lon}');
+      }
+      return true;
+    }());
   }
 
   Future<void> _showMissingKeyPrompt() async {
@@ -1011,10 +1074,34 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
                     '${_formatDate(route.createdAt)} • ${_formatDistance(route.totalDistance)} • ${route.pacenotes.length} notes',
                   ),
                   leading: const Icon(Icons.route),
-                  trailing: IconButton(
-                    tooltip: 'Delete route',
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => _deleteRoute(route),
+                  trailing: PopupMenuButton<_SavedRouteAction>(
+                    tooltip: 'Route actions',
+                    onSelected: (action) {
+                      switch (action) {
+                        case _SavedRouteAction.rename:
+                          _renameRoute(route);
+                        case _SavedRouteAction.delete:
+                          _deleteRoute(route);
+                      }
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: _SavedRouteAction.rename,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.edit),
+                          title: Text('Rename'),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: _SavedRouteAction.delete,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.delete_outline),
+                          title: Text('Delete'),
+                        ),
+                      ),
+                    ],
                   ),
                   onTap: () {
                     Navigator.of(context).push(
@@ -1043,7 +1130,84 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
       _routes = widget.storage.getRoutes();
     });
   }
+
+  Future<void> _renameRoute(SavedRoute route) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final controller = TextEditingController(text: route.name);
+    String? errorText;
+    String? newName;
+    try {
+      newName = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) {
+          void submit(StateSetter setDialogState) {
+            final candidate = controller.text.trim();
+            if (candidate.isEmpty) {
+              setDialogState(() {
+                errorText = 'Enter a route name';
+              });
+              return;
+            }
+            Navigator.of(dialogContext).pop(candidate);
+          }
+
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                title: const Text('Rename route'),
+                content: TextField(
+                  controller: controller,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: 'Route name',
+                    errorText: errorText,
+                  ),
+                  textInputAction: TextInputAction.done,
+                  onChanged: (_) {
+                    if (errorText == null) {
+                      return;
+                    }
+                    setDialogState(() {
+                      errorText = null;
+                    });
+                  },
+                  onSubmitted: (_) => submit(setDialogState),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: () => submit(setDialogState),
+                    child: const Text('Save'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
+
+    if (newName == null || newName.isEmpty) {
+      return;
+    }
+
+    await widget.storage.renameRoute(route.id, newName);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _routes = widget.storage.getRoutes();
+    });
+    messenger.showSnackBar(const SnackBar(content: Text('Route renamed')));
+  }
 }
+
+enum _SavedRouteAction { rename, delete }
 
 class DriveScreen extends StatefulWidget {
   const DriveScreen({
@@ -1092,7 +1256,6 @@ class _DriveScreenState extends State<DriveScreen> {
   bool _voiceEnabled = true;
   bool _followLocation = true;
   bool _staticMapDrawn = false;
-  PaceNote? _lastSpokenNote;
   double _lastGoodHeading = 0;
 
   PaceNote? get _nextNote {
@@ -1197,24 +1360,50 @@ class _DriveScreenState extends State<DriveScreen> {
           Positioned(
             top: 12,
             left: 12,
+            child: SafeArea(
+              child: FloatingActionButton.small(
+                heroTag: 'drive-back',
+                tooltip: 'Back',
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Icon(Icons.arrow_back),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 12,
+            left: 72,
+            child: SafeArea(
+              child: _SpeedCard(speedMps: _speedMps, speedLimit: currentLimit),
+            ),
+          ),
+          Positioned(
+            top: 12,
             right: 12,
             child: SafeArea(
-              child: Row(
+              child: Column(
                 children: [
-                  FloatingActionButton.small(
-                    heroTag: 'drive-back',
-                    tooltip: 'Back',
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Icon(Icons.arrow_back),
-                  ),
-                  const Spacer(),
-                  FloatingActionButton.small(
+                  _DriveRoundButton(
                     heroTag: 'drive-follow',
                     tooltip: _followLocation ? 'Disable follow' : 'Recenter',
+                    icon: _followLocation ? Icons.gps_fixed : Icons.my_location,
+                    active: _followLocation,
                     onPressed: _toggleFollowMode,
-                    child: Icon(
-                      _followLocation ? Icons.gps_fixed : Icons.my_location,
-                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _DriveRoundButton(
+                    heroTag: 'drive-voice',
+                    tooltip: _voiceEnabled ? 'Pause voice' : 'Resume voice',
+                    icon: _voiceEnabled ? Icons.volume_up : Icons.volume_off,
+                    active: _voiceEnabled,
+                    onPressed: _toggleVoice,
+                  ),
+                  const SizedBox(height: 10),
+                  _DriveRoundButton(
+                    heroTag: 'drive-reset',
+                    tooltip: 'Reset callouts',
+                    icon: Icons.restart_alt,
+                    active: false,
+                    onPressed: _resetNotes,
                   ),
                 ],
               ),
@@ -1227,8 +1416,8 @@ class _DriveScreenState extends State<DriveScreen> {
             child: SafeArea(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface.withAlpha(235),
-                  borderRadius: BorderRadius.circular(8),
+                  color: Theme.of(context).colorScheme.surface.withAlpha(238),
+                  borderRadius: BorderRadius.circular(20),
                   boxShadow: const [
                     BoxShadow(
                       blurRadius: 14,
@@ -1262,72 +1451,17 @@ class _DriveScreenState extends State<DriveScreen> {
                         ),
                         const SizedBox(height: 8),
                       ],
-                      Text(
-                        _lastSpokenNote == null
-                            ? 'Current callout: none'
-                            : 'Current callout: ${_lastSpokenNote!.text}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      _CalloutRow(
+                        note: nextNote,
+                        distanceMeters: distanceToNote,
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        nextNote?.text ?? 'No upcoming callouts',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              distanceToNote == null
-                                  ? 'Route complete'
-                                  : '${_formatDistance(distanceToNote)} to callout',
-                            ),
-                          ),
-                          Text(_formatSpeed(_speedMps)),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text('Limit: ${formatSpeedLimitSegment(currentLimit)}'),
-                      Text(
-                        nextWarning == null
-                            ? 'Next warning: none'
-                            : 'Next warning: ${nextWarning.text} in ${_formatDistance(distanceToWarning!)}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'RalRoads is only an assistance tool. Always follow traffic laws and road conditions.',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _resetNotes,
-                              icon: const Icon(Icons.restart_alt),
-                              label: const Text('Reset'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: _toggleVoice,
-                              icon: Icon(
-                                _voiceEnabled
-                                    ? Icons.volume_up
-                                    : Icons.volume_off,
-                              ),
-                              label: Text(_voiceEnabled ? 'Pause' : 'Resume'),
-                            ),
-                          ),
-                        ],
-                      ),
+                      if (nextWarning != null && distanceToWarning != null) ...[
+                        const SizedBox(height: 10),
+                        _WarningRow(
+                          warning: nextWarning,
+                          distanceMeters: distanceToWarning,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1432,7 +1566,6 @@ class _DriveScreenState extends State<DriveScreen> {
     _voice.speak(note.text);
     setState(() {
       _notes[noteIndex] = note.copyWith(spoken: true);
-      _lastSpokenNote = note;
     });
   }
 
@@ -1440,7 +1573,6 @@ class _DriveScreenState extends State<DriveScreen> {
     setState(() {
       _notes = _notes.map((note) => note.copyWith(spoken: false)).toList();
       _lastMatchedIndex = 0;
-      _lastSpokenNote = null;
     });
   }
 
@@ -1821,6 +1953,234 @@ class _SummaryRow extends StatelessWidget {
   }
 }
 
+class _PlannerStatusChip extends StatelessWidget {
+  const _PlannerStatusChip({
+    required this.icon,
+    required this.label,
+    required this.selected,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Chip(
+      avatar: Icon(
+        icon,
+        size: 16,
+        color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+      ),
+      label: Text(label),
+      visualDensity: VisualDensity.compact,
+      backgroundColor: selected
+          ? colorScheme.primaryContainer.withAlpha(170)
+          : colorScheme.surfaceContainerHighest.withAlpha(150),
+      side: BorderSide(color: colorScheme.outlineVariant),
+    );
+  }
+}
+
+class _SpeedCard extends StatelessWidget {
+  const _SpeedCard({required this.speedMps, required this.speedLimit});
+
+  final double speedMps;
+  final SpeedLimitSegment? speedLimit;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 108, maxWidth: 132),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colorScheme.surface.withAlpha(238),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(
+              blurRadius: 12,
+              color: Colors.black26,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  formatCurrentSpeed(speedMps),
+                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    height: 0.95,
+                  ),
+                ),
+              ),
+              Text(
+                'km/h',
+                maxLines: 1,
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Limit ${formatSpeedLimitSegment(speedLimit)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DriveRoundButton extends StatelessWidget {
+  const _DriveRoundButton({
+    required this.heroTag,
+    required this.tooltip,
+    required this.icon,
+    required this.active,
+    required this.onPressed,
+  });
+
+  final String heroTag;
+  final String tooltip;
+  final IconData icon;
+  final bool active;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return FloatingActionButton.small(
+      heroTag: heroTag,
+      tooltip: tooltip,
+      backgroundColor: active
+          ? colorScheme.primary
+          : colorScheme.surfaceContainerHighest.withAlpha(235),
+      foregroundColor: active
+          ? colorScheme.onPrimary
+          : colorScheme.onSurfaceVariant,
+      onPressed: onPressed,
+      child: Icon(icon),
+    );
+  }
+}
+
+class _CalloutRow extends StatelessWidget {
+  const _CalloutRow({required this.note, required this.distanceMeters});
+
+  final PaceNote? note;
+  final double? distanceMeters;
+
+  @override
+  Widget build(BuildContext context) {
+    final note = this.note;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (note != null) _CalloutBadge(note: note),
+        if (note != null) const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                note?.text ?? 'No more callouts',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                distanceMeters == null
+                    ? 'Route complete'
+                    : '${_formatDistance(distanceMeters!)} to callout',
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CalloutBadge extends StatelessWidget {
+  const _CalloutBadge({required this.note});
+
+  final PaceNote note;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Color(
+      int.parse(colorForPaceNote(note).substring(1), radix: 16) + 0xFF000000,
+    );
+    final icon = switch (note.type) {
+      PaceNoteType.roundabout => Icons.roundabout_right,
+      PaceNoteType.junction => Icons.turn_right,
+      PaceNoteType.hairpin => Icons.warning_amber_rounded,
+      PaceNoteType.warning => Icons.warning_rounded,
+      PaceNoteType.corner => null,
+    };
+
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      alignment: Alignment.center,
+      child: icon == null
+          ? Text(
+              '${note.severity}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            )
+          : Icon(icon, color: Colors.white, size: 22),
+    );
+  }
+}
+
+class _WarningRow extends StatelessWidget {
+  const _WarningRow({required this.warning, required this.distanceMeters});
+
+  final RoadWarning warning;
+  final double distanceMeters;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(
+          iconForRoadWarning(warning.type),
+          color: colorScheme.primary,
+          size: 22,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            '${warning.text} in ${_formatDistance(distanceMeters)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 maplibre.LatLngBounds routeBoundsFromPoints(List<RoutePoint> points) {
   var minLat = points.first.lat;
   var maxLat = points.first.lat;
@@ -1984,7 +2344,7 @@ String formatSpeedLimitSegment(SpeedLimitSegment? segment) {
     return '—';
   }
   if (segment.parsedKmh != null) {
-    return '${segment.parsedKmh} km/h';
+    return '${segment.parsedKmh}';
   }
   return segment.rawMaxspeed;
 }
@@ -2056,8 +2416,12 @@ String _formatDistance(double meters) {
   return '${meters.round()} m';
 }
 
-String _formatSpeed(double metersPerSecond) {
+String formatSpeed(double metersPerSecond) {
   return '${(metersPerSecond * 3.6).toStringAsFixed(0)} km/h';
+}
+
+String formatCurrentSpeed(double metersPerSecond) {
+  return (metersPerSecond * 3.6).round().toString();
 }
 
 String _formatDate(DateTime date) {

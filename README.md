@@ -38,8 +38,10 @@ current-location marker when available.
 
 Drive mode is map-based: it displays the route, updates the current position
 marker, highlights color-coded pacenote danger zones, shows road warning
-markers, displays the current speed limit when known, and keeps spoken callouts
-with compact navigation controls on top of the map.
+markers, displays a readable current speed/speed-limit card, and keeps spoken
+callouts with compact navigation controls on top of the map. The driving UI is
+map-focused with a clear follow-mode button plus icon-based callouts and
+upcoming warnings.
 
 ## Road Warnings
 
@@ -52,6 +54,9 @@ restricted in some countries and are disabled by default. Enable them only where
 legal in Settings.
 
 Warnings are loaded once per planned route and saved locally with saved routes.
+
+Saved routes can be renamed from the Saved Routes screen without losing route
+geometry, pacenotes, warnings, or speed-limit data.
 
 ## Developer Mode
 

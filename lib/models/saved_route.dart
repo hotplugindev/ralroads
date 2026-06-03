@@ -24,6 +24,28 @@ class SavedRoute {
   final List<RoadWarning> roadWarnings;
   final List<SpeedLimitSegment> speedLimitSegments;
 
+  SavedRoute copyWith({
+    String? id,
+    String? name,
+    DateTime? createdAt,
+    double? totalDistance,
+    List<RoutePoint>? points,
+    List<PaceNote>? pacenotes,
+    List<RoadWarning>? roadWarnings,
+    List<SpeedLimitSegment>? speedLimitSegments,
+  }) {
+    return SavedRoute(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      createdAt: createdAt ?? this.createdAt,
+      totalDistance: totalDistance ?? this.totalDistance,
+      points: points ?? this.points,
+      pacenotes: pacenotes ?? this.pacenotes,
+      roadWarnings: roadWarnings ?? this.roadWarnings,
+      speedLimitSegments: speedLimitSegments ?? this.speedLimitSegments,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

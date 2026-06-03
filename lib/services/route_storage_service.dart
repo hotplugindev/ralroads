@@ -17,6 +17,14 @@ class RouteStorageService {
     await _box.put(route.id, route.toJson());
   }
 
+  Future<void> renameRoute(String id, String newName) async {
+    final route = getRoute(id);
+    if (route == null) {
+      return;
+    }
+    await saveRoute(route.copyWith(name: newName));
+  }
+
   List<SavedRoute> getRoutes() {
     return _box.values
         .whereType<Map<dynamic, dynamic>>()
