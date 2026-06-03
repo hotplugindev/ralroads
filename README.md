@@ -37,8 +37,21 @@ permission, moves the map to the current GPS location, and shows a blue
 current-location marker when available.
 
 Drive mode is map-based: it displays the route, updates the current position
-marker, highlights color-coded pacenote danger zones, and keeps spoken callouts
+marker, highlights color-coded pacenote danger zones, shows road warning
+markers, displays the current speed limit when known, and keeps spoken callouts
 with compact navigation controls on top of the map.
+
+## Road Warnings
+
+RalRoads uses OpenStreetMap/Overpass best-effort data to enrich planned routes.
+It can show speed limits, speed bumps, traffic lights, stop/give-way signs,
+surface changes, tunnels, bridges, roundabouts, and optionally speed cameras.
+
+OpenStreetMap data may be incomplete or outdated. Speed camera warnings may be
+restricted in some countries and are disabled by default. Enable them only where
+legal in Settings.
+
+Warnings are loaded once per planned route and saved locally with saved routes.
 
 ## Developer Mode
 

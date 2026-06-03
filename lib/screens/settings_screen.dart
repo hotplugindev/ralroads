@@ -130,6 +130,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ],
+          const SizedBox(height: 32),
+          Text('Road warnings', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Show speed limits'),
+            value: widget.settings.showSpeedLimits,
+            onChanged: (value) => _setWarningSetting(
+              () => widget.settings.setShowSpeedLimits(value),
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Show traffic lights'),
+            value: widget.settings.showTrafficLights,
+            onChanged: (value) => _setWarningSetting(
+              () => widget.settings.setShowTrafficLights(value),
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Show stop/give-way signs'),
+            value: widget.settings.showStopGiveWay,
+            onChanged: (value) => _setWarningSetting(
+              () => widget.settings.setShowStopGiveWay(value),
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Show speed bumps'),
+            value: widget.settings.showSpeedBumps,
+            onChanged: (value) => _setWarningSetting(
+              () => widget.settings.setShowSpeedBumps(value),
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Show surface, tunnel, bridge, and roundabout warnings',
+            ),
+            value: widget.settings.showRoadFeatures,
+            onChanged: (value) => _setWarningSetting(
+              () => widget.settings.setShowRoadFeatures(value),
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Show speed camera warnings'),
+            subtitle: const Text(
+              'Speed camera warnings may be restricted in some countries. Use only where legal.',
+            ),
+            value: widget.settings.showSpeedCameras,
+            onChanged: (value) => _setWarningSetting(
+              () => widget.settings.setShowSpeedCameras(value),
+            ),
+          ),
         ],
       ),
     );
@@ -192,5 +248,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ? 'API key saved'
               : 'No API key saved');
     });
+  }
+
+  Future<void> _setWarningSetting(Future<void> Function() update) async {
+    await update();
+    if (mounted) {
+      setState(() {});
+    }
   }
 }

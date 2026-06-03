@@ -6,15 +6,19 @@ import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
 
 import 'models/pace_note.dart';
+import 'models/road_warning.dart';
 import 'models/route_point.dart';
 import 'models/saved_route.dart';
+import 'models/speed_limit_segment.dart';
 import 'screens/settings_screen.dart';
 import 'services/gps_route_matcher.dart';
 import 'services/ors_service.dart';
+import 'services/overpass_service.dart';
 import 'services/pacenote_generator.dart';
 import 'services/route_storage_service.dart';
 import 'services/settings_service.dart';
 import 'services/voice_service.dart';
+import 'utils/geo_math.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,71 +82,78 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Image.asset(
-                  'assets/branding/ralroads_logo.png',
-                  width: 160,
-                  height: 160,
-                  fit: BoxFit.contain,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Image.asset(
+                      'assets/branding/ralroads_logo.png',
+                      width: 160,
+                      height: 160,
+                      fit: BoxFit.contain,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'RalRoads',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.displaySmall,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      planningReady
+                          ? 'Online route planning ready'
+                          : 'Add an OpenRouteService API key to enable online route planning',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 40),
+                    FilledButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => MapPlannerScreen(
+                              storage: widget.storage,
+                              settings: widget.settings,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.add_road),
+                      label: const Text('Plan Route'),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => SavedRoutesScreen(
+                              storage: widget.storage,
+                              settings: widget.settings,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.bookmarks),
+                      label: const Text('Saved Routes'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton.icon(
+                      onPressed: _openSettings,
+                      icon: const Icon(Icons.settings),
+                      label: const Text('Settings'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'RalRoads',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.displaySmall,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  planningReady
-                      ? 'Online route planning ready'
-                      : 'Add an OpenRouteService API key to enable online route planning',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 40),
-                FilledButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => MapPlannerScreen(
-                          storage: widget.storage,
-                          settings: widget.settings,
-                        ),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.add_road),
-                  label: const Text('Plan Route'),
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) =>
-                            SavedRoutesScreen(storage: widget.storage),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.bookmarks),
-                  label: const Text('Saved Routes'),
-                ),
-                const SizedBox(height: 12),
-                TextButton.icon(
-                  onPressed: _openSettings,
-                  icon: const Icon(Icons.settings),
-                  label: const Text('Settings'),
-                ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -424,6 +435,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
         MaterialPageRoute<void>(
           builder: (_) => RoutePreviewScreen(
             storage: widget.storage,
+            settings: widget.settings,
             points: routePoints,
             pacenotes: pacenotes,
           ),
@@ -704,9 +716,10 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   }
 }
 
-class RoutePreviewScreen extends StatelessWidget {
+class RoutePreviewScreen extends StatefulWidget {
   const RoutePreviewScreen({
     required this.storage,
+    required this.settings,
     required this.points,
     required this.pacenotes,
     this.savedRoute,
@@ -714,16 +727,55 @@ class RoutePreviewScreen extends StatelessWidget {
   });
 
   final RouteStorageService storage;
+  final SettingsService settings;
   final List<RoutePoint> points;
   final List<PaceNote> pacenotes;
   final SavedRoute? savedRoute;
 
+  @override
+  State<RoutePreviewScreen> createState() => _RoutePreviewScreenState();
+}
+
+class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
+  final _overpassService = OverpassService();
+  final _pacenoteGenerator = PacenoteGenerator();
+  late List<PaceNote> _pacenotes;
+  late List<RoadWarning> _roadWarnings;
+  late List<SpeedLimitSegment> _speedLimitSegments;
+  bool _roadInfoLoading = false;
+  bool _roadInfoFailed = false;
+
   double get _totalDistance =>
-      points.isEmpty ? 0 : points.last.distanceFromStart;
+      widget.points.isEmpty ? 0 : widget.points.last.distanceFromStart;
+
+  List<RoadWarning> get _visibleRoadWarnings =>
+      filterRoadWarnings(_roadWarnings, widget.settings);
+
+  List<SpeedLimitSegment> get _visibleSpeedLimitSegments =>
+      widget.settings.showSpeedLimits ? _speedLimitSegments : const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _pacenotes = widget.pacenotes;
+    _roadWarnings = widget.savedRoute?.roadWarnings ?? const [];
+    _speedLimitSegments = widget.savedRoute?.speedLimitSegments ?? const [];
+    if (_roadWarnings.isNotEmpty || _speedLimitSegments.isNotEmpty) {
+      _pacenotes = _pacenoteGenerator.refinePacenotesWithRoadContext(
+        notes: _pacenotes,
+        routePoints: widget.points,
+        warnings: _roadWarnings,
+        speedLimits: _speedLimitSegments,
+      );
+    }
+    if (widget.savedRoute == null && widget.points.length >= 2) {
+      _loadRoadInformation();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final routeName = savedRoute?.name ?? 'Route preview';
+    final routeName = widget.savedRoute?.name ?? 'Route preview';
 
     return Scaffold(
       appBar: AppBar(title: Text(routeName)),
@@ -732,8 +784,8 @@ class RoutePreviewScreen extends StatelessWidget {
         children: [
           _SummaryPanel(
             totalDistance: _totalDistance,
-            pointCount: points.length,
-            pacenoteCount: pacenotes.length,
+            pointCount: widget.points.length,
+            pacenoteCount: _pacenotes.length,
           ),
           const SizedBox(height: 16),
           Row(
@@ -744,8 +796,11 @@ class RoutePreviewScreen extends StatelessWidget {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => DriveScreen(
-                          routePoints: points,
-                          pacenotes: pacenotes,
+                          routePoints: widget.points,
+                          pacenotes: _pacenotes,
+                          roadWarnings: _visibleRoadWarnings,
+                          speedLimitSegments: _visibleSpeedLimitSegments,
+                          settings: widget.settings,
                         ),
                       ),
                     );
@@ -767,13 +822,15 @@ class RoutePreviewScreen extends StatelessWidget {
           const SizedBox(height: 24),
           Text('Pacenotes', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
-          if (pacenotes.isEmpty)
+          _buildRoadInformation(context),
+          const SizedBox(height: 24),
+          if (_pacenotes.isEmpty)
             const Text('No notable corners were found for this route.')
           else
-            ...pacenotes.map(
+            ..._pacenotes.map(
               (note) => ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: CircleAvatar(child: Text('${note.severity}')),
+                leading: CircleAvatar(child: Text(shortCalloutLabel(note))),
                 title: Text(note.text),
                 subtitle: Text(_formatDistance(note.distanceFromStart)),
               ),
@@ -783,18 +840,130 @@ class RoutePreviewScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _loadRoadInformation() async {
+    setState(() {
+      _roadInfoLoading = true;
+      _roadInfoFailed = false;
+    });
+
+    try {
+      final enrichment = await _overpassService.enrichRoute(widget.points);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _roadWarnings = enrichment.roadWarnings;
+        _speedLimitSegments = enrichment.speedLimitSegments;
+        _pacenotes = _pacenoteGenerator.refinePacenotesWithRoadContext(
+          notes: widget.pacenotes,
+          routePoints: widget.points,
+          warnings: _roadWarnings,
+          speedLimits: _speedLimitSegments,
+        );
+        _roadInfoLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _roadInfoLoading = false;
+        _roadInfoFailed = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Road warnings could not be loaded.')),
+      );
+    }
+  }
+
+  Widget _buildRoadInformation(BuildContext context) {
+    final visibleWarnings = _visibleRoadWarnings;
+    final visibleSpeedLimits = _visibleSpeedLimitSegments;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 24),
+        Text('Road information', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 8),
+        if (_roadInfoLoading)
+          const ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: SizedBox.square(
+              dimension: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            title: Text('Loading road warnings...'),
+          )
+        else if (_roadInfoFailed)
+          const Text('Road warnings unavailable.')
+        else if (visibleWarnings.isEmpty && visibleSpeedLimits.isEmpty)
+          const Text('No road warnings found for this route.')
+        else ...[
+          Text(_speedLimitSummary(visibleSpeedLimits)),
+          const SizedBox(height: 8),
+          Text(_warningCountSummary(visibleWarnings)),
+          const SizedBox(height: 8),
+          ...visibleWarnings
+              .take(12)
+              .map(
+                (warning) => ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(iconForRoadWarning(warning.type)),
+                  title: Text(warning.text),
+                  subtitle: Text(_formatDistance(warning.distanceFromStart)),
+                ),
+              ),
+        ],
+      ],
+    );
+  }
+
+  String _speedLimitSummary(List<SpeedLimitSegment> segments) {
+    if (segments.isEmpty) {
+      return 'Speed limits: none found';
+    }
+    final values = <String>{};
+    for (final segment in segments) {
+      values.add(
+        segment.parsedKmh == null
+            ? segment.rawMaxspeed
+            : '${segment.parsedKmh} km/h',
+      );
+    }
+    return 'Speed limits: ${values.join(', ')}';
+  }
+
+  String _warningCountSummary(List<RoadWarning> warnings) {
+    final counts = <RoadWarningType, int>{};
+    for (final warning in warnings) {
+      counts[warning.type] = (counts[warning.type] ?? 0) + 1;
+    }
+
+    if (counts.isEmpty) {
+      return 'Warnings: none';
+    }
+
+    return counts.entries
+        .map((entry) => '${labelForRoadWarningType(entry.key)}: ${entry.value}')
+        .join(' • ');
+  }
+
   Future<void> _saveRoute(BuildContext context) async {
     final now = DateTime.now();
     final route = SavedRoute(
-      id: savedRoute?.id ?? now.microsecondsSinceEpoch.toString(),
-      name: savedRoute?.name ?? 'Route ${_formatDate(now)}',
-      createdAt: savedRoute?.createdAt ?? now,
+      id: widget.savedRoute?.id ?? now.microsecondsSinceEpoch.toString(),
+      name: widget.savedRoute?.name ?? 'Route ${_formatDate(now)}',
+      createdAt: widget.savedRoute?.createdAt ?? now,
       totalDistance: _totalDistance,
-      points: points,
-      pacenotes: pacenotes,
+      points: widget.points,
+      pacenotes: _pacenotes,
+      roadWarnings: _roadWarnings,
+      speedLimitSegments: _speedLimitSegments,
     );
 
-    await storage.saveRoute(route);
+    await widget.storage.saveRoute(route);
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
@@ -804,9 +973,14 @@ class RoutePreviewScreen extends StatelessWidget {
 }
 
 class SavedRoutesScreen extends StatefulWidget {
-  const SavedRoutesScreen({required this.storage, super.key});
+  const SavedRoutesScreen({
+    required this.storage,
+    required this.settings,
+    super.key,
+  });
 
   final RouteStorageService storage;
+  final SettingsService settings;
 
   @override
   State<SavedRoutesScreen> createState() => _SavedRoutesScreenState();
@@ -847,6 +1021,7 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
                       MaterialPageRoute<void>(
                         builder: (_) => RoutePreviewScreen(
                           storage: widget.storage,
+                          settings: widget.settings,
                           points: route.points,
                           pacenotes: route.pacenotes,
                           savedRoute: route,
@@ -874,11 +1049,17 @@ class DriveScreen extends StatefulWidget {
   const DriveScreen({
     required this.routePoints,
     required this.pacenotes,
+    required this.roadWarnings,
+    required this.speedLimitSegments,
+    required this.settings,
     super.key,
   });
 
   final List<RoutePoint> routePoints;
   final List<PaceNote> pacenotes;
+  final List<RoadWarning> roadWarnings;
+  final List<SpeedLimitSegment> speedLimitSegments;
+  final SettingsService settings;
 
   @override
   State<DriveScreen> createState() => _DriveScreenState();
@@ -896,10 +1077,13 @@ class _DriveScreenState extends State<DriveScreen> {
   final List<maplibre.Line> _dangerLines = [];
   final List<maplibre.Circle> _noteMarkers = [];
   final List<maplibre.Symbol> _noteLabels = [];
+  final List<maplibre.Circle> _warningMarkers = [];
+  final List<maplibre.Symbol> _warningLabels = [];
   maplibre.Circle? _currentOuterCircle;
   maplibre.Circle? _currentInnerCircle;
   maplibre.Symbol? _currentArrow;
   Position? _lastPosition;
+  Position? _previousPosition;
   int _lastMatchedIndex = 0;
   double _distanceAlongRoute = 0;
   double _distanceFromRoute = 0;
@@ -907,12 +1091,39 @@ class _DriveScreenState extends State<DriveScreen> {
   String? _permissionMessage;
   bool _voiceEnabled = true;
   bool _followLocation = true;
+  bool _staticMapDrawn = false;
   PaceNote? _lastSpokenNote;
+  double _lastGoodHeading = 0;
 
   PaceNote? get _nextNote {
     for (final note in _notes) {
       if (!note.spoken && note.distanceFromStart >= _distanceAlongRoute) {
         return note;
+      }
+    }
+    return null;
+  }
+
+  List<RoadWarning> get _visibleRoadWarnings =>
+      filterRoadWarnings(widget.roadWarnings, widget.settings);
+
+  List<SpeedLimitSegment> get _visibleSpeedLimitSegments =>
+      widget.settings.showSpeedLimits ? widget.speedLimitSegments : const [];
+
+  RoadWarning? get _nextRoadWarning {
+    for (final warning in _visibleRoadWarnings) {
+      if (warning.distanceFromStart >= _distanceAlongRoute) {
+        return warning;
+      }
+    }
+    return null;
+  }
+
+  SpeedLimitSegment? get _currentSpeedLimit {
+    for (final segment in _visibleSpeedLimitSegments) {
+      if (_distanceAlongRoute >= segment.startDistance &&
+          _distanceAlongRoute <= segment.endDistance) {
+        return segment;
       }
     }
     return null;
@@ -938,9 +1149,14 @@ class _DriveScreenState extends State<DriveScreen> {
   @override
   Widget build(BuildContext context) {
     final nextNote = _nextNote;
+    final nextWarning = _nextRoadWarning;
+    final currentLimit = _currentSpeedLimit;
     final distanceToNote = nextNote == null
         ? null
         : math.max(0.0, nextNote.distanceFromStart - _distanceAlongRoute);
+    final distanceToWarning = nextWarning == null
+        ? null
+        : math.max(0.0, nextWarning.distanceFromStart - _distanceAlongRoute);
     final offRoute = _distanceFromRoute > 60 && _lastPosition != null;
 
     return Scaffold(
@@ -952,13 +1168,32 @@ class _DriveScreenState extends State<DriveScreen> {
             myLocationEnabled: false,
             onMapCreated: (controller) {
               _controller = controller;
-              _drawNavigationRoute();
-              final position = _lastPosition;
-              if (position != null) {
-                _updateCurrentLocationMarker(position);
-              }
+            },
+            onStyleLoadedCallback: _drawStaticMapLayers,
+            onCameraTrackingDismissed: () {
+              setState(() {
+                _followLocation = false;
+              });
             },
           ),
+          if (widget.routePoints.isEmpty)
+            Positioned(
+              top: 96,
+              left: 16,
+              right: 16,
+              child: SafeArea(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Text('No route geometry available.'),
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             top: 12,
             left: 12,
@@ -1053,6 +1288,15 @@ class _DriveScreenState extends State<DriveScreen> {
                           ),
                           Text(_formatSpeed(_speedMps)),
                         ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text('Limit: ${formatSpeedLimitSegment(currentLimit)}'),
+                      Text(
+                        nextWarning == null
+                            ? 'Next warning: none'
+                            : 'Next warning: ${nextWarning.text} in ${_formatDistance(distanceToWarning!)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 8),
                       const Text(
@@ -1150,6 +1394,7 @@ class _DriveScreenState extends State<DriveScreen> {
     );
 
     setState(() {
+      _previousPosition = _lastPosition;
       _lastPosition = position;
       _lastMatchedIndex = match.nearestIndex;
       _distanceAlongRoute = match.distanceAlongRoute;
@@ -1228,6 +1473,14 @@ class _DriveScreenState extends State<DriveScreen> {
       await controller.removeCircles(_noteMarkers);
       _noteMarkers.clear();
     }
+    if (_warningLabels.isNotEmpty) {
+      await controller.removeSymbols(_warningLabels);
+      _warningLabels.clear();
+    }
+    if (_warningMarkers.isNotEmpty) {
+      await controller.removeCircles(_warningMarkers);
+      _warningMarkers.clear();
+    }
 
     _baseRouteLine = await controller.addLine(
       maplibre.LineOptions(
@@ -1252,7 +1505,7 @@ class _DriveScreenState extends State<DriveScreen> {
             geometry: segment
                 .map((point) => maplibre.LatLng(point.lat, point.lon))
                 .toList(),
-            lineColor: colorForPaceNoteSeverity(note.severity),
+            lineColor: colorForPaceNote(note),
             lineWidth: 8,
             lineOpacity: 0.95,
           ),
@@ -1270,7 +1523,7 @@ class _DriveScreenState extends State<DriveScreen> {
           maplibre.CircleOptions(
             geometry: coordinates,
             circleRadius: 8,
-            circleColor: colorForPaceNoteSeverity(note.severity),
+            circleColor: colorForPaceNote(note),
             circleStrokeColor: '#FFFFFF',
             circleStrokeWidth: 2,
           ),
@@ -1293,7 +1546,57 @@ class _DriveScreenState extends State<DriveScreen> {
       }
     }
 
+    for (final warning in _visibleRoadWarnings) {
+      final coordinates = maplibre.LatLng(warning.lat, warning.lon);
+      final circle = await controller.addCircle(
+        maplibre.CircleOptions(
+          geometry: coordinates,
+          circleRadius: 7,
+          circleColor: colorForRoadWarning(warning.type),
+          circleStrokeColor: '#FFFFFF',
+          circleStrokeWidth: 2,
+        ),
+      );
+      final label = await controller.addSymbol(
+        maplibre.SymbolOptions(
+          geometry: coordinates,
+          textField: shortRoadWarningLabel(warning.type),
+          textSize: 11,
+          textColor: '#FFFFFF',
+          textHaloColor: '#263238',
+          textHaloWidth: 2,
+          textAnchor: 'top',
+          textOffset: const Offset(0, 1.1),
+          zIndex: 30,
+        ),
+      );
+      _warningMarkers.add(circle);
+      _warningLabels.add(label);
+    }
+
     await _fitNavigationCameraToRoute();
+  }
+
+  Future<void> _drawStaticMapLayers() async {
+    if (_staticMapDrawn) {
+      return;
+    }
+    _staticMapDrawn = true;
+
+    try {
+      await _drawNavigationRoute();
+      final position = _lastPosition;
+      if (position != null) {
+        await _updateCurrentLocationMarker(position);
+      }
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _permissionMessage = 'Map route drawing failed.';
+      });
+    }
   }
 
   Future<void> _fitNavigationCameraToRoute() async {
@@ -1320,47 +1623,57 @@ class _DriveScreenState extends State<DriveScreen> {
     }
 
     final coordinates = maplibre.LatLng(position.latitude, position.longitude);
-    final oldArrow = _currentArrow;
-    if (oldArrow != null) {
-      await controller.removeSymbol(oldArrow);
-    }
-    final oldInner = _currentInnerCircle;
-    if (oldInner != null) {
-      await controller.removeCircle(oldInner);
-    }
-    final oldOuter = _currentOuterCircle;
-    if (oldOuter != null) {
-      await controller.removeCircle(oldOuter);
+    final heading = _headingForPosition(position);
+
+    final existingOuter = _currentOuterCircle;
+    final existingInner = _currentInnerCircle;
+    final existingArrow = _currentArrow;
+    if (existingOuter != null &&
+        existingInner != null &&
+        existingArrow != null) {
+      await controller.updateCircle(
+        existingOuter,
+        maplibre.CircleOptions(geometry: coordinates),
+      );
+      await controller.updateCircle(
+        existingInner,
+        maplibre.CircleOptions(geometry: coordinates),
+      );
+      await controller.updateSymbol(
+        existingArrow,
+        maplibre.SymbolOptions(geometry: coordinates, textRotate: heading),
+      );
+      return;
     }
 
     final outer = await controller.addCircle(
       maplibre.CircleOptions(
         geometry: coordinates,
-        circleRadius: 13,
-        circleColor: '#1E88E5',
-        circleOpacity: 0.28,
+        circleRadius: 25,
+        circleColor: '#00A876',
+        circleOpacity: 0.94,
         circleStrokeColor: '#FFFFFF',
-        circleStrokeWidth: 2,
+        circleStrokeWidth: 3,
       ),
     );
     final inner = await controller.addCircle(
       maplibre.CircleOptions(
         geometry: coordinates,
-        circleRadius: 7,
+        circleRadius: 18,
         circleColor: '#1565C0',
         circleStrokeColor: '#FFFFFF',
-        circleStrokeWidth: 2,
+        circleStrokeWidth: 1,
       ),
     );
     final arrow = await controller.addSymbol(
       maplibre.SymbolOptions(
         geometry: coordinates,
         textField: '▲',
-        textSize: 18,
+        textSize: 34,
         textColor: '#FFFFFF',
         textHaloColor: '#0D47A1',
         textHaloWidth: 2,
-        textRotate: _headingForPosition(position),
+        textRotate: heading,
         textAnchor: 'center',
         zIndex: 100,
       ),
@@ -1412,14 +1725,43 @@ class _DriveScreenState extends State<DriveScreen> {
   }
 
   double _headingForPosition(Position position) {
-    if (position.heading.isFinite && position.heading >= 0) {
-      return position.heading;
+    double? candidate;
+    if (_speedMps > 0.8 && position.heading.isFinite && position.heading >= 0) {
+      candidate = position.heading;
     }
-    if (_lastMatchedIndex >= 0 &&
+
+    final previous = _previousPosition;
+    if (candidate == null && previous != null) {
+      final movementMeters = haversineDistanceMeters(
+        previous.latitude,
+        previous.longitude,
+        position.latitude,
+        position.longitude,
+      );
+      if (movementMeters >= 4) {
+        candidate = bearingDegrees(
+          previous.latitude,
+          previous.longitude,
+          position.latitude,
+          position.longitude,
+        );
+      }
+    }
+
+    if (candidate == null &&
+        _lastMatchedIndex >= 0 &&
         _lastMatchedIndex < widget.routePoints.length) {
-      return widget.routePoints[_lastMatchedIndex].heading;
+      final routeHeading = widget.routePoints[_lastMatchedIndex].heading;
+      if (routeHeading.isFinite) {
+        candidate = routeHeading;
+      }
     }
-    return 0;
+
+    if (candidate != null) {
+      _lastGoodHeading = smoothHeading(_lastGoodHeading, candidate, 0.35);
+      return _lastGoodHeading;
+    }
+    return _lastGoodHeading;
   }
 }
 
@@ -1598,12 +1940,113 @@ String colorForPaceNoteSeverity(int severity) {
   }
 }
 
+String colorForPaceNote(PaceNote note) {
+  return switch (note.type) {
+    PaceNoteType.roundabout => '#7E57C2',
+    PaceNoteType.junction => '#03A9F4',
+    PaceNoteType.warning => '#1976D2',
+    PaceNoteType.corner ||
+    PaceNoteType.hairpin => colorForPaceNoteSeverity(note.severity),
+  };
+}
+
+double smoothHeading(double previous, double next, double factor) {
+  final delta = normalizeAngleDeltaDegrees(previous, next);
+  return (previous + delta * factor + 360) % 360;
+}
+
 String shortCalloutLabel(PaceNote note) {
+  if (note.type == PaceNoteType.roundabout) {
+    return 'RAB';
+  }
+  if (note.type == PaceNoteType.junction) {
+    return 'JCT';
+  }
   final direction = note.direction.toLowerCase().startsWith('l') ? 'L' : 'R';
   if (note.severity == 1) {
     return '${direction}H';
   }
   return '$direction${note.severity}';
+}
+
+List<RoadWarning> filterRoadWarnings(
+  List<RoadWarning> warnings,
+  SettingsService settings,
+) {
+  return warnings
+      .where((warning) => settings.isWarningTypeEnabled(warning.type))
+      .toList()
+    ..sort((a, b) => a.distanceFromStart.compareTo(b.distanceFromStart));
+}
+
+String formatSpeedLimitSegment(SpeedLimitSegment? segment) {
+  if (segment == null) {
+    return '—';
+  }
+  if (segment.parsedKmh != null) {
+    return '${segment.parsedKmh} km/h';
+  }
+  return segment.rawMaxspeed;
+}
+
+IconData iconForRoadWarning(RoadWarningType type) {
+  return switch (type) {
+    RoadWarningType.speedCamera => Icons.camera_alt,
+    RoadWarningType.speedBump => Icons.speed,
+    RoadWarningType.trafficLight => Icons.traffic,
+    RoadWarningType.stopSign => Icons.back_hand,
+    RoadWarningType.giveWay => Icons.change_history,
+    RoadWarningType.surfaceChange => Icons.terrain,
+    RoadWarningType.tunnel => Icons.dark_mode,
+    RoadWarningType.bridge => Icons.water,
+    RoadWarningType.roundabout => Icons.roundabout_right,
+    RoadWarningType.speedLimitChange => Icons.speed,
+  };
+}
+
+String labelForRoadWarningType(RoadWarningType type) {
+  return switch (type) {
+    RoadWarningType.speedCamera => 'Speed cameras',
+    RoadWarningType.speedBump => 'Speed bumps',
+    RoadWarningType.trafficLight => 'Traffic lights',
+    RoadWarningType.stopSign => 'Stop signs',
+    RoadWarningType.giveWay => 'Give way',
+    RoadWarningType.surfaceChange => 'Surface changes',
+    RoadWarningType.tunnel => 'Tunnels',
+    RoadWarningType.bridge => 'Bridges',
+    RoadWarningType.roundabout => 'Roundabouts',
+    RoadWarningType.speedLimitChange => 'Speed limits',
+  };
+}
+
+String colorForRoadWarning(RoadWarningType type) {
+  return switch (type) {
+    RoadWarningType.speedCamera => '#D50000',
+    RoadWarningType.speedBump => '#FF9800',
+    RoadWarningType.trafficLight => '#7E57C2',
+    RoadWarningType.stopSign => '#D50000',
+    RoadWarningType.giveWay => '#FFC107',
+    RoadWarningType.surfaceChange => '#795548',
+    RoadWarningType.tunnel => '#616161',
+    RoadWarningType.bridge => '#607D8B',
+    RoadWarningType.roundabout => '#009688',
+    RoadWarningType.speedLimitChange => '#1976D2',
+  };
+}
+
+String shortRoadWarningLabel(RoadWarningType type) {
+  return switch (type) {
+    RoadWarningType.speedCamera => 'CAM',
+    RoadWarningType.speedBump => 'BUMP',
+    RoadWarningType.trafficLight => 'TL',
+    RoadWarningType.stopSign => 'STOP',
+    RoadWarningType.giveWay => 'YIELD',
+    RoadWarningType.surfaceChange => 'SURF',
+    RoadWarningType.tunnel => 'TUN',
+    RoadWarningType.bridge => 'BR',
+    RoadWarningType.roundabout => 'RAB',
+    RoadWarningType.speedLimitChange => 'LIM',
+  };
 }
 
 String _formatDistance(double meters) {

@@ -1,3 +1,5 @@
+enum PaceNoteType { corner, hairpin, roundabout, junction, warning }
+
 class PaceNote {
   const PaceNote({
     required this.id,
@@ -5,6 +7,7 @@ class PaceNote {
     required this.direction,
     required this.severity,
     required this.text,
+    this.type = PaceNoteType.corner,
     this.tightens = false,
     this.opens = false,
     this.spoken = false,
@@ -14,6 +17,7 @@ class PaceNote {
   final double distanceFromStart;
   final String direction;
   final int severity;
+  final PaceNoteType type;
   final bool tightens;
   final bool opens;
   final String text;
@@ -24,6 +28,7 @@ class PaceNote {
     double? distanceFromStart,
     String? direction,
     int? severity,
+    PaceNoteType? type,
     bool? tightens,
     bool? opens,
     String? text,
@@ -34,6 +39,7 @@ class PaceNote {
       distanceFromStart: distanceFromStart ?? this.distanceFromStart,
       direction: direction ?? this.direction,
       severity: severity ?? this.severity,
+      type: type ?? this.type,
       tightens: tightens ?? this.tightens,
       opens: opens ?? this.opens,
       text: text ?? this.text,
@@ -47,6 +53,7 @@ class PaceNote {
       'distanceFromStart': distanceFromStart,
       'direction': direction,
       'severity': severity,
+      'type': type.name,
       'tightens': tightens,
       'opens': opens,
       'text': text,
@@ -55,11 +62,16 @@ class PaceNote {
   }
 
   factory PaceNote.fromJson(Map<dynamic, dynamic> json) {
+    final typeName = json['type'] as String? ?? PaceNoteType.corner.name;
     return PaceNote(
       id: json['id'] as String,
       distanceFromStart: (json['distanceFromStart'] as num).toDouble(),
       direction: json['direction'] as String,
       severity: (json['severity'] as num).toInt(),
+      type: PaceNoteType.values.firstWhere(
+        (type) => type.name == typeName,
+        orElse: () => PaceNoteType.corner,
+      ),
       tightens: json['tightens'] as bool? ?? false,
       opens: json['opens'] as bool? ?? false,
       text: json['text'] as String,
