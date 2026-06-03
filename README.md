@@ -12,9 +12,22 @@ The app is built for enthusiasts who want more context than a simple blue line: 
 
 ## Screenshots
 
-| Route planner | Route preview | Drive mode | Saved routes |
-| --- | --- | --- | --- |
-| ![Route planner](images/image01.jpeg) | ![Route preview](images/image02.jpeg) | ![Drive mode](images/image03.jpeg) | ![Saved routes](images/imge04.jpeg) |
+| Home Screen | Route Planner | Route Preview |
+| --- | --- | --- |
+| ![Home Screen](images/home_screen.jpeg) | ![Route Planner](images/route_planner.jpeg) | ![Route Preview](images/route_preview.jpeg) |
+
+| Drive Mode | Saved Routes | Settings |
+| --- | --- | --- |
+| ![Drive Mode](images/drive_mode.jpeg) | ![Saved Routes](images/saved_routes.jpeg) | ![Settings](images/settings.jpeg) |
+
+### Screen Descriptions
+
+*   **Home Screen**: A clean starting hub that displays your list of saved routes, direct settings access, and an intuitive entry point to begin planning a new route.
+*   **Route Planner**: Features a full-screen interactive map to set start, waypoint, and destination markers by tapping. It shows live status counts in a premium glassmorphic bottom panel and builds the route instantly.
+*   **Route Preview**: Offers a comprehensive summary of the computed trip (distance, time, average speed) alongside a scrollable list of generated rally-style pacenotes (showing bend severity and direction) for easy review before starting.
+*   **Drive Mode (HUD)**: A high-fidelity, real-time navigation display featuring a dynamic high-contrast vehicle chevron matching heading direction, live speed and European speed limit sign indicators, upcoming co-driver voice notes, real-time warning cards (bumps, traffic lights, tunnels), and a toggleable auto-follow button.
+*   **Saved Routes**: Displays previously recorded routes in styled cards with colored icon gradients and quick metric badges (distance and notes), allowing fast loading or deletion.
+*   **Settings**: A organized settings panel with grouped cards to configure and validate OpenRouteService API keys, select which road warnings are active, and toggle map features like heading-up map rotation and the new high-contrast black map style.
 
 ## Features
 

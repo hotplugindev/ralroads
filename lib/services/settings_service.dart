@@ -74,6 +74,11 @@ class SettingsService {
   Future<void> setMapHeadingUp(bool value) =>
       _setBool('map_heading_up', value);
 
+  bool get useCleanMap => _getBool('use_clean_map', true);
+
+  Future<void> setUseCleanMap(bool value) =>
+      _setBool('use_clean_map', value);
+
   Future<void> setShowSpeedLimits(bool value) =>
       _setBool(_showSpeedLimitsKey, value);
 

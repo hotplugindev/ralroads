@@ -344,6 +344,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     () => widget.settings.setMapHeadingUp(value),
                   ),
                 ),
+                _buildDivider(theme),
+                _buildSwitchRow(
+                  context,
+                  icon: Icons.map_outlined,
+                  title: 'Use new black map style',
+                  subtitle: 'If disabled, use the old simple map style',
+                  value: widget.settings.useCleanMap,
+                  onChanged: (value) => _setWarningSetting(
+                    () => widget.settings.setUseCleanMap(value),
+                  ),
+                ),
               ],
             ),
           ),
