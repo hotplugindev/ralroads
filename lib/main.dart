@@ -22,15 +22,11 @@ Future<void> main() async {
   final settings = SettingsService();
   await storage.init();
   await settings.init();
-  runApp(RoadNotesApp(storage: storage, settings: settings));
+  runApp(RalroadsApp(storage: storage, settings: settings));
 }
 
-class RoadNotesApp extends StatelessWidget {
-  const RoadNotesApp({
-    required this.storage,
-    required this.settings,
-    super.key,
-  });
+class RalroadsApp extends StatelessWidget {
+  const RalroadsApp({required this.storage, required this.settings, super.key});
 
   final RouteStorageService storage;
   final SettingsService settings;
@@ -38,7 +34,7 @@ class RoadNotesApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'RoadNotes',
+      title: 'ralroads',
       themeMode: ThemeMode.system,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
@@ -73,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('RoadNotes'),
+        title: const Text('ralroads'),
         actions: [
           IconButton(
             tooltip: 'Settings',
@@ -91,14 +87,15 @@ class _HomeScreenState extends State<HomeScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(
-                  Icons.route,
-                  size: 72,
-                  color: Theme.of(context).colorScheme.primary,
+                Image.asset(
+                  'assets/branding/ralroads_logo.png',
+                  width: 160,
+                  height: 160,
+                  fit: BoxFit.contain,
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'RoadNotes',
+                  'ralroads',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.displaySmall,
                 ),
@@ -183,9 +180,12 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   late final OrsService _orsService;
   final _pacenoteGenerator = PacenoteGenerator();
   final List<RoutePoint> _selectedPoints = [];
-  final List<maplibre.Symbol> _symbols = [];
+  final List<maplibre.Circle> _pointCircles = [];
+  final List<maplibre.Symbol> _pointLabels = [];
   maplibre.MapLibreMapController? _controller;
   maplibre.Line? _routeLine;
+  maplibre.Circle? _currentLocationCircle;
+  maplibre.Symbol? _currentLocationLabel;
   bool _building = false;
   String? _error;
 
@@ -198,6 +198,8 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   @override
   Widget build(BuildContext context) {
     final hasApiKey = _orsService.hasApiKey;
+    final hasEnoughPoints = _selectedPoints.length >= 2;
+    final waypointCount = math.max(0, _selectedPoints.length - 2);
 
     return Scaffold(
       appBar: AppBar(
@@ -218,11 +220,23 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
               target: maplibre.LatLng(43.8, 11.2),
               zoom: 5,
             ),
-            myLocationEnabled: true,
+            myLocationEnabled: false,
             onMapCreated: (controller) {
               _controller = controller;
             },
             onMapLongClick: _handleMapLongClick,
+          ),
+          Positioned(
+            top: 12,
+            right: 12,
+            child: SafeArea(
+              child: FloatingActionButton.small(
+                heroTag: 'locate-me',
+                tooltip: 'Locate me',
+                onPressed: _locateMe,
+                child: const Icon(Icons.my_location),
+              ),
+            ),
           ),
           Positioned(
             left: 12,
@@ -251,6 +265,10 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                         '${_selectedPoints.length} point${_selectedPoints.length == 1 ? '' : 's'} selected',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Start ${_selectedPoints.isNotEmpty ? 'selected' : 'not selected'} • Destination ${hasEnoughPoints ? 'selected' : 'not selected'} • $waypointCount waypoint${waypointCount == 1 ? '' : 's'}',
+                      ),
                       if (_error != null) ...[
                         const SizedBox(height: 8),
                         Text(
@@ -275,9 +293,11 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                             child: FilledButton.icon(
                               onPressed: _building
                                   ? null
-                                  : hasApiKey
+                                  : hasEnoughPoints && hasApiKey
                                   ? _buildRoute
-                                  : _showMissingKeyPrompt,
+                                  : hasEnoughPoints
+                                  ? _showMissingKeyPrompt
+                                  : null,
                               icon: _building
                                   ? const SizedBox.square(
                                       dimension: 18,
@@ -287,7 +307,9 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                                     )
                                   : const Icon(Icons.alt_route),
                               label: Text(
-                                hasApiKey
+                                !hasEnoughPoints
+                                    ? 'Select start and destination'
+                                    : hasApiKey
                                     ? 'Build Route'
                                     : 'Add API Key to Build Route',
                               ),
@@ -307,7 +329,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   }
 
   Future<void> _handleMapLongClick(
-    math.Point<double> point,
+    math.Point<double> _,
     maplibre.LatLng coordinates,
   ) async {
     final controller = _controller;
@@ -319,21 +341,35 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       lat: coordinates.latitude,
       lon: coordinates.longitude,
     );
-    final symbol = await controller.addSymbol(
+    final nextIndex = _selectedPoints.length;
+    final circle = await controller.addCircle(
+      maplibre.CircleOptions(
+        geometry: coordinates,
+        circleRadius: nextIndex < 2 ? 9 : 7,
+        circleColor: _pinColorForIndex(nextIndex),
+        circleStrokeColor: '#FFFFFF',
+        circleStrokeWidth: 2,
+        circleOpacity: 0.95,
+      ),
+    );
+    final label = await controller.addSymbol(
       maplibre.SymbolOptions(
         geometry: coordinates,
-        textField: '${_selectedPoints.length + 1}',
+        textField: _pinLabelForIndex(nextIndex),
+        textSize: nextIndex < 2 ? 13 : 12,
         textColor: '#FFFFFF',
-        textHaloColor: '#00695C',
+        textHaloColor: '#263238',
         textHaloWidth: 2,
-        iconImage: 'marker-15',
-        iconSize: 1.6,
+        textAnchor: 'top',
+        textOffset: const Offset(0, 1.25),
+        zIndex: 10 + nextIndex,
       ),
     );
 
     setState(() {
       _selectedPoints.add(routePoint);
-      _symbols.add(symbol);
+      _pointCircles.add(circle);
+      _pointLabels.add(label);
       _error = null;
     });
   }
@@ -341,8 +377,11 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   Future<void> _clear() async {
     final controller = _controller;
     if (controller != null) {
-      if (_symbols.isNotEmpty) {
-        await controller.removeSymbols(_symbols);
+      if (_pointLabels.isNotEmpty) {
+        await controller.removeSymbols(_pointLabels);
+      }
+      if (_pointCircles.isNotEmpty) {
+        await controller.removeCircles(_pointCircles);
       }
       final line = _routeLine;
       if (line != null) {
@@ -352,7 +391,8 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
 
     setState(() {
       _selectedPoints.clear();
-      _symbols.clear();
+      _pointLabels.clear();
+      _pointCircles.clear();
       _routeLine = null;
       _error = null;
     });
@@ -375,6 +415,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       final routePoints = await _orsService.buildRoute(_selectedPoints);
       final pacenotes = _pacenoteGenerator.generate(routePoints);
       await _drawRoute(routePoints);
+      await _fitCameraToRoute(routePoints);
 
       if (!mounted) {
         return;
@@ -462,7 +503,12 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        action: SnackBarAction(label: 'Settings', onPressed: _openSettings),
+        action: SnackBarAction(
+          label: 'Settings',
+          onPressed: () {
+            _openSettings();
+          },
+        ),
       ),
     );
   }
@@ -492,6 +538,169 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     setState(() {
       _routeLine = line;
     });
+  }
+
+  Future<void> _fitCameraToRoute(List<RoutePoint> points) async {
+    final controller = _controller;
+    if (controller == null || points.isEmpty) {
+      return;
+    }
+
+    if (points.length == 1) {
+      await controller.animateCamera(
+        maplibre.CameraUpdate.newLatLngZoom(
+          maplibre.LatLng(points.first.lat, points.first.lon),
+          13,
+        ),
+      );
+      return;
+    }
+
+    var minLat = points.first.lat;
+    var maxLat = points.first.lat;
+    var minLon = points.first.lon;
+    var maxLon = points.first.lon;
+    for (final point in points) {
+      minLat = math.min(minLat, point.lat);
+      maxLat = math.max(maxLat, point.lat);
+      minLon = math.min(minLon, point.lon);
+      maxLon = math.max(maxLon, point.lon);
+    }
+
+    await controller.animateCamera(
+      maplibre.CameraUpdate.newLatLngBounds(
+        maplibre.LatLngBounds(
+          southwest: maplibre.LatLng(minLat, minLon),
+          northeast: maplibre.LatLng(maxLat, maxLon),
+        ),
+        left: 48,
+        top: 96,
+        right: 48,
+        bottom: 240,
+      ),
+    );
+  }
+
+  Future<void> _locateMe() async {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+
+    try {
+      final position = await _getCurrentPosition();
+      if (position == null) {
+        return;
+      }
+
+      final coordinates = maplibre.LatLng(
+        position.latitude,
+        position.longitude,
+      );
+      await _showCurrentLocationMarker(coordinates);
+      await controller.animateCamera(
+        maplibre.CameraUpdate.newLatLngZoom(coordinates, 15),
+      );
+    } catch (_) {
+      _showSnackBar('Could not get current location.');
+    }
+  }
+
+  Future<Position?> _getCurrentPosition() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _showSnackBar('Could not get current location.');
+      return null;
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      _showSnackBar('Location permission is required to show your position.');
+      return null;
+    }
+
+    return Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 12),
+      ),
+    );
+  }
+
+  Future<void> _showCurrentLocationMarker(maplibre.LatLng coordinates) async {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+
+    final oldLabel = _currentLocationLabel;
+    if (oldLabel != null) {
+      await controller.removeSymbol(oldLabel);
+    }
+    final oldCircle = _currentLocationCircle;
+    if (oldCircle != null) {
+      await controller.removeCircle(oldCircle);
+    }
+
+    final circle = await controller.addCircle(
+      maplibre.CircleOptions(
+        geometry: coordinates,
+        circleRadius: 9,
+        circleColor: '#1E88E5',
+        circleStrokeColor: '#FFFFFF',
+        circleStrokeWidth: 3,
+        circleOpacity: 0.95,
+      ),
+    );
+    final label = await controller.addSymbol(
+      maplibre.SymbolOptions(
+        geometry: coordinates,
+        textField: 'You',
+        textSize: 12,
+        textColor: '#FFFFFF',
+        textHaloColor: '#0D47A1',
+        textHaloWidth: 2,
+        textAnchor: 'top',
+        textOffset: const Offset(0, 1.35),
+        zIndex: 50,
+      ),
+    );
+
+    setState(() {
+      _currentLocationCircle = circle;
+      _currentLocationLabel = label;
+    });
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _pinLabelForIndex(int index) {
+    if (index == 0) {
+      return 'Start';
+    }
+    if (index == 1) {
+      return 'Destination';
+    }
+    return '${index - 1}';
+  }
+
+  String _pinColorForIndex(int index) {
+    if (index == 0) {
+      return '#2E7D32';
+    }
+    if (index == 1) {
+      return '#C62828';
+    }
+    return '#F9A825';
   }
 }
 
