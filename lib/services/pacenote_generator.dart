@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:developer' as developer;
 import '../models/pace_note.dart';
 import '../models/road_warning.dart';
 import '../models/route_point.dart';
@@ -143,7 +144,7 @@ class PacenoteGenerator {
       ));
     }
 
-    final segments = refineSegments(rawSegments, points);
+    final segments = _refineSegments(rawSegments, points);
     final notes = <PaceNote>[];
     var noteCount = 0;
 
@@ -456,7 +457,7 @@ class PacenoteGenerator {
 
     final deduped = _dedupeRoadContextNotes(refined);
     assert(() {
-      print(
+      developer.log(
         'Pacenotes refined: raw=${notes.length}, roundabouts=$roundaboutConversions, junctions=$junctionConversions, final=${deduped.length}, warnings=${warnings.length}',
       );
       return true;
@@ -575,7 +576,7 @@ class PacenoteGenerator {
     return diff1 < diff2 ? low : high;
   }
 
-  List<_RouteSegment> refineSegments(List<_RouteSegment> input, List<RoutePoint> points) {
+  List<_RouteSegment> _refineSegments(List<_RouteSegment> input, List<RoutePoint> points) {
     var list = List<_RouteSegment>.from(input);
     
     list = _mergeConsecutiveSameType(list);

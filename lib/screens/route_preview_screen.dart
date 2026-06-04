@@ -752,7 +752,7 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<PaceNoteType>(
-                    value: noteType,
+                    initialValue: noteType,
                     decoration: InputDecoration(
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
