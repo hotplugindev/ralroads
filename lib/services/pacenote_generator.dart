@@ -277,47 +277,96 @@ class PacenoteGenerator {
   }) {
     var roundaboutConversions = 0;
     var junctionConversions = 0;
-    final usedRoundaboutIds = <String>{};
+
+    final List<double> roundaboutPositions = [];
+
+    // 1. Add OSM roundabout warning positions (deduplicated within 75m)
+    for (final w in warnings) {
+      if (w.type == RoadWarningType.roundabout) {
+        bool isDuplicate = false;
+        for (final pos in roundaboutPositions) {
+          if ((w.distanceFromStart - pos).abs() <= 75.0) {
+            isDuplicate = true;
+            break;
+          }
+        }
+        if (!isDuplicate) {
+          roundaboutPositions.add(w.distanceFromStart);
+        }
+      }
+    }
+
+    // 2. Add geometry-detected roundabout positions if not close to already added positions
+    for (final note in notes) {
+      if (note.direction != 'straight') {
+        final confidence = _calculateRoundaboutGeometryConfidence(note, routePoints);
+        if (confidence >= 0.8) {
+          bool alreadyCovered = false;
+          for (final pos in roundaboutPositions) {
+            if ((note.distanceFromStart - pos).abs() <= 75.0) {
+              alreadyCovered = true;
+              break;
+            }
+          }
+          if (!alreadyCovered) {
+            roundaboutPositions.add(note.distanceFromStart);
+          }
+        }
+      }
+    }
+
+    // Identify which note is the closest to each roundabout center and should be converted,
+    // and which other notes are within 60 meters and should be skipped.
+    final notesToSkip = <String>{};
+    final convertedNotes = <String, PaceNote>{};
+
+    for (final rPos in roundaboutPositions) {
+      PaceNote? closestNote;
+      double minDiff = double.infinity;
+      
+      for (final note in notes) {
+        if (notesToSkip.contains(note.id) || convertedNotes.containsKey(note.id)) {
+          continue;
+        }
+        final diff = (note.distanceFromStart - rPos).abs();
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestNote = note;
+        }
+      }
+
+      if (closestNote != null && minDiff <= 65.0) {
+        convertedNotes[closestNote.id] = closestNote.copyWith(
+          id: '${closestNote.id}-roundabout',
+          type: PaceNoteType.roundabout,
+          severity: 4,
+          direction: 'roundabout',
+          text: 'Roundabout ahead',
+          tightens: false,
+          opens: false,
+          recommendedSpeedKmh: 30,
+        );
+
+        for (final note in notes) {
+          if (note.id != closestNote.id) {
+            final diff = (note.distanceFromStart - rPos).abs();
+            if (diff <= 60.0) {
+              notesToSkip.add(note.id);
+            }
+          }
+        }
+      }
+    }
 
     final refined = <PaceNote>[];
     for (final note in notes) {
-      final nearbyRoundabout = _nearestWarningOfTypes(note, warnings, const {
-        RoadWarningType.roundabout,
-      }, 80);
-      
-      double roundaboutConfidence = 0.0;
-      if (nearbyRoundabout != null) {
-        roundaboutConfidence = 1.0;
-      } else {
-        roundaboutConfidence = _calculateRoundaboutGeometryConfidence(note, routePoints);
-      }
-
-      if (roundaboutConfidence >= 0.8) {
-        if (nearbyRoundabout != null) {
-          if (usedRoundaboutIds.contains(nearbyRoundabout.id)) {
-            // Already processed this roundabout, skip extra notes inside it
-            continue;
-          }
-          usedRoundaboutIds.add(nearbyRoundabout.id);
-        }
-        roundaboutConversions++;
-        refined.add(
-          note.copyWith(
-            id: '${note.id}-roundabout',
-            type: PaceNoteType.roundabout,
-            severity: 4,
-            direction: 'roundabout',
-            text: 'Roundabout ahead',
-            tightens: false,
-            opens: false,
-            recommendedSpeedKmh: 30,
-          ),
-        );
+      if (notesToSkip.contains(note.id)) {
         continue;
       }
-
-      if (nearbyRoundabout != null && usedRoundaboutIds.contains(nearbyRoundabout.id)) {
-        // Skip normal curves that are inside the roundabout we already handled
+      
+      if (convertedNotes.containsKey(note.id)) {
+        refined.add(convertedNotes[note.id]!);
+        roundaboutConversions++;
         continue;
       }
 
@@ -635,64 +684,7 @@ class PacenoteGenerator {
   }
 
   double _calculateRoundaboutGeometryConfidence(PaceNote note, List<RoutePoint> points) {
-    final segment = points
-        .where(
-          (point) =>
-              point.distanceFromStart >= note.distanceFromStart - 50 &&
-              point.distanceFromStart <= note.distanceFromStart + 50,
-        )
-        .toList();
-    if (segment.length < 8) {
-      return 0.0;
-    }
-
-    final length = segment.last.distanceFromStart - segment.first.distanceFromStart;
-    if (length < 25 || length > 120) {
-      return 0.0;
-    }
-
-    double totalSignedDelta = 0.0;
-    double totalAbsDelta = 0.0;
-    double maxDelta = 0.0;
-    for (var i = 1; i < segment.length; i++) {
-      final delta = normalizeAngleDeltaDegrees(
-        segment[i - 1].heading,
-        segment[i].heading,
-      );
-      totalSignedDelta += delta;
-      totalAbsDelta += delta.abs();
-      maxDelta = math.max(maxDelta, delta.abs());
-    }
-    
-    if (maxDelta > 28.0) {
-      return 0.0;
-    }
-
-    if (totalAbsDelta < 110.0 || totalAbsDelta > 420.0) {
-      return 0.0;
-    }
-
-    final ratio = totalAbsDelta > 0 ? totalSignedDelta.abs() / totalAbsDelta : 0.0;
-    if (ratio < 0.88) {
-      return 0.0;
-    }
-
-    var minLat = segment.first.lat;
-    var maxLat = segment.first.lat;
-    var minLon = segment.first.lon;
-    var maxLon = segment.first.lon;
-    for (final point in segment) {
-      minLat = math.min(minLat, point.lat);
-      maxLat = math.max(maxLat, point.lat);
-      minLon = math.min(minLon, point.lon);
-      maxLon = math.max(maxLon, point.lon);
-    }
-    final diagonal = haversineDistanceMeters(minLat, minLon, maxLat, maxLon);
-    if (diagonal < 10.0 || diagonal > 75.0) {
-      return 0.0;
-    }
-
-    return 0.9;
+    return 0.0;
   }
 
   RoadWarning? _nearestWarningOfTypes(
