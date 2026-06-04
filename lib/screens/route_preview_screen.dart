@@ -55,8 +55,19 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
   void initState() {
     super.initState();
     _pacenotes = widget.pacenotes;
-    _roadWarnings = widget.savedRoute?.roadWarnings ?? const [];
+    _roadWarnings = List<RoadWarning>.from(widget.savedRoute?.roadWarnings ?? const []);
     _speedLimitSegments = widget.savedRoute?.speedLimitSegments ?? const [];
+
+    final hasElevationWarnings = _roadWarnings.any(
+      (w) => w.type == RoadWarningType.crest || w.type == RoadWarningType.dip,
+    );
+    if (!hasElevationWarnings && widget.points.isNotEmpty) {
+      final elevWarnings = _pacenoteGenerator.detectElevationFeatures(widget.points);
+      if (elevWarnings.isNotEmpty) {
+        _roadWarnings = [..._roadWarnings, ...elevWarnings];
+      }
+    }
+
     if (_roadWarnings.isNotEmpty || _speedLimitSegments.isNotEmpty) {
       _pacenotes = _pacenoteGenerator.refinePacenotesWithRoadContext(
         notes: _pacenotes,
@@ -223,11 +234,12 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
 
     try {
       final enrichment = await _overpassService.enrichRoute(widget.points);
+      final elevationWarnings = _pacenoteGenerator.detectElevationFeatures(widget.points);
       if (!mounted) {
         return;
       }
       setState(() {
-        _roadWarnings = enrichment.roadWarnings;
+        _roadWarnings = [...enrichment.roadWarnings, ...elevationWarnings];
         _speedLimitSegments = enrichment.speedLimitSegments;
         _pacenotes = _pacenoteGenerator.refinePacenotesWithRoadContext(
           notes: widget.pacenotes,

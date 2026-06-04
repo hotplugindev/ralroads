@@ -70,7 +70,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   double? _lastVisualLat;
   double? _lastVisualLon;
   bool _gpsWeak = false;
-  Timer? _recenterTimer;
+  final Set<String> _spokenWarningIds = {};
 
   PaceNote? get _nextNote {
     for (final note in _notes) {
@@ -124,7 +124,6 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    _recenterTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     try {
       WakelockPlus.disable();
@@ -172,12 +171,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                   _followLocation = false;
                 });
               }
-              _startRecenterTimer();
             },
             child: maplibre.MapLibreMap(
               styleString: getMapStyle(context, widget.settings),
               initialCameraPosition: _initialDriveCameraPosition(),
-              // Hide MapLibre attribution/info button by pushing it off-screen
               attributionButtonPosition: maplibre.AttributionButtonPosition.bottomRight,
               attributionButtonMargins: const math.Point(-1000, -1000),
               myLocationEnabled: false,
@@ -386,7 +383,6 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       lastMatchedIndex: _lastMatchedIndex,
     );
 
-    // Calculate speed fallback and smoothing
     double calculatedSpeed = position.speed;
     final prevPos = _lastPosition;
     if (calculatedSpeed < 0 || calculatedSpeed.isNaN || !calculatedSpeed.isFinite) {
@@ -421,7 +417,6 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
     final newSpeed = _speedMps * 0.65 + calculatedSpeed * 0.35;
 
-    // Smooth visual location marker position and filter out extreme GPS jumps
     double visualLat = position.latitude;
     double visualLon = position.longitude;
     if (_lastVisualLat != null && _lastVisualLon != null) {
@@ -457,6 +452,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       _followPosition(visualLat, visualLon);
     }
     _maybeSpeakNextNote();
+    _maybeSpeakNextWarning();
   }
 
   void _maybeSpeakNextNote() {
@@ -512,9 +508,61 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     });
   }
 
+  void _maybeSpeakNextWarning() {
+    if (!_voiceEnabled) {
+      return;
+    }
+    final warning = _nextRoadWarning;
+    if (warning == null || _spokenWarningIds.contains(warning.id)) {
+      return;
+    }
+
+    final distanceToWarning = warning.distanceFromStart - _distanceAlongRoute;
+    
+    double triggerDistance = 70.0;
+    if (warning.type == RoadWarningType.speedCamera) {
+      triggerDistance = 180.0;
+    } else if (warning.type == RoadWarningType.stopSign || warning.type == RoadWarningType.speedBump) {
+      triggerDistance = 80.0;
+    } else if (warning.type == RoadWarningType.surfaceChange) {
+      triggerDistance = 60.0;
+    } else if (warning.type == RoadWarningType.crest || warning.type == RoadWarningType.dip) {
+      triggerDistance = 60.0;
+    }
+
+    final dynamicTrigger = _speedMps > 1
+        ? math.max(triggerDistance, _speedMps * 5.0)
+        : triggerDistance;
+
+    if (distanceToWarning > dynamicTrigger) {
+      return;
+    }
+
+    String speakText = warning.text;
+    if (warning.type == RoadWarningType.stopSign) {
+      speakText = 'Stop sign ahead';
+    } else if (warning.type == RoadWarningType.speedBump) {
+      speakText = 'Speed bump ahead';
+    } else if (warning.type == RoadWarningType.giveWay) {
+      speakText = 'Yield ahead';
+    } else if (warning.type == RoadWarningType.trafficLight) {
+      speakText = 'Traffic light ahead';
+    } else if (warning.type == RoadWarningType.crest) {
+      speakText = 'Crest';
+    } else if (warning.type == RoadWarningType.dip) {
+      speakText = 'Dip';
+    }
+
+    _voice.speak(speakText);
+    setState(() {
+      _spokenWarningIds.add(warning.id);
+    });
+  }
+
   void _resetNotes() {
     setState(() {
       _notes = _notes.map((note) => note.copyWith(spoken: false)).toList();
+      _spokenWarningIds.clear();
       _lastMatchedIndex = 0;
     });
   }
@@ -844,7 +892,6 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   }
 
   void _toggleFollowMode() {
-    _recenterTimer?.cancel();
     if (_followLocation) {
       setState(() {
         _followLocation = false;
@@ -861,17 +908,6 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     } else {
       _fitNavigationCameraToRoute();
     }
-  }
-
-  void _startRecenterTimer() {
-    _recenterTimer?.cancel();
-    _recenterTimer = Timer(const Duration(seconds: 6), () {
-      if (mounted && !_followLocation) {
-        setState(() {
-          _followLocation = true;
-        });
-      }
-    });
   }
 
   double _headingForPosition(Position position) {

@@ -249,6 +249,63 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     );
   }
 
+  Future<void> _updateMapMarkers() async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    if (_pointLabels.isNotEmpty) {
+      await controller.removeSymbols(_pointLabels);
+      _pointLabels.clear();
+    }
+    if (_pointCircles.isNotEmpty) {
+      await controller.removeCircles(_pointCircles);
+      _pointCircles.clear();
+    }
+
+    for (var i = 0; i < _selectedPoints.length; i++) {
+      final pt = _selectedPoints[i];
+      final coordinates = maplibre.LatLng(pt.lat, pt.lon);
+      final isStart = i == 0;
+      final isDest = i == _selectedPoints.length - 1 && _selectedPoints.length >= 2;
+      final isWaypoint = !isStart && !isDest;
+
+      final circle = await controller.addCircle(
+        maplibre.CircleOptions(
+          geometry: coordinates,
+          circleRadius: isWaypoint ? 10 : 9,
+          circleColor: isStart ? '#2E7D32' : (isDest ? '#C62828' : '#F9A825'),
+          circleStrokeColor: '#FFFFFF',
+          circleStrokeWidth: 2,
+          circleOpacity: 0.95,
+        ),
+      );
+
+      String textLabel = 'Start';
+      if (isDest) {
+        textLabel = 'Destination';
+      } else if (isWaypoint) {
+        textLabel = '$i';
+      }
+
+      final label = await controller.addSymbol(
+        maplibre.SymbolOptions(
+          geometry: coordinates,
+          textField: textLabel,
+          textSize: isWaypoint ? 14 : 13,
+          textColor: isWaypoint ? '#212121' : '#FFFFFF',
+          textHaloColor: isWaypoint ? '#FFFFFF' : '#263238',
+          textHaloWidth: isWaypoint ? 1 : 2,
+          textAnchor: isWaypoint ? 'center' : 'top',
+          textOffset: isWaypoint ? Offset.zero : const Offset(0, 1.25),
+          zIndex: 10 + i,
+        ),
+      );
+
+      _pointCircles.add(circle);
+      _pointLabels.add(label);
+    }
+  }
+
   Future<void> _handleMapLongClick(
     math.Point<double> _,
     maplibre.LatLng coordinates,
@@ -263,38 +320,13 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       lon: coordinates.longitude,
       distanceFromStart: 0,
     );
-    final nextIndex = _selectedPoints.length;
-    final isWaypoint = nextIndex >= 2;
-    final circle = await controller.addCircle(
-      maplibre.CircleOptions(
-        geometry: coordinates,
-        circleRadius: isWaypoint ? 10 : 9,
-        circleColor: _pinColorForIndex(nextIndex),
-        circleStrokeColor: '#FFFFFF',
-        circleStrokeWidth: 2,
-        circleOpacity: 0.95,
-      ),
-    );
-    final label = await controller.addSymbol(
-      maplibre.SymbolOptions(
-        geometry: coordinates,
-        textField: _pinLabelForIndex(nextIndex),
-        textSize: isWaypoint ? 14 : 13,
-        textColor: isWaypoint ? '#212121' : '#FFFFFF',
-        textHaloColor: isWaypoint ? '#FFFFFF' : '#263238',
-        textHaloWidth: isWaypoint ? 1 : 2,
-        textAnchor: isWaypoint ? 'center' : 'top',
-        textOffset: isWaypoint ? Offset.zero : const Offset(0, 1.25),
-        zIndex: 10 + nextIndex,
-      ),
-    );
 
     setState(() {
       _selectedPoints.add(routePoint);
-      _pointCircles.add(circle);
-      _pointLabels.add(label);
       _error = null;
     });
+
+    await _updateMapMarkers();
   }
 
   Future<void> _clear() async {
@@ -387,15 +419,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   }
 
   List<RoutePoint> _orderedRoutePlanPoints() {
-    if (_selectedPoints.length <= 2) {
-      return List<RoutePoint>.from(_selectedPoints);
-    }
-    // Start, then waypoints (everything after index 1), then destination (index 1)
-    return [
-      _selectedPoints.first,
-      ..._selectedPoints.skip(2),
-      _selectedPoints[1],
-    ];
+    return List<RoutePoint>.from(_selectedPoints);
   }
 
   Future<void> _showMissingKeyPrompt() async {
@@ -618,17 +642,6 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     );
   }
 
-  String _pinLabelForIndex(int index) {
-    if (index == 0) return 'Start';
-    if (index == 1) return 'Destination';
-    return '${index - 1}';
-  }
-
-  String _pinColorForIndex(int index) {
-    if (index == 0) return '#2E7D32';
-    if (index == 1) return '#C62828';
-    return '#F9A825';
-  }
 }
 
 class _PlannerStatusCard extends StatelessWidget {

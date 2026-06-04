@@ -35,7 +35,8 @@ class OrsService {
           'coordinates': points.map((point) => [point.lon, point.lat]).toList(),
           'instructions': false,
           'geometry': true,
-          'elevation': false,
+          'elevation': true,
+          'radiuses': List.filled(points.length, -1),
         },
         options: Options(
           headers: {
@@ -65,6 +66,7 @@ class OrsService {
         return RoutePoint(
           lon: (pair[0] as num).toDouble(),
           lat: (pair[1] as num).toDouble(),
+          elevation: pair.length >= 3 ? (pair[2] as num).toDouble() : null,
         );
       }).toList();
 

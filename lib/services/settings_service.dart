@@ -106,7 +106,9 @@ class SettingsService {
       RoadWarningType.surfaceChange ||
       RoadWarningType.tunnel ||
       RoadWarningType.bridge ||
-      RoadWarningType.roundabout => showRoadFeatures,
+      RoadWarningType.roundabout ||
+      RoadWarningType.crest ||
+      RoadWarningType.dip => showRoadFeatures,
       RoadWarningType.speedLimitChange => showSpeedLimits,
     };
   }

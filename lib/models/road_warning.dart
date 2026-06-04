@@ -9,6 +9,8 @@ enum RoadWarningType {
   bridge,
   roundabout,
   speedLimitChange,
+  crest,
+  dip,
 }
 
 class RoadWarning {

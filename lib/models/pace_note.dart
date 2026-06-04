@@ -90,7 +90,6 @@ class PaceNote {
     if (isLong) parts.add('long');
     if (opens) parts.add('opens');
     if (tightens) parts.add('tightens');
-    if (recommendedSpeedKmh != null) parts.add('$recommendedSpeedKmh');
 
     return parts.join(' ');
   }

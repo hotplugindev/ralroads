@@ -120,6 +120,8 @@ IconData iconForRoadWarning(RoadWarningType type) {
     RoadWarningType.bridge => Icons.water,
     RoadWarningType.roundabout => Icons.roundabout_right,
     RoadWarningType.speedLimitChange => Icons.speed,
+    RoadWarningType.crest => Icons.landscape,
+    RoadWarningType.dip => Icons.trending_down,
   };
 }
 
@@ -135,6 +137,8 @@ String labelForRoadWarningType(RoadWarningType type) {
     RoadWarningType.bridge => 'Bridges',
     RoadWarningType.roundabout => 'Roundabouts',
     RoadWarningType.speedLimitChange => 'Speed limits',
+    RoadWarningType.crest => 'Crests',
+    RoadWarningType.dip => 'Dips',
   };
 }
 
@@ -150,6 +154,8 @@ String colorForRoadWarning(RoadWarningType type) {
     RoadWarningType.bridge => '#607D8B',
     RoadWarningType.roundabout => '#009688',
     RoadWarningType.speedLimitChange => '#1976D2',
+    RoadWarningType.crest => '#4CAF50',
+    RoadWarningType.dip => '#00BCD4',
   };
 }
 
@@ -165,6 +171,8 @@ String shortRoadWarningLabel(RoadWarningType type) {
     RoadWarningType.bridge => 'BR',
     RoadWarningType.roundabout => 'RAB',
     RoadWarningType.speedLimitChange => 'LIM',
+    RoadWarningType.crest => 'CRST',
+    RoadWarningType.dip => 'DIP',
   };
 }
 

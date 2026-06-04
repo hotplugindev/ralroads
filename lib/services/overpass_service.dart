@@ -212,9 +212,12 @@ out body geom;
       return null;
     }
 
+    final isRoundabout = mapped.$1 == RoadWarningType.roundabout;
+    final threshold = isRoundabout ? 20.0 : _wayMatchThresholdMeters;
+
     final best = _bestGeometryMatch(geometry, routePoints);
     if (best == null ||
-        best.match.distanceToRouteMeters > _wayMatchThresholdMeters) {
+        best.match.distanceToRouteMeters > threshold) {
       return null;
     }
 

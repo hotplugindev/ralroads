@@ -6,7 +6,7 @@ import '../models/speed_limit_segment.dart';
 import '../utils/geo_math.dart';
 
 class PacenoteGenerator {
-  List<RoutePoint> densifyRoutePoints(List<RoutePoint> points, {double targetSpacingM = 7.0}) {
+  List<RoutePoint> densifyRoutePoints(List<RoutePoint> points, {double targetSpacingM = 5.0}) {
     if (points.length < 2) return points;
     final densified = <RoutePoint>[];
     
@@ -23,7 +23,13 @@ class PacenoteGenerator {
           final fraction = j / numSegments;
           final lat = p1.lat + (p2.lat - p1.lat) * fraction;
           final lon = p1.lon + (p2.lon - p1.lon) * fraction;
-          densified.add(RoutePoint(lat: lat, lon: lon));
+          
+          double? elev;
+          if (p1.elevation != null && p2.elevation != null) {
+            elev = p1.elevation! + (p2.elevation! - p1.elevation!) * fraction;
+          }
+          
+          densified.add(RoutePoint(lat: lat, lon: lon, elevation: elev));
         }
       }
     }
@@ -37,7 +43,7 @@ class PacenoteGenerator {
     }
 
     final enriched = <RoutePoint>[
-      rawPoints.first.copyWith(distanceFromStart: 0, heading: 0),
+      rawPoints.first.copyWith(distanceFromStart: 0, heading: 0, elevation: rawPoints.first.elevation),
     ];
 
     var distance = 0.0;
@@ -57,7 +63,11 @@ class PacenoteGenerator {
         current.lon,
       );
       enriched.add(
-        current.copyWith(distanceFromStart: distance, heading: heading),
+        current.copyWith(
+          distanceFromStart: distance,
+          heading: heading,
+          elevation: current.elevation,
+        ),
       );
     }
 
@@ -88,7 +98,7 @@ class PacenoteGenerator {
         r = thetaRad > 0.0001 ? distDiff / thetaRad : 9999.0;
       }
 
-      if (r < 120.0) {
+      if (r < 180.0) {
         pointTypes.add(delta < 0 ? 'L' : 'R');
       } else {
         pointTypes.add('S');
@@ -127,9 +137,9 @@ class PacenoteGenerator {
 
     for (final seg in segments) {
       if (seg.type == 'S') {
-        if (seg.length >= 80.0) {
+        if (seg.length >= 100.0) {
           final roundedDist = (seg.length / 50.0).round() * 50;
-          final distToShow = roundedDist < 80 ? (seg.length / 10.0).round() * 10 : roundedDist;
+          final distToShow = roundedDist < 100 ? (seg.length / 10.0).round() * 10 : roundedDist;
           notes.add(PaceNote(
             id: 'note-straight-$noteCount-${seg.startDistance.round()}',
             distanceFromStart: seg.startDistance,
@@ -150,15 +160,23 @@ class PacenoteGenerator {
 
         int severity = 6;
         final r = radiusInfo.minRadius;
-        if (r < 18.0 && totalHeadingChange.abs() >= 75.0 && seg.length < 55.0) {
+        bool isHairpin = false;
+
+        if (r < 24.0 && totalHeadingChange.abs() >= 65.0) {
+          isHairpin = true;
           severity = 1;
-        } else if (r < 25.0) {
+        } else if (r < 30.0 && totalHeadingChange.abs() >= 85.0) {
+          isHairpin = true;
+          severity = 1;
+        } else if (r < 22.0) {
+          severity = 1;
+        } else if (r < 38.0) {
           severity = 2;
-        } else if (r < 45.0) {
+        } else if (r < 58.0) {
           severity = 3;
-        } else if (r < 75.0) {
+        } else if (r < 85.0) {
           severity = 4;
-        } else if (r < 120.0) {
+        } else if (r < 125.0) {
           severity = 5;
         } else {
           severity = 6;
@@ -189,7 +207,6 @@ class PacenoteGenerator {
           case 6: baseSpeed = 90; break;
         }
 
-        // Apply safety speed margin
         int recommendedSpeed = baseSpeed;
         if (baseSpeed <= 45) {
           recommendedSpeed = baseSpeed - 5;
@@ -197,7 +214,7 @@ class PacenoteGenerator {
           recommendedSpeed = baseSpeed - 10;
         }
 
-        final noteType = severity == 1
+        final noteType = isHairpin
             ? (direction == 'left' ? PaceNoteType.hairpinLeft : PaceNoteType.hairpinRight)
             : (direction == 'left' ? PaceNoteType.left : PaceNoteType.right);
 
@@ -211,7 +228,7 @@ class PacenoteGenerator {
           type: noteType,
           tightens: tightens,
           opens: opens,
-          text: '', // rallyText getter provides display/speech text
+          text: '',
           recommendedSpeedKmh: recommendedSpeed,
           isShort: isShort,
           isLong: isLong,
@@ -220,7 +237,6 @@ class PacenoteGenerator {
       }
     }
 
-    // Link corners (into relation)
     final linkedNotes = <PaceNote>[];
     for (var i = 0; i < notes.length; i++) {
       var note = notes[i];
@@ -261,12 +277,13 @@ class PacenoteGenerator {
   }) {
     var roundaboutConversions = 0;
     var junctionConversions = 0;
+    final usedRoundaboutIds = <String>{};
 
     final refined = <PaceNote>[];
     for (final note in notes) {
       final nearbyRoundabout = _nearestWarningOfTypes(note, warnings, const {
         RoadWarningType.roundabout,
-      }, 55);
+      }, 80);
       
       double roundaboutConfidence = 0.0;
       if (nearbyRoundabout != null) {
@@ -276,6 +293,13 @@ class PacenoteGenerator {
       }
 
       if (roundaboutConfidence >= 0.8) {
+        if (nearbyRoundabout != null) {
+          if (usedRoundaboutIds.contains(nearbyRoundabout.id)) {
+            // Already processed this roundabout, skip extra notes inside it
+            continue;
+          }
+          usedRoundaboutIds.add(nearbyRoundabout.id);
+        }
         roundaboutConversions++;
         refined.add(
           note.copyWith(
@@ -286,9 +310,14 @@ class PacenoteGenerator {
             text: 'Roundabout ahead',
             tightens: false,
             opens: false,
-            recommendedSpeedKmh: 30, // 35 km/h base with 5 km/h safety margin applied
+            recommendedSpeedKmh: 30,
           ),
         );
+        continue;
+      }
+
+      if (nearbyRoundabout != null && usedRoundaboutIds.contains(nearbyRoundabout.id)) {
+        // Skip normal curves that are inside the roundabout we already handled
         continue;
       }
 
@@ -296,7 +325,7 @@ class PacenoteGenerator {
         RoadWarningType.trafficLight,
         RoadWarningType.stopSign,
         RoadWarningType.giveWay,
-      }, 28);
+      }, 45);
       if (nearbyJunction != null && note.severity <= 4 && note.direction != 'straight') {
         junctionConversions++;
         final direction = note.direction.toLowerCase().startsWith('l')
@@ -365,6 +394,87 @@ class PacenoteGenerator {
     return deduped;
   }
 
+  List<RoadWarning> detectElevationFeatures(List<RoutePoint> points) {
+    final warnings = <RoadWarning>[];
+    if (points.length < 20) return warnings;
+
+    // Smooth elevations using a moving average window of 11 points (approx 55m at 5m spacing)
+    final smoothed = <double>[];
+    for (var i = 0; i < points.length; i++) {
+      var sum = 0.0;
+      var count = 0;
+      const half = 5;
+      for (var j = i - half; j <= i + half; j++) {
+        if (j >= 0 && j < points.length && points[j].elevation != null) {
+          sum += points[j].elevation!;
+          count++;
+        }
+      }
+      smoothed.add(count > 0 ? sum / count : (points[i].elevation ?? 0.0));
+    }
+
+    // Scan for peaks (crests) and valleys (dips)
+    // Look ahead of 10 points (50m) to confirm peak/valley
+    const lookahead = 10;
+    for (var i = lookahead; i < points.length - lookahead; i++) {
+      final currentElev = smoothed[i];
+      if (points[i].elevation == null) continue;
+
+      // Check peak (crest)
+      bool isPeak = true;
+      for (var j = i - lookahead; j <= i + lookahead; j++) {
+        if (smoothed[j] > currentElev) {
+          isPeak = false;
+          break;
+        }
+      }
+      if (isPeak) {
+        final diffBefore = currentElev - smoothed[i - lookahead];
+        final diffAfter = currentElev - smoothed[i + lookahead];
+        // Elevation must rise by at least 1.0 meters and fall by at least 1.0 meters
+        if (diffBefore >= 1.0 && diffAfter >= 1.0) {
+          final pt = points[i];
+          warnings.add(RoadWarning(
+            id: 'crest-${pt.distanceFromStart.round()}',
+            type: RoadWarningType.crest,
+            lat: pt.lat,
+            lon: pt.lon,
+            distanceFromStart: pt.distanceFromStart,
+            text: 'Crest',
+          ));
+          i += lookahead; // Skip to avoid duplicate detections
+          continue;
+        }
+      }
+
+      // Check valley (dip)
+      bool isValley = true;
+      for (var j = i - lookahead; j <= i + lookahead; j++) {
+        if (smoothed[j] < currentElev) {
+          isValley = false;
+          break;
+        }
+      }
+      if (isValley) {
+        final diffBefore = smoothed[i - lookahead] - currentElev;
+        final diffAfter = smoothed[i + lookahead] - currentElev;
+        if (diffBefore >= 1.0 && diffAfter >= 1.0) {
+          final pt = points[i];
+          warnings.add(RoadWarning(
+            id: 'dip-${pt.distanceFromStart.round()}',
+            type: RoadWarningType.dip,
+            lat: pt.lat,
+            lon: pt.lon,
+            distanceFromStart: pt.distanceFromStart,
+            text: 'Dip',
+          ));
+          i += lookahead;
+        }
+      }
+    }
+    return warnings;
+  }
+
   int _indexNearDistance(List<RoutePoint> points, double targetDistance) {
     var bestIndex = 0;
     var bestDelta = double.infinity;
@@ -428,8 +538,6 @@ class PacenoteGenerator {
     }
     list = _mergeConsecutiveSameType(list);
 
-    // Filter out insignificant flat-out wiggles (severity 6) that don't need warning,
-    // unless they are long or lead directly into a sharp corner (severity <= 4)
     for (var i = 0; i < list.length; i++) {
       final seg = list[i];
       if (seg.type == 'L' || seg.type == 'R') {
@@ -438,49 +546,31 @@ class PacenoteGenerator {
 
         int severity = 6;
         final r = radiusInfo.minRadius;
-        if (r < 18.0 && totalHeadingChange.abs() >= 75.0 && seg.length < 55.0) {
+        bool isHairpin = false;
+
+        if (r < 24.0 && totalHeadingChange.abs() >= 65.0) {
+          isHairpin = true;
           severity = 1;
-        } else if (r < 25.0) {
+        } else if (r < 30.0 && totalHeadingChange.abs() >= 85.0) {
+          isHairpin = true;
+          severity = 1;
+        } else if (r < 22.0) {
+          severity = 1;
+        } else if (r < 38.0) {
           severity = 2;
-        } else if (r < 45.0) {
+        } else if (r < 58.0) {
           severity = 3;
-        } else if (r < 75.0) {
+        } else if (r < 85.0) {
           severity = 4;
-        } else if (r < 120.0) {
+        } else if (r < 125.0) {
           severity = 5;
         } else {
           severity = 6;
         }
 
-        if (severity == 6) {
-          final isLong = seg.length > 100.0;
-          var leadsIntoSharp = false;
-          for (var j = i + 1; j < list.length; j++) {
-            final nextSeg = list[j];
-            final gap = nextSeg.startDistance - seg.endDistance;
-            if (gap > 85.0) break;
-            if (nextSeg.type == 'L' || nextSeg.type == 'R') {
-              final nextRadiusInfo = _calculateRadiusInfo(points, nextSeg.startIndex, nextSeg.endIndex);
-              final nextTotalHeading = _calculateTotalHeadingChange(points, nextSeg.startIndex, nextSeg.endIndex);
-              int nextSeverity = 6;
-              final nr = nextRadiusInfo.minRadius;
-              if (nr < 18.0 && nextTotalHeading.abs() >= 75.0 && nextSeg.length < 55.0) {
-                nextSeverity = 1;
-              } else if (nr < 25.0) {
-                nextSeverity = 2;
-              } else if (nr < 45.0) {
-                nextSeverity = 3;
-              } else if (nr < 75.0) {
-                nextSeverity = 4;
-              }
-              if (nextSeverity <= 4) {
-                leadsIntoSharp = true;
-              }
-              break;
-            }
-          }
-
-          if (!isLong && !leadsIntoSharp) {
+        if (severity == 6 && !isHairpin) {
+          final isRealCurve = seg.length >= 20.0 && totalHeadingChange.abs() >= 10.0;
+          if (!isRealCurve) {
             seg.type = 'S';
           }
         }
@@ -521,9 +611,13 @@ class PacenoteGenerator {
     double minRadius = double.infinity;
     double sumRadius = 0.0;
     int count = 0;
+    
+    final segLength = points[end].distanceFromStart - points[start].distanceFromStart;
+    final halfWindow = math.min(10.0, segLength / 2.0);
+
     for (var i = start; i <= end; i++) {
-      final before = _indexNearDistance(points, points[i].distanceFromStart - 15.0);
-      final after = _indexNearDistance(points, points[i].distanceFromStart + 15.0);
+      final before = _indexNearDistance(points, points[i].distanceFromStart - halfWindow);
+      final after = _indexNearDistance(points, points[i].distanceFromStart + halfWindow);
       final distDiff = points[after].distanceFromStart - points[before].distanceFromStart;
       if (distDiff > 0) {
         final delta = normalizeAngleDeltaDegrees(points[before].heading, points[after].heading);
@@ -544,8 +638,8 @@ class PacenoteGenerator {
     final segment = points
         .where(
           (point) =>
-              point.distanceFromStart >= note.distanceFromStart - 60 &&
-              point.distanceFromStart <= note.distanceFromStart + 60,
+              point.distanceFromStart >= note.distanceFromStart - 50 &&
+              point.distanceFromStart <= note.distanceFromStart + 50,
         )
         .toList();
     if (segment.length < 8) {
@@ -553,28 +647,33 @@ class PacenoteGenerator {
     }
 
     final length = segment.last.distanceFromStart - segment.first.distanceFromStart;
-    if (length < 20 || length > 120) {
+    if (length < 25 || length > 120) {
       return 0.0;
     }
 
-    var totalAbsDelta = 0.0;
-    var maxDelta = 0.0;
+    double totalSignedDelta = 0.0;
+    double totalAbsDelta = 0.0;
+    double maxDelta = 0.0;
     for (var i = 1; i < segment.length; i++) {
       final delta = normalizeAngleDeltaDegrees(
         segment[i - 1].heading,
         segment[i].heading,
-      ).abs();
-      totalAbsDelta += delta;
-      if (delta > maxDelta) {
-        maxDelta = delta;
-      }
+      );
+      totalSignedDelta += delta;
+      totalAbsDelta += delta.abs();
+      maxDelta = math.max(maxDelta, delta.abs());
     }
     
-    if (maxDelta > 20.0) {
+    if (maxDelta > 28.0) {
       return 0.0;
     }
 
-    if (totalAbsDelta < 100 || totalAbsDelta > 400) {
+    if (totalAbsDelta < 110.0 || totalAbsDelta > 420.0) {
+      return 0.0;
+    }
+
+    final ratio = totalAbsDelta > 0 ? totalSignedDelta.abs() / totalAbsDelta : 0.0;
+    if (ratio < 0.88) {
       return 0.0;
     }
 
@@ -589,11 +688,11 @@ class PacenoteGenerator {
       maxLon = math.max(maxLon, point.lon);
     }
     final diagonal = haversineDistanceMeters(minLat, minLon, maxLat, maxLon);
-    if (diagonal > 80) {
+    if (diagonal < 10.0 || diagonal > 75.0) {
       return 0.0;
     }
 
-    return 0.5;
+    return 0.9;
   }
 
   RoadWarning? _nearestWarningOfTypes(
