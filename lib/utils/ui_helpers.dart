@@ -8,22 +8,140 @@ import '../models/speed_limit_segment.dart';
 import '../services/settings_service.dart';
 import 'geo_math.dart';
 
+class RoutePosition {
+  final double lat;
+  final double lon;
+  final double heading;
+  final int index;
+  final double elevation;
+
+  const RoutePosition({
+    required this.lat,
+    required this.lon,
+    required this.heading,
+    required this.index,
+    required this.elevation,
+  });
+}
+
 RoutePoint? findNearestPoint(List<RoutePoint> points, double distanceMeters) {
   if (points.isEmpty) {
     return null;
   }
+  if (distanceMeters <= points.first.distanceFromStart) {
+    return points.first;
+  }
+  if (distanceMeters >= points.last.distanceFromStart) {
+    return points.last;
+  }
 
-  var nearest = points.first;
-  var nearestDelta = (nearest.distanceFromStart - distanceMeters).abs();
-  for (final point in points.skip(1)) {
-    final delta = (point.distanceFromStart - distanceMeters).abs();
-    if (delta < nearestDelta) {
-      nearest = point;
-      nearestDelta = delta;
+  var low = 0;
+  var high = points.length - 1;
+
+  while (low <= high) {
+    final mid = (low + high) >> 1;
+    final midDist = points[mid].distanceFromStart;
+
+    if (midDist == distanceMeters) {
+      return points[mid];
+    } else if (midDist < distanceMeters) {
+      low = mid + 1;
+    } else {
+      high = mid - 1;
     }
   }
-  return nearest;
+
+  // low is high + 1
+  if (low >= points.length) return points.last;
+  if (high < 0) return points.first;
+
+  final d1 = (points[low].distanceFromStart - distanceMeters).abs();
+  final d2 = (points[high].distanceFromStart - distanceMeters).abs();
+  return d1 < d2 ? points[low] : points[high];
 }
+
+RoutePosition interpolateRoutePositionAtDistance(List<RoutePoint> points, double distanceMeters) {
+  if (points.isEmpty) {
+    return const RoutePosition(lat: 0.0, lon: 0.0, heading: 0.0, index: 0, elevation: 0.0);
+  }
+  if (distanceMeters <= points.first.distanceFromStart) {
+    return RoutePosition(
+      lat: points.first.lat,
+      lon: points.first.lon,
+      heading: points.first.heading,
+      index: 0,
+      elevation: points.first.elevation ?? 0.0,
+    );
+  }
+  if (distanceMeters >= points.last.distanceFromStart) {
+    return RoutePosition(
+      lat: points.last.lat,
+      lon: points.last.lon,
+      heading: points.last.heading,
+      index: points.length - 1,
+      elevation: points.last.elevation ?? 0.0,
+    );
+  }
+
+  var low = 0;
+  var high = points.length - 1;
+
+  while (low <= high) {
+    final mid = (low + high) >> 1;
+    final midDist = points[mid].distanceFromStart;
+
+    if (midDist == distanceMeters) {
+      return RoutePosition(
+        lat: points[mid].lat,
+        lon: points[mid].lon,
+        heading: points[mid].heading,
+        index: mid,
+        elevation: points[mid].elevation ?? 0.0,
+      );
+    } else if (midDist < distanceMeters) {
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  // points[high].distanceFromStart < distanceMeters < points[low].distanceFromStart
+  if (high < 0) high = 0;
+  if (low >= points.length) low = points.length - 1;
+
+  final p1 = points[high];
+  final p2 = points[low];
+  final segmentDist = p2.distanceFromStart - p1.distanceFromStart;
+  final fraction = segmentDist > 0 ? (distanceMeters - p1.distanceFromStart) / segmentDist : 0.0;
+
+  final lat = p1.lat + (p2.lat - p1.lat) * fraction;
+  final lon = p1.lon + (p2.lon - p1.lon) * fraction;
+  final heading = p1.heading + normalizeAngleDeltaDegrees(p1.heading, p2.heading) * fraction;
+  
+  final e1 = p1.elevation ?? 0.0;
+  final e2 = p2.elevation ?? 0.0;
+  final elevation = e1 + (e2 - e1) * fraction;
+
+  return RoutePosition(
+    lat: lat,
+    lon: lon,
+    heading: (heading + 360) % 360,
+    index: high,
+    elevation: elevation,
+  );
+}
+
+double normalizeAngleDeltaDegrees(double from, double to) {
+  var diff = to - from;
+  while (diff < -180) {
+    diff += 360;
+  }
+  while (diff > 180) {
+    diff -= 360;
+  }
+  return diff;
+}
+
 
 String colorForPaceNoteSeverity(int severity) {
   switch (severity) {

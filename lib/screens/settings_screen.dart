@@ -3,10 +3,17 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/ors_service.dart';
 import '../services/settings_service.dart';
+import '../services/route_storage_service.dart';
+import 'offline_maps_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({required this.settings, super.key});
+  const SettingsScreen({
+    required this.storage,
+    required this.settings,
+    super.key,
+  });
 
+  final RouteStorageService storage;
   final SettingsService settings;
 
   @override
@@ -437,6 +444,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            elevation: 0,
+            color: theme.colorScheme.surfaceContainerLow,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+              ),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => OfflineMapsScreen(
+                      storage: widget.storage,
+                      settings: widget.settings,
+                    ),
+                  ),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(Icons.offline_pin_outlined, color: theme.colorScheme.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Offline Maps Manager',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Manage cached regions and download maps for saved routes',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
+                  ],
+                ),
+              ),
             ),
           ),
         ],

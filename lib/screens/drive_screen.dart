@@ -20,6 +20,30 @@ import '../utils/geo_math.dart';
 import '../utils/format_helpers.dart';
 import '../utils/ui_helpers.dart';
 
+class DriveState {
+  final PaceNote? nextNote;
+  final double? distanceToNote;
+  final RoadWarning? nextWarning;
+  final double? distanceToWarning;
+  final SpeedLimitSegment? currentLimit;
+  final double speedMps;
+  final bool offRoute;
+  final bool gpsWeak;
+  final String? permissionMessage;
+
+  const DriveState({
+    this.nextNote,
+    this.distanceToNote,
+    this.nextWarning,
+    this.distanceToWarning,
+    this.currentLimit,
+    this.speedMps = 0.0,
+    this.offRoute = false,
+    this.gpsWeak = false,
+    this.permissionMessage,
+  });
+}
+
 class DriveScreen extends StatefulWidget {
   const DriveScreen({
     required this.routePoints,
@@ -64,8 +88,14 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   double _distanceFromRoute = 0;
   double _speedMps = 0;
   String? _permissionMessage;
-  bool _voiceEnabled = true;
-  bool _followLocation = true;
+
+  // ValueNotifiers for performance-optimized UI updates
+  late final ValueNotifier<DriveState> _driveStateNotifier;
+  late final ValueNotifier<bool> _followLocationNotifier;
+  late final ValueNotifier<bool> _voiceEnabledNotifier;
+  late final ValueNotifier<bool> _simulationPausedNotifier;
+  late final ValueNotifier<double> _simulationSpeedKmhNotifier;
+
   String? _lastLoadedStyle;
   bool _carImageLoaded = false;
   double _lastGoodHeading = 0;
@@ -76,15 +106,69 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   double _rawSpeedMps = 0;
   double _gpsAccuracy = 0;
   double _gpsHeading = 0;
-  double _simulationSpeedKmh = 50.0;
-  bool _simulationPaused = false;
   Timer? _simulationTimer;
   double _simulatedDistance = 0.0;
+  DateTime? _lastCameraUpdateTime;
+
+  int _findNextNoteIndex(double distance) {
+    if (_notes.isEmpty) return -1;
+    var low = 0;
+    var high = _notes.length - 1;
+    var result = -1;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      if (_notes[mid].distanceFromStart >= distance) {
+        result = mid;
+        high = mid - 1;
+      } else {
+        low = mid + 1;
+      }
+    }
+    return result;
+  }
+
+  int _findNextWarningIndex(double distance) {
+    final warnings = _visibleRoadWarnings;
+    if (warnings.isEmpty) return -1;
+    var low = 0;
+    var high = warnings.length - 1;
+    var result = -1;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      if (warnings[mid].distanceFromStart >= distance) {
+        result = mid;
+        high = mid - 1;
+      } else {
+        low = mid + 1;
+      }
+    }
+    return result;
+  }
+
+  int _findCurrentSpeedLimitIndex(double distance) {
+    final segments = _visibleSpeedLimitSegments;
+    if (segments.isEmpty) return -1;
+    var low = 0;
+    var high = segments.length - 1;
+    var result = -1;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      if (segments[mid].startDistance <= distance) {
+        result = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return result;
+  }
 
   PaceNote? get _nextNote {
-    for (final note in _notes) {
-      if (!note.spoken && note.distanceFromStart >= _distanceAlongRoute) {
-        return note;
+    final idx = _findNextNoteIndex(_distanceAlongRoute);
+    if (idx == -1) return null;
+    for (var i = idx; i < _notes.length; i++) {
+      if (!_notes[i].spoken) {
+        return _notes[i];
       }
     }
     return null;
@@ -97,20 +181,17 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       widget.settings.showSpeedLimits ? widget.speedLimitSegments : const [];
 
   RoadWarning? get _nextRoadWarning {
-    for (final warning in _visibleRoadWarnings) {
-      if (warning.distanceFromStart >= _distanceAlongRoute) {
-        return warning;
-      }
-    }
-    return null;
+    final idx = _findNextWarningIndex(_distanceAlongRoute);
+    if (idx == -1) return null;
+    return _visibleRoadWarnings[idx];
   }
 
   SpeedLimitSegment? get _currentSpeedLimit {
-    for (final segment in _visibleSpeedLimitSegments) {
-      if (_distanceAlongRoute >= segment.startDistance &&
-          _distanceAlongRoute <= segment.endDistance) {
-        return segment;
-      }
+    final idx = _findCurrentSpeedLimitIndex(_distanceAlongRoute);
+    if (idx == -1) return null;
+    final seg = _visibleSpeedLimitSegments[idx];
+    if (_distanceAlongRoute >= seg.startDistance && _distanceAlongRoute <= seg.endDistance) {
+      return seg;
     }
     return null;
   }
@@ -118,6 +199,12 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _driveStateNotifier = ValueNotifier<DriveState>(const DriveState());
+    _followLocationNotifier = ValueNotifier<bool>(true);
+    _voiceEnabledNotifier = ValueNotifier<bool>(true);
+    _simulationPausedNotifier = ValueNotifier<bool>(false);
+    _simulationSpeedKmhNotifier = ValueNotifier<double>(50.0);
+
     WidgetsBinding.instance.addObserver(this);
     try {
       WakelockPlus.enable();
@@ -142,6 +229,11 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     _positionSubscription?.cancel();
     _simulationTimer?.cancel();
     _voice.stop();
+    _driveStateNotifier.dispose();
+    _followLocationNotifier.dispose();
+    _voiceEnabledNotifier.dispose();
+    _simulationPausedNotifier.dispose();
+    _simulationSpeedKmhNotifier.dispose();
     super.dispose();
   }
 
@@ -160,26 +252,13 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final nextNote = _nextNote;
-    final nextWarning = _nextRoadWarning;
-    final currentLimit = _currentSpeedLimit;
-    final distanceToNote = nextNote == null
-        ? null
-        : math.max(0.0, nextNote.distanceFromStart - _distanceAlongRoute);
-    final distanceToWarning = nextWarning == null
-        ? null
-        : math.max(0.0, nextWarning.distanceFromStart - _distanceAlongRoute);
-    final offRoute = _distanceFromRoute > 60 && _lastPosition != null;
-
     return Scaffold(
       body: Stack(
         children: [
           Listener(
             onPointerDown: (_) {
-              if (_followLocation) {
-                setState(() {
-                  _followLocation = false;
-                });
+              if (_followLocationNotifier.value) {
+                _followLocationNotifier.value = false;
               }
             },
             child: maplibre.MapLibreMap(
@@ -240,43 +319,47 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     child: Row(
                       children: [
-                        IconButton(
-                          icon: Icon(_simulationPaused ? Icons.play_arrow : Icons.pause),
-                          tooltip: _simulationPaused ? 'Play' : 'Pause',
-                          onPressed: () {
-                            setState(() {
-                              _simulationPaused = !_simulationPaused;
-                            });
+                        ValueListenableBuilder<bool>(
+                          valueListenable: _simulationPausedNotifier,
+                          builder: (context, paused, _) {
+                            return IconButton(
+                              icon: Icon(paused ? Icons.play_arrow : Icons.pause),
+                              tooltip: paused ? 'Play' : 'Pause',
+                              onPressed: () {
+                                _simulationPausedNotifier.value = !paused;
+                              },
+                            );
                           },
                         ),
                         IconButton(
                           icon: const Icon(Icons.replay),
                           tooltip: 'Restart',
                           onPressed: () {
-                            setState(() {
-                              _simulatedDistance = 0.0;
-                              _lastMatchedIndex = 0;
-                            });
+                            _simulatedDistance = 0.0;
+                            _lastMatchedIndex = 0;
                           },
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: DropdownButtonHideUnderline(
-                            child: DropdownButton<double>(
-                              value: _simulationSpeedKmh,
-                              isExpanded: true,
-                              items: [30.0, 50.0, 70.0, 90.0, 120.0].map((speed) {
-                                return DropdownMenuItem<double>(
-                                  value: speed,
-                                  child: Text('${speed.round()} km/h'),
+                            child: ValueListenableBuilder<double>(
+                              valueListenable: _simulationSpeedKmhNotifier,
+                              builder: (context, speedKmh, _) {
+                                return DropdownButton<double>(
+                                  value: speedKmh,
+                                  isExpanded: true,
+                                  items: [30.0, 50.0, 70.0, 90.0, 120.0].map((speed) {
+                                    return DropdownMenuItem<double>(
+                                      value: speed,
+                                      child: Text('${speed.round()} km/h'),
+                                    );
+                                  }).toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      _simulationSpeedKmhNotifier.value = val;
+                                    }
+                                  },
                                 );
-                              }).toList(),
-                              onChanged: (val) {
-                                if (val != null) {
-                                  setState(() {
-                                    _simulationSpeedKmh = val;
-                                  });
-                                }
                               },
                             ),
                           ),
@@ -298,9 +381,18 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
             left: 72,
             child: SafeArea(
               child: GestureDetector(
-              onLongPress: _showDebugBottomSheet,
-              child: _SpeedCard(speedMps: _speedMps, speedLimit: currentLimit, gpsWeak: _gpsWeak),
-            ),
+                onLongPress: _showDebugBottomSheet,
+                child: ValueListenableBuilder<DriveState>(
+                  valueListenable: _driveStateNotifier,
+                  builder: (context, state, _) {
+                    return _SpeedCard(
+                      speedMps: state.speedMps,
+                      speedLimit: state.currentLimit,
+                      gpsWeak: state.gpsWeak,
+                    );
+                  },
+                ),
+              ),
             ),
           ),
           Positioned(
@@ -309,20 +401,30 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
             child: SafeArea(
               child: Column(
                 children: [
-                  _DriveRoundButton(
-                    heroTag: 'drive-follow',
-                    tooltip: _followLocation ? 'Disable follow' : 'Recenter',
-                    icon: _followLocation ? Icons.gps_fixed : Icons.my_location,
-                    active: _followLocation,
-                    onPressed: _toggleFollowMode,
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _followLocationNotifier,
+                    builder: (context, follow, _) {
+                      return _DriveRoundButton(
+                        heroTag: 'drive-follow',
+                        tooltip: follow ? 'Disable follow' : 'Recenter',
+                        icon: follow ? Icons.gps_fixed : Icons.my_location,
+                        active: follow,
+                        onPressed: _toggleFollowMode,
+                      );
+                    },
                   ),
                   const SizedBox(height: 10),
-                  _DriveRoundButton(
-                    heroTag: 'drive-voice',
-                    tooltip: _voiceEnabled ? 'Pause voice' : 'Resume voice',
-                    icon: _voiceEnabled ? Icons.volume_up : Icons.volume_off,
-                    active: _voiceEnabled,
-                    onPressed: _toggleVoice,
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _voiceEnabledNotifier,
+                    builder: (context, voice, _) {
+                      return _DriveRoundButton(
+                        heroTag: 'drive-voice',
+                        tooltip: voice ? 'Pause voice' : 'Resume voice',
+                        icon: voice ? Icons.volume_up : Icons.volume_off,
+                        active: voice,
+                        onPressed: _toggleVoice,
+                      );
+                    },
                   ),
                   const SizedBox(height: 10),
                   _DriveRoundButton(
@@ -341,57 +443,62 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
             right: 12,
             bottom: 12,
             child: SafeArea(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface.withAlpha(238),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: const [
-                    BoxShadow(
-                      blurRadius: 14,
-                      color: Colors.black38,
-                      offset: Offset(0, 5),
+              child: ValueListenableBuilder<DriveState>(
+                valueListenable: _driveStateNotifier,
+                builder: (context, state, _) {
+                  return DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface.withAlpha(238),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: const [
+                        BoxShadow(
+                          blurRadius: 14,
+                          color: Colors.black38,
+                          offset: Offset(0, 5),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (_permissionMessage != null) ...[
-                        Text(
-                          _permissionMessage!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (state.permissionMessage != null) ...[
+                            Text(
+                              state.permissionMessage!,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          if (state.offRoute) ...[
+                            Text(
+                              'Off route',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          _CalloutRow(
+                            note: state.nextNote,
+                            distanceMeters: state.distanceToNote,
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                      if (offRoute) ...[
-                        Text(
-                          'Off route',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                      _CalloutRow(
-                        note: nextNote,
-                        distanceMeters: distanceToNote,
+                          if (state.nextWarning != null && state.distanceToWarning != null) ...[
+                            const SizedBox(height: 10),
+                            _WarningRow(
+                              warning: state.nextWarning!,
+                              distanceMeters: state.distanceToWarning!,
+                            ),
+                          ],
+                        ],
                       ),
-                      if (nextWarning != null && distanceToWarning != null) ...[
-                        const SizedBox(height: 10),
-                        _WarningRow(
-                          warning: nextWarning,
-                          distanceMeters: distanceToWarning,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -523,25 +630,46 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     _lastVisualLat = visualLat;
     _lastVisualLon = visualLon;
 
-    setState(() {
-      _previousPosition = _lastPosition;
-      _lastPosition = position;
-      _lastMatchedIndex = match.nearestIndex;
-      _distanceAlongRoute = match.distanceAlongRoute;
-      _distanceFromRoute = match.distanceFromRoute;
-      _speedMps = newSpeed;
-      _rawSpeedMps = calculatedSpeed;
-      _gpsAccuracy = position.accuracy;
-      _gpsHeading = position.heading.isFinite ? position.heading : 0.0;
-      _gpsWeak = position.accuracy > 20.0;
-    });
+    _previousPosition = _lastPosition;
+    _lastPosition = position;
+    _lastMatchedIndex = match.nearestIndex;
+    _distanceAlongRoute = match.distanceAlongRoute;
+    _distanceFromRoute = match.distanceFromRoute;
+    _speedMps = newSpeed;
+    _rawSpeedMps = calculatedSpeed;
+    _gpsAccuracy = position.accuracy;
+    _gpsHeading = position.heading.isFinite ? position.heading : 0.0;
+    _gpsWeak = position.accuracy > 20.0;
 
     _updateCurrentLocationMarker(position, visualLat, visualLon);
-    if (_followLocation) {
+    if (_followLocationNotifier.value) {
       _followPosition(visualLat, visualLon);
     }
     _maybeSpeakNextNote();
     _maybeSpeakNextWarning();
+
+    final nextNote = _nextNote;
+    final nextWarning = _nextRoadWarning;
+    final currentLimit = _currentSpeedLimit;
+    final distanceToNote = nextNote == null
+        ? null
+        : math.max(0.0, nextNote.distanceFromStart - _distanceAlongRoute);
+    final distanceToWarning = nextWarning == null
+        ? null
+        : math.max(0.0, nextWarning.distanceFromStart - _distanceAlongRoute);
+    final offRoute = _distanceFromRoute > 60 && _lastPosition != null;
+
+    _driveStateNotifier.value = DriveState(
+      nextNote: nextNote,
+      distanceToNote: distanceToNote,
+      nextWarning: nextWarning,
+      distanceToWarning: distanceToWarning,
+      currentLimit: currentLimit,
+      speedMps: _speedMps,
+      offRoute: offRoute,
+      gpsWeak: _gpsWeak,
+      permissionMessage: _permissionMessage,
+    );
   }
 
   void _maybeSpeakNextNote() {
@@ -590,15 +718,13 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
     _voice.speak(speakText);
 
-    setState(() {
-      for (final idx in spokenIndices) {
-        _notes[idx] = _notes[idx].copyWith(spoken: true);
-      }
-    });
+    for (final idx in spokenIndices) {
+      _notes[idx] = _notes[idx].copyWith(spoken: true);
+    }
   }
 
   void _maybeSpeakNextWarning() {
-    if (!_voiceEnabled) {
+    if (!_voiceEnabledNotifier.value) {
       return;
     }
     final warning = _nextRoadWarning;
@@ -643,27 +769,44 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     }
 
     _voice.speak(speakText);
-    setState(() {
-      _spokenWarningIds.add(warning.id);
-    });
+    _spokenWarningIds.add(warning.id);
   }
 
   void _resetNotes() {
-    setState(() {
-      _notes = _notes.map((note) => note.copyWith(spoken: false)).toList();
-      _spokenWarningIds.clear();
-      _lastMatchedIndex = 0;
-      if (widget.isSimulation) {
-        _simulatedDistance = 0.0;
-      }
-    });
+    _notes = _notes.map((note) => note.copyWith(spoken: false)).toList();
+    _spokenWarningIds.clear();
+    _lastMatchedIndex = 0;
+    if (widget.isSimulation) {
+      _simulatedDistance = 0.0;
+    }
+
+    final nextNote = _nextNote;
+    final nextWarning = _nextRoadWarning;
+    final currentLimit = _currentSpeedLimit;
+    final distanceToNote = nextNote == null
+        ? null
+        : math.max(0.0, nextNote.distanceFromStart - _distanceAlongRoute);
+    final distanceToWarning = nextWarning == null
+        ? null
+        : math.max(0.0, nextWarning.distanceFromStart - _distanceAlongRoute);
+    final offRoute = _distanceFromRoute > 60 && _lastPosition != null;
+
+    _driveStateNotifier.value = DriveState(
+      nextNote: nextNote,
+      distanceToNote: distanceToNote,
+      nextWarning: nextWarning,
+      distanceToWarning: distanceToWarning,
+      currentLimit: currentLimit,
+      speedMps: _speedMps,
+      offRoute: offRoute,
+      gpsWeak: _gpsWeak,
+      permissionMessage: _permissionMessage,
+    );
   }
 
   void _toggleVoice() {
-    setState(() {
-      _voiceEnabled = !_voiceEnabled;
-    });
-    _voice.setEnabled(_voiceEnabled);
+    _voiceEnabledNotifier.value = !_voiceEnabledNotifier.value;
+    _voice.setEnabled(_voiceEnabledNotifier.value);
   }
 
   Future<void> _drawNavigationRoute() async {
@@ -1050,11 +1193,11 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
   void _startSimulation() {
     _simulationTimer?.cancel();
-    _simulationTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
-      if (_simulationPaused || !mounted) return;
+    _simulationTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (_simulationPausedNotifier.value || !mounted) return;
 
-      final double speedMps = _simulationSpeedKmh / 3.6;
-      _simulatedDistance += speedMps * 0.5; // 0.5 seconds
+      final double speedMps = _simulationSpeedKmhNotifier.value / 3.6;
+      _simulatedDistance += speedMps * 0.05; // 0.05 seconds
 
       if (widget.routePoints.isEmpty) return;
 
@@ -1063,28 +1206,16 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         _lastMatchedIndex = 0;
       }
 
-      final nearestPt = findNearestPoint(widget.routePoints, _simulatedDistance);
-      if (nearestPt == null) return;
-
-      double bearing = _lastGoodHeading;
-      final nextIdx = widget.routePoints.indexOf(nearestPt) + 1;
-      if (nextIdx < widget.routePoints.length) {
-        bearing = bearingDegrees(
-          nearestPt.lat,
-          nearestPt.lon,
-          widget.routePoints[nextIdx].lat,
-          widget.routePoints[nextIdx].lon,
-        );
-      }
+      final interpolated = interpolateRoutePositionAtDistance(widget.routePoints, _simulatedDistance);
 
       final mockPosition = Position(
-        latitude: nearestPt.lat,
-        longitude: nearestPt.lon,
+        latitude: interpolated.lat,
+        longitude: interpolated.lon,
         timestamp: DateTime.now(),
         accuracy: 3.0,
-        altitude: nearestPt.elevation ?? 0.0,
+        altitude: interpolated.elevation,
         altitudeAccuracy: 0.0,
-        heading: bearing,
+        heading: interpolated.heading,
         headingAccuracy: 0.0,
         speed: speedMps,
         speedAccuracy: 0.0,

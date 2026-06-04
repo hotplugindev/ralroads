@@ -19,6 +19,16 @@ class RoadEnrichment {
   final bool isPartial;
 }
 
+class OverpassIsolateParams {
+  final List<dynamic> allElements;
+  final List<RoutePoint> routePoints;
+  const OverpassIsolateParams(this.allElements, this.routePoints);
+}
+
+RoadEnrichment parseElementsBackground(OverpassIsolateParams params) {
+  return OverpassService.parseElementsBackground(params);
+}
+
 class OverpassService {
   OverpassService({Dio? dio}) : _dio = dio ?? Dio();
 
@@ -62,8 +72,7 @@ class OverpassService {
     }
 
     final chunks = _chunkPoints(routePoints, maxChunkLengthM: 8000.0);
-    final warnings = <RoadWarning>[];
-    final speedLimits = <SpeedLimitSegment>[];
+    final allElements = <dynamic>[];
     var isPartial = false;
 
     // Limit to max 6 queries to avoid spamming the public server
@@ -90,45 +99,7 @@ class OverpassService {
         );
 
         final elements = response.data?['elements'] as List<dynamic>? ?? const [];
-
-        for (final element in elements.whereType<Map<String, dynamic>>()) {
-          final tags = Map<String, dynamic>.from(
-            element['tags'] as Map<dynamic, dynamic>? ?? const {},
-          );
-          final type = element['type'] as String?;
-
-          if (type == 'node') {
-            final warning = _warningFromNode(element, tags, routePoints);
-            if (warning != null) {
-              warnings.add(warning);
-            }
-            continue;
-          }
-
-          if (type == 'way') {
-            final geometry = _geometryFromWay(element);
-            if (geometry.isEmpty) {
-              continue;
-            }
-
-            if (tags['maxspeed'] != null) {
-              final segment = _speedLimitFromWay(
-                element,
-                tags,
-                geometry,
-                routePoints,
-              );
-              if (segment != null) {
-                speedLimits.add(segment);
-              }
-            }
-
-            final warning = _warningFromWay(element, tags, geometry, routePoints);
-            if (warning != null) {
-              warnings.add(warning);
-            }
-          }
-        }
+        allElements.addAll(elements);
       } catch (error) {
         isPartial = true;
         debugPrint('Overpass chunk $chunkIdx failed: $error');
@@ -142,14 +113,72 @@ class OverpassService {
       }
     }
 
+    final enrichment = await compute(
+      parseElementsBackground,
+      OverpassIsolateParams(allElements, routePoints),
+    );
+
     return RoadEnrichment(
-      roadWarnings: _dedupeWarnings(warnings)
-        ..sort((a, b) => a.distanceFromStart.compareTo(b.distanceFromStart)),
-      speedLimitSegments: speedLimits
-        ..sort((a, b) => a.startDistance.compareTo(b.startDistance)),
+      roadWarnings: enrichment.roadWarnings,
+      speedLimitSegments: enrichment.speedLimitSegments,
       isPartial: isPartial,
     );
   }
+
+  static RoadEnrichment parseElementsBackground(OverpassIsolateParams params) {
+    final parser = OverpassService();
+    final warnings = <RoadWarning>[];
+    final speedLimits = <SpeedLimitSegment>[];
+
+    for (final element in params.allElements.whereType<Map<String, dynamic>>()) {
+      final tags = Map<String, dynamic>.from(
+        element['tags'] as Map<dynamic, dynamic>? ?? const {},
+      );
+      final type = element['type'] as String?;
+
+      if (type == 'node') {
+        final warning = parser._warningFromNode(element, tags, params.routePoints);
+        if (warning != null) {
+          warnings.add(warning);
+        }
+        continue;
+      }
+
+      if (type == 'way') {
+        final geometry = parser._geometryFromWay(element);
+        if (geometry.isEmpty) {
+          continue;
+        }
+
+        if (tags['maxspeed'] != null) {
+          final segment = parser._speedLimitFromWay(
+            element,
+            tags,
+            geometry,
+            params.routePoints,
+          );
+          if (segment != null) {
+            speedLimits.add(segment);
+          }
+        }
+
+        final warning = parser._warningFromWay(element, tags, geometry, params.routePoints);
+        if (warning != null) {
+          warnings.add(warning);
+        }
+      }
+    }
+
+    return RoadEnrichment(
+      roadWarnings: parser._dedupeWarnings(warnings)
+        ..sort((a, b) => a.distanceFromStart.compareTo(b.distanceFromStart)),
+      speedLimitSegments: speedLimits
+        ..sort((a, b) => a.startDistance.compareTo(b.startDistance)),
+    );
+  }
+
+
+
 
   String _buildQuery(List<RoutePoint> points) {
     var south = points.first.lat;

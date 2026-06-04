@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
@@ -12,6 +13,7 @@ import '../services/ors_service.dart';
 import '../services/pacenote_generator.dart';
 import '../services/route_storage_service.dart';
 import '../services/settings_service.dart';
+import '../utils/geo_math.dart';
 import '../utils/ui_helpers.dart';
 import 'route_preview_screen.dart';
 import 'settings_screen.dart';
@@ -45,6 +47,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
 
   final _geocodingService = GeocodingService();
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
   List<GeocodingResult> _searchResults = [];
   bool _searching = false;
 
@@ -53,12 +56,19 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     super.initState();
     _orsService = OrsService(settings: widget.settings);
     _pacenoteGenerator = PacenoteGenerator(settings: widget.settings);
+    _searchFocusNode.addListener(_onSearchFocusChanged);
   }
 
   @override
   void dispose() {
+    _searchFocusNode.removeListener(_onSearchFocusChanged);
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSearchFocusChanged() {
+    setState(() {});
   }
 
   Future<void> _performSearch(String query) async {
@@ -143,6 +153,11 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
               _controller = controller;
             },
             onMapLongClick: _handleMapLongClick,
+            onMapClick: (point, latLng) {
+              if (_searchFocusNode.hasFocus) {
+                _searchFocusNode.unfocus();
+              }
+            },
           ),
           Positioned(
             top: 12,
@@ -162,11 +177,28 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Row(
                         children: [
-                          const Icon(Icons.search, size: 20),
+                          IconButton(
+                            icon: Icon(
+                              _searchFocusNode.hasFocus
+                                  ? Icons.arrow_back
+                                  : Icons.search,
+                              size: 20,
+                            ),
+                            onPressed: _searchFocusNode.hasFocus
+                                ? () {
+                                    _searchFocusNode.unfocus();
+                                    setState(() {
+                                      _searchResults = const [];
+                                      _searchController.clear();
+                                    });
+                                  }
+                                : null,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: TextField(
                               controller: _searchController,
+                              focusNode: _searchFocusNode,
                               decoration: const InputDecoration(
                                 hintText: 'Search place or coordinates...',
                                 border: InputBorder.none,
@@ -226,7 +258,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
               ),
             ),
           ),
-          if (_selectedPoints.isEmpty)
+          if (_selectedPoints.isEmpty && !_searchFocusNode.hasFocus)
             Positioned(
               top: 76,
               left: 12,
@@ -256,23 +288,25 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                 ),
               ),
             ),
-          Positioned(
-            top: 12,
-            right: 12,
-            child: SafeArea(
-              child: FloatingActionButton.small(
-                heroTag: 'locate-me',
-                tooltip: 'Locate me',
-                onPressed: _locateMe,
-                child: const Icon(Icons.my_location),
+          if (!_searchFocusNode.hasFocus)
+            Positioned(
+              top: 12,
+              right: 12,
+              child: SafeArea(
+                child: FloatingActionButton.small(
+                  heroTag: 'locate-me',
+                  tooltip: 'Locate me',
+                  onPressed: _locateMe,
+                  child: const Icon(Icons.my_location),
+                ),
               ),
             ),
-          ),
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 12,
-            child: SafeArea(
+          if (!_searchFocusNode.hasFocus)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 12,
+              child: SafeArea(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(24),
                 child: BackdropFilter(
@@ -671,7 +705,10 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     try {
       final orderedPoints = _orderedRoutePlanPoints();
       final routePoints = await _orsService.buildRoute(orderedPoints);
-      final pacenotes = _pacenoteGenerator.generate(routePoints);
+      final pacenotes = await compute(
+        generatePacenotesBackground,
+        PacenoteBackgroundParams(routePoints, widget.settings.pacenoteStyle),
+      );
       await _drawRoute(routePoints);
       await _fitCameraToRoute(routePoints);
 
@@ -754,7 +791,10 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(settings: widget.settings),
+        builder: (_) => SettingsScreen(
+          storage: widget.storage,
+          settings: widget.settings,
+        ),
       ),
     );
     if (mounted) {
@@ -785,9 +825,10 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       await controller.removeLine(existingLine);
     }
 
+    final displayPoints = simplifyPoints(points, 5.0);
     final line = await controller.addLine(
       maplibre.LineOptions(
-        geometry: points
+        geometry: displayPoints
             .map((point) => maplibre.LatLng(point.lat, point.lon))
             .toList(),
         lineColor: '#00897B',

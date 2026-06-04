@@ -112,7 +112,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(settings: widget.settings),
+        builder: (_) => SettingsScreen(
+          storage: widget.storage,
+          settings: widget.settings,
+        ),
       ),
     );
     if (mounted) {

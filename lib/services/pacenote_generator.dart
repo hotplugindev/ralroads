@@ -7,12 +7,26 @@ import '../models/speed_limit_segment.dart';
 import '../utils/geo_math.dart';
 import 'settings_service.dart';
 
+class PacenoteBackgroundParams {
+  final List<RoutePoint> points;
+  final PacenoteStyle style;
+  const PacenoteBackgroundParams(this.points, this.style);
+}
+
+List<PaceNote> generatePacenotesBackground(PacenoteBackgroundParams params) {
+  final generator = PacenoteGenerator(styleOverride: params.style);
+  return generator.generate(params.points);
+}
+
 class PacenoteGenerator {
-  PacenoteGenerator({SettingsService? settings}) : _settings = settings;
+  PacenoteGenerator({SettingsService? settings, PacenoteStyle? styleOverride})
+      : _settings = settings,
+        _styleOverride = styleOverride;
 
   final SettingsService? _settings;
+  final PacenoteStyle? _styleOverride;
 
-  PacenoteStyle get _style => _settings?.pacenoteStyle ?? PacenoteStyle.balanced;
+  PacenoteStyle get _style => _styleOverride ?? _settings?.pacenoteStyle ?? PacenoteStyle.balanced;
   List<RoutePoint> densifyRoutePoints(List<RoutePoint> points, {double targetSpacingM = 5.0}) {
     if (points.length < 2) return points;
     final densified = <RoutePoint>[];

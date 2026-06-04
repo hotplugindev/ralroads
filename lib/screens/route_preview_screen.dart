@@ -11,7 +11,9 @@ import '../services/overpass_service.dart';
 import '../services/pacenote_generator.dart';
 import '../services/route_storage_service.dart';
 import '../services/settings_service.dart';
+import '../services/offline_map_service.dart';
 import '../utils/format_helpers.dart';
+import '../utils/geo_math.dart';
 import '../utils/ui_helpers.dart';
 import 'drive_screen.dart';
 
@@ -51,6 +53,11 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
   final List<maplibre.Circle> _pacenoteCircles = [];
   final List<maplibre.Symbol> _pacenoteLabels = [];
 
+  SavedRoute? _savedRoute;
+  bool _isDownloadingMap = false;
+  double _mapDownloadProgress = 0.0;
+  bool _mapDownloaded = false;
+
   double get _totalDistance =>
       widget.points.isEmpty ? 0 : widget.points.last.distanceFromStart;
 
@@ -67,6 +74,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     _pacenotes = widget.pacenotes;
     _roadWarnings = List<RoadWarning>.from(widget.savedRoute?.roadWarnings ?? const []);
     _speedLimitSegments = widget.savedRoute?.speedLimitSegments ?? const [];
+    _savedRoute = widget.savedRoute;
+    
+    _checkIfMapDownloaded();
 
     final hasElevationWarnings = _roadWarnings.any(
       (w) => w.type == RoadWarningType.crest || w.type == RoadWarningType.dip,
@@ -88,6 +98,84 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     }
     if (widget.savedRoute == null && widget.points.length >= 2) {
       _loadRoadInformation();
+    }
+  }
+
+  Future<void> _checkIfMapDownloaded() async {
+    final route = _savedRoute;
+    if (route == null) return;
+    try {
+      final regions = await OfflineMapService.instance.getRegions();
+      for (final region in regions) {
+        if (region.metadata['routeId'] == route.id) {
+          if (mounted) {
+            setState(() {
+              _mapDownloaded = true;
+            });
+          }
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error checking offline map cache: $e');
+    }
+  }
+
+  Future<void> _downloadOfflineMap() async {
+    final route = _savedRoute;
+    if (route == null) return;
+
+    setState(() {
+      _isDownloadingMap = true;
+      _mapDownloadProgress = 0.0;
+    });
+
+    try {
+      final styleUrl = getMapStyle(context, widget.settings);
+      await OfflineMapService.instance.downloadRouteRegion(
+        route: route,
+        mapStyleUrl: styleUrl,
+        minZoom: 11.0,
+        maxZoom: 15.0,
+        onProgress: (status) {
+          if (status is maplibre.InProgress) {
+            if (mounted) {
+              setState(() {
+                _mapDownloadProgress = status.progress;
+              });
+            }
+          } else if (status is maplibre.Success) {
+            if (mounted) {
+              setState(() {
+                _isDownloadingMap = false;
+                _mapDownloaded = true;
+                _mapDownloadProgress = 100.0;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Offline map downloaded successfully!')),
+              );
+            }
+          } else if (status is maplibre.Error) {
+            if (mounted) {
+              setState(() {
+                _isDownloadingMap = false;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Failed to download map: ${status.cause}')),
+              );
+            }
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isDownloadingMap = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to start map download: $e')),
+        );
+      }
     }
   }
 
@@ -114,32 +202,59 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
             pacenoteCount: _pacenotes.length,
           ),
           const SizedBox(height: 16),
-          Container(
-            height: 220,
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+          if (widget.points.isEmpty)
+            Container(
+              height: 220,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: theme.colorScheme.error.withOpacity(0.5)),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error, size: 36),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Empty route geometry! Map cannot render.',
+                    style: TextStyle(
+                      color: theme.colorScheme.onErrorContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              height: 220,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                ),
+              ),
+              child: maplibre.MapLibreMap(
+                styleString: getMapStyle(context, widget.settings),
+                initialCameraPosition: const maplibre.CameraPosition(
+                  target: maplibre.LatLng(43.8, 11.2),
+                  zoom: 5,
+                ),
+                attributionButtonPosition: maplibre.AttributionButtonPosition.bottomRight,
+                attributionButtonMargins: const math.Point(-1000, -1000),
+                myLocationEnabled: false,
+                onMapCreated: (controller) {
+                  _mapController = controller;
+                },
+                onStyleLoadedCallback: () async {
+                  await _drawRouteLine();
+                  await _drawPacenoteMarkers();
+                  await _fitCameraToRoute();
+                },
               ),
             ),
-            child: maplibre.MapLibreMap(
-              styleString: getMapStyle(context, widget.settings),
-              initialCameraPosition: const maplibre.CameraPosition(
-                target: maplibre.LatLng(43.8, 11.2),
-                zoom: 5,
-              ),
-              attributionButtonPosition: maplibre.AttributionButtonPosition.bottomRight,
-              attributionButtonMargins: const math.Point(-1000, -1000),
-              myLocationEnabled: false,
-              onMapCreated: (controller) async {
-                _mapController = controller;
-                await _drawRouteLine();
-                await _drawPacenoteMarkers();
-                await _fitCameraToRoute();
-              },
-            ),
-          ),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -170,18 +285,69 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    side: BorderSide(color: theme.colorScheme.primary, width: 1.5),
-                  ),
-                  onPressed: () => _saveRoute(context),
-                  icon: const Icon(Icons.save),
-                  label: const Text('Save Route', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
+                child: _savedRoute == null
+                    ? OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          side: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+                        ),
+                        onPressed: () => _saveRoute(context),
+                        icon: const Icon(Icons.save),
+                        label: const Text('Save Route', style: TextStyle(fontWeight: FontWeight.bold)),
+                      )
+                    : _isDownloadingMap
+                        ? ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: null,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  height: 16,
+                                  width: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    value: _mapDownloadProgress > 0 ? _mapDownloadProgress / 100 : null,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _mapDownloadProgress > 0
+                                      ? '${_mapDownloadProgress.toStringAsFixed(0)}%'
+                                      : 'Caching...',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              backgroundColor: _mapDownloaded
+                                  ? theme.colorScheme.secondaryContainer
+                                  : theme.colorScheme.primaryContainer,
+                              foregroundColor: _mapDownloaded
+                                  ? theme.colorScheme.onSecondaryContainer
+                                  : theme.colorScheme.onPrimaryContainer,
+                            ),
+                            onPressed: _downloadOfflineMap,
+                            icon: Icon(_mapDownloaded ? Icons.offline_pin : Icons.download),
+                            label: Text(
+                              _mapDownloaded ? 'Map Offline' : 'Get Offline',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
               ),
             ],
           ),
@@ -566,9 +732,10 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
       await controller.removeLine(existingLine);
     }
 
+    final displayPoints = simplifyPoints(widget.points, 5.0);
     final line = await controller.addLine(
       maplibre.LineOptions(
-        geometry: widget.points
+        geometry: displayPoints
             .map((point) => maplibre.LatLng(point.lat, point.lon))
             .toList(),
         lineColor: '#00897B',
@@ -928,21 +1095,20 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     if (controller == null) return;
 
     // Clear existing
-    for (final circle in _pacenoteCircles) {
-      await controller.removeCircle(circle);
-    }
+    await controller.clearCircles();
     _pacenoteCircles.clear();
-    for (final label in _pacenoteLabels) {
-      await controller.removeSymbol(label);
-    }
+    await controller.clearSymbols();
     _pacenoteLabels.clear();
+
+    final circleOptionsList = <maplibre.CircleOptions>[];
+    final symbolOptionsList = <maplibre.SymbolOptions>[];
 
     for (final note in _pacenotes) {
       final pt = _findPointAtDistance(note.distanceFromStart);
       final coordinates = maplibre.LatLng(pt.lat, pt.lon);
       final colorHex = colorForPaceNote(note);
 
-      final circle = await controller.addCircle(
+      circleOptionsList.add(
         maplibre.CircleOptions(
           geometry: coordinates,
           circleRadius: 8,
@@ -952,10 +1118,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
           circleOpacity: 0.9,
         ),
       );
-      _pacenoteCircles.add(circle);
 
       if (note.type != PaceNoteType.straight) {
-        final label = await controller.addSymbol(
+        symbolOptionsList.add(
           maplibre.SymbolOptions(
             geometry: coordinates,
             textField: shortCalloutLabel(note),
@@ -966,8 +1131,16 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
             textOffset: const Offset(0, 0),
           ),
         );
-        _pacenoteLabels.add(label);
       }
+    }
+
+    if (circleOptionsList.isNotEmpty) {
+      final circles = await controller.addCircles(circleOptionsList);
+      _pacenoteCircles.addAll(circles);
+    }
+    if (symbolOptionsList.isNotEmpty) {
+      final symbols = await controller.addSymbols(symbolOptionsList);
+      _pacenoteLabels.addAll(symbols);
     }
   }
 
@@ -985,7 +1158,11 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     );
 
     await widget.storage.saveRoute(route);
-    if (context.mounted) {
+    if (mounted) {
+      setState(() {
+        _savedRoute = route;
+      });
+      _checkIfMapDownloaded();
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Route saved')));
