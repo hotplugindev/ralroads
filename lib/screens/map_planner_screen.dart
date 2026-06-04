@@ -34,7 +34,6 @@ class MapPlannerScreen extends StatefulWidget {
 
 class _MapPlannerScreenState extends State<MapPlannerScreen> {
   late final OrsService _orsService;
-  late final PacenoteGenerator _pacenoteGenerator;
   final List<RoutePoint> _selectedPoints = [];
   final List<maplibre.Circle> _pointCircles = [];
   final List<maplibre.Symbol> _pointLabels = [];
@@ -55,7 +54,6 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   void initState() {
     super.initState();
     _orsService = OrsService(settings: widget.settings);
-    _pacenoteGenerator = PacenoteGenerator(settings: widget.settings);
     _searchFocusNode.addListener(_onSearchFocusChanged);
   }
 
@@ -83,11 +81,13 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     });
     try {
       final results = await _geocodingService.search(query);
+      if (!mounted) return;
       setState(() {
         _searchResults = results;
         _searching = false;
       });
     } catch (_) {
+      if (!mounted) return;
       setState(() {
         _searching = false;
       });
@@ -110,6 +110,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       _searchController.clear();
       _error = null;
     });
+    _searchFocusNode.unfocus();
 
     await _updateMapMarkers();
     await controller.animateCamera(
@@ -125,8 +126,11 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     final hasApiKey = _orsService.hasApiKey;
     final hasEnoughPoints = _selectedPoints.length >= 2;
     final waypointCount = math.max(0, _selectedPoints.length - 2);
+    final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+    final searchActive = _searchFocusNode.hasFocus || keyboardOpen;
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('Plan Route'),
         actions: [
@@ -146,7 +150,8 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
               zoom: 5,
             ),
             // Hide MapLibre attribution/info button by pushing it off-screen
-            attributionButtonPosition: maplibre.AttributionButtonPosition.bottomRight,
+            attributionButtonPosition:
+                maplibre.AttributionButtonPosition.bottomRight,
             attributionButtonMargins: const math.Point(-1000, -1000),
             myLocationEnabled: false,
             onMapCreated: (controller) {
@@ -154,9 +159,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
             },
             onMapLongClick: _handleMapLongClick,
             onMapClick: (point, latLng) {
-              if (_searchFocusNode.hasFocus) {
-                _searchFocusNode.unfocus();
-              }
+              FocusScope.of(context).unfocus();
             },
           ),
           Positioned(
@@ -179,19 +182,13 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                         children: [
                           IconButton(
                             icon: Icon(
-                              _searchFocusNode.hasFocus
-                                  ? Icons.arrow_back
+                              searchActive
+                                  ? Icons.keyboard_arrow_down
                                   : Icons.search,
                               size: 20,
                             ),
-                            onPressed: _searchFocusNode.hasFocus
-                                ? () {
-                                    _searchFocusNode.unfocus();
-                                    setState(() {
-                                      _searchResults = const [];
-                                      _searchController.clear();
-                                    });
-                                  }
+                            onPressed: searchActive
+                                ? () => FocusScope.of(context).unfocus()
                                 : null,
                           ),
                           const SizedBox(width: 8),
@@ -209,22 +206,36 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                             ),
                           ),
                           if (_searchController.text.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              onPressed: () {
-                                setState(() {
-                                  _searchController.clear();
-                                  _searchResults = const [];
-                                });
-                              },
-                            ),
+                            _searching
+                                ? const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    child: SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  )
+                                : IconButton(
+                                    icon: const Icon(Icons.clear, size: 18),
+                                    onPressed: () {
+                                      setState(() {
+                                        _searchController.clear();
+                                        _searchResults = const [];
+                                      });
+                                    },
+                                  ),
                         ],
                       ),
                     ),
                   ),
                   if (_searchResults.isNotEmpty)
                     Card(
-                      color: Theme.of(context).colorScheme.surface.withAlpha(240),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surface.withAlpha(240),
                       elevation: 8,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -235,14 +246,17 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                           shrinkWrap: true,
                           padding: EdgeInsets.zero,
                           itemCount: _searchResults.length,
-                          separatorBuilder: (context, index) => const Divider(height: 1),
+                          separatorBuilder: (context, index) =>
+                              const Divider(height: 1),
                           itemBuilder: (context, index) {
                             final result = _searchResults[index];
                             return ListTile(
                               dense: true,
                               title: Text(
                                 result.name,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                               subtitle: result.subtitle.isNotEmpty
                                   ? Text(result.subtitle)
@@ -258,14 +272,16 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
               ),
             ),
           ),
-          if (_selectedPoints.isEmpty && !_searchFocusNode.hasFocus)
+          if (_selectedPoints.isEmpty && !searchActive)
             Positioned(
               top: 76,
               left: 12,
               right: 12,
               child: SafeArea(
                 child: Card(
-                  color: Theme.of(context).colorScheme.secondaryContainer.withAlpha(220),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.secondaryContainer.withAlpha(220),
                   elevation: 2,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -279,7 +295,10 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                         Expanded(
                           child: Text(
                             'Long-press on the map to add waypoints, or search for places above.',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       ],
@@ -288,7 +307,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                 ),
               ),
             ),
-          if (!_searchFocusNode.hasFocus)
+          if (!searchActive)
             Positioned(
               top: 12,
               right: 12,
@@ -301,285 +320,334 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                 ),
               ),
             ),
-          if (!_searchFocusNode.hasFocus)
+          if (!searchActive)
             Positioned(
               left: 12,
               right: 12,
               bottom: 12,
               child: SafeArea(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: BackdropFilter(
-                  filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface.withOpacity(0.85),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.5),
-                      ),
-                      boxShadow: const [
-                        BoxShadow(
-                          blurRadius: 18,
-                          color: Colors.black26,
-                          offset: Offset(0, 8),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surface.withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.outlineVariant.withValues(alpha: 0.5),
                         ),
-                      ],
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.route,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '${_selectedPoints.length} point${_selectedPoints.length == 1 ? '' : 's'} selected',
-                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
+                        boxShadow: const [
+                          BoxShadow(
+                            blurRadius: 18,
+                            color: Colors.black26,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.route,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    '${_selectedPoints.length} point${_selectedPoints.length == 1 ? '' : 's'} selected',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.bold),
                                   ),
                                 ),
-                              ),
-                              if (_selectedPoints.length >= 2) ...[
+                                if (_selectedPoints.length >= 2) ...[
+                                  const SizedBox(width: 8),
+                                  TextButton.icon(
+                                    onPressed: _building ? null : _reverseRoute,
+                                    icon: const Icon(Icons.swap_vert, size: 18),
+                                    label: const Text('Reverse'),
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                      ),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _PlannerStatusCard(
+                                    icon: Icons.flag,
+                                    label: 'Start',
+                                    selected: _selectedPoints.isNotEmpty,
+                                  ),
+                                ),
                                 const SizedBox(width: 8),
-                                TextButton.icon(
-                                  onPressed: _building ? null : _reverseRoute,
-                                  icon: const Icon(Icons.swap_vert, size: 18),
-                                  label: const Text('Reverse'),
-                                  style: TextButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                                    minimumSize: Size.zero,
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                Expanded(
+                                  child: _PlannerStatusCard(
+                                    icon: Icons.more_horiz,
+                                    label: waypointCount == 0
+                                        ? 'No waypoints'
+                                        : '$waypointCount waypoint${waypointCount == 1 ? '' : 's'}',
+                                    selected: waypointCount > 0,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _PlannerStatusCard(
+                                    icon: Icons.place,
+                                    label: 'Destination',
+                                    selected: hasEnoughPoints,
                                   ),
                                 ),
                               ],
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _PlannerStatusCard(
-                                  icon: Icons.flag,
-                                  label: 'Start',
-                                  selected: _selectedPoints.isNotEmpty,
+                            ),
+                            if (_selectedPoints.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                constraints: const BoxConstraints(
+                                  maxHeight: 150,
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: _PlannerStatusCard(
-                                  icon: Icons.more_horiz,
-                                  label: waypointCount == 0
-                                      ? 'No waypoints'
-                                      : '$waypointCount waypoint${waypointCount == 1 ? '' : 's'}',
-                                  selected: waypointCount > 0,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerLow,
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: _PlannerStatusCard(
-                                  icon: Icons.place,
-                                  label: 'Destination',
-                                  selected: hasEnoughPoints,
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (_selectedPoints.isNotEmpty) ...[
-                            const SizedBox(height: 12),
-                            Container(
-                              constraints: const BoxConstraints(maxHeight: 150),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: ReorderableListView.builder(
-                                buildDefaultDragHandles: false,
-                                shrinkWrap: true,
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                itemCount: _selectedPoints.length,
-                                onReorder: (oldIndex, newIndex) async {
-                                  setState(() {
-                                    if (oldIndex < newIndex) {
-                                      newIndex -= 1;
+                                child: ReorderableListView.builder(
+                                  buildDefaultDragHandles: false,
+                                  shrinkWrap: true,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  itemCount: _selectedPoints.length,
+                                  onReorder: (oldIndex, newIndex) async {
+                                    setState(() {
+                                      if (oldIndex < newIndex) {
+                                        newIndex -= 1;
+                                      }
+                                      final pt = _selectedPoints.removeAt(
+                                        oldIndex,
+                                      );
+                                      _selectedPoints.insert(newIndex, pt);
+                                      _error = null;
+                                    });
+                                    await _updateMapMarkers();
+                                  },
+                                  itemBuilder: (context, index) {
+                                    final pt = _selectedPoints[index];
+                                    final isStart = index == 0;
+                                    final isDest =
+                                        index == _selectedPoints.length - 1;
+
+                                    String role = 'Stop $index';
+                                    IconData icon = Icons.more_horiz;
+                                    Color color = Colors.orange;
+
+                                    if (isStart) {
+                                      role = 'Start';
+                                      icon = Icons.flag;
+                                      color = Colors.green;
+                                    } else if (isDest &&
+                                        _selectedPoints.length > 1) {
+                                      role = 'Destination';
+                                      icon = Icons.place;
+                                      color = Colors.red;
                                     }
-                                    final pt = _selectedPoints.removeAt(oldIndex);
-                                    _selectedPoints.insert(newIndex, pt);
-                                    _error = null;
-                                  });
-                                  await _updateMapMarkers();
-                                },
-                                itemBuilder: (context, index) {
-                                  final pt = _selectedPoints[index];
-                                  final isStart = index == 0;
-                                  final isDest = index == _selectedPoints.length - 1;
-                                  
-                                  String role = 'Stop $index';
-                                  IconData icon = Icons.more_horiz;
-                                  Color color = Colors.orange;
-                                  
-                                  if (isStart) {
-                                    role = 'Start';
-                                    icon = Icons.flag;
-                                    color = Colors.green;
-                                  } else if (isDest && _selectedPoints.length > 1) {
-                                    role = 'Destination';
-                                    icon = Icons.place;
-                                    color = Colors.red;
-                                  }
-                                  
-                                  return Container(
-                                    key: ObjectKey(pt),
-                                    padding: const EdgeInsets.symmetric(vertical: 4),
-                                    decoration: BoxDecoration(
-                                      border: Border(
-                                        bottom: BorderSide(
-                                          color: Theme.of(context).dividerColor.withAlpha(30),
+
+                                    return Container(
+                                      key: ObjectKey(pt),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: Border(
+                                          bottom: BorderSide(
+                                            color: Theme.of(
+                                              context,
+                                            ).dividerColor.withAlpha(30),
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        ReorderableDragStartListener(
-                                          index: index,
-                                          child: const Padding(
-                                            padding: EdgeInsets.symmetric(horizontal: 4),
-                                            child: Icon(Icons.drag_handle, size: 20, color: Colors.grey),
+                                      child: Row(
+                                        children: [
+                                          ReorderableDragStartListener(
+                                            index: index,
+                                            child: const Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 4,
+                                              ),
+                                              child: Icon(
+                                                Icons.drag_handle,
+                                                size: 20,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                        Icon(icon, color: color, size: 18),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          role,
-                                          style: const TextStyle(fontWeight: FontWeight.bold),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            '${pt.lat.toStringAsFixed(5)}, ${pt.lon.toStringAsFixed(5)}',
-                                            style: Theme.of(context).textTheme.bodySmall,
-                                            textAlign: TextAlign.right,
+                                          Icon(icon, color: color, size: 18),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            role,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                           ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        IconButton(
-                                          icon: const Icon(Icons.delete, size: 18, color: Colors.red),
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                          onPressed: () async {
-                                            setState(() {
-                                              _selectedPoints.removeAt(index);
-                                              _error = null;
-                                            });
-                                            await _updateMapMarkers();
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
-                          if (_error != null) ...[
-                            const SizedBox(height: 10),
-                            Text(
-                              _error!,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              if (_selectedPoints.isNotEmpty) ...[
-                                OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 14,
-                                      horizontal: 16,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  onPressed: _building ? null : _clear,
-                                  child: const Text('Clear'),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              '${pt.lat.toStringAsFixed(5)}, ${pt.lon.toStringAsFixed(5)}',
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.bodySmall,
+                                              textAlign: TextAlign.right,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.delete,
+                                              size: 18,
+                                              color: Colors.red,
+                                            ),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                            onPressed: () async {
+                                              setState(() {
+                                                _selectedPoints.removeAt(index);
+                                                _error = null;
+                                              });
+                                              await _updateMapMarkers();
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
                                 ),
-                                const SizedBox(width: 12),
-                              ] else ...[
-                                Expanded(
-                                  child: OutlinedButton.icon(
+                              ),
+                            ],
+                            if (_error != null) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                _error!,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                if (_selectedPoints.isNotEmpty) ...[
+                                  OutlinedButton(
                                     style: OutlinedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(vertical: 14),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                        horizontal: 16,
+                                      ),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                     ),
-                                    onPressed: _building ? null : _useCurrentLocationAsStart,
-                                    icon: const Icon(Icons.my_location),
-                                    label: const Text(
-                                      'Start at My Location',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
-                                    ),
+                                    onPressed: _building ? null : _clear,
+                                    child: const Text('Clear'),
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                              ],
-                              Expanded(
-                                child: FilledButton.icon(
-                                  style: FilledButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 14),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  onPressed: _building
-                                      ? null
-                                      : hasEnoughPoints && hasApiKey
-                                          ? _buildRoute
-                                          : hasEnoughPoints
-                                              ? _showMissingKeyPrompt
-                                              : null,
-                                  icon: _building
-                                      ? const SizedBox.square(
-                                          dimension: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
+                                  const SizedBox(width: 12),
+                                ] else ...[
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 14,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
                                           ),
-                                        )
-                                      : const Icon(Icons.alt_route),
-                                  label: Text(
-                                    !hasEnoughPoints
-                                        ? 'Long-press map to add points'
-                                        : hasApiKey
-                                            ? 'Build Route'
-                                            : 'Add API Key to Build Route',
-                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                      onPressed: _building
+                                          ? null
+                                          : _useCurrentLocationAsStart,
+                                      icon: const Icon(Icons.my_location),
+                                      label: const Text(
+                                        'Start at My Location',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                ],
+                                Expanded(
+                                  child: FilledButton.icon(
+                                    style: FilledButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    onPressed: _building
+                                        ? null
+                                        : hasEnoughPoints && hasApiKey
+                                        ? _buildRoute
+                                        : hasEnoughPoints
+                                        ? _showMissingKeyPrompt
+                                        : null,
+                                    icon: _building
+                                        ? const SizedBox.square(
+                                            dimension: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: Colors.white,
+                                            ),
+                                          )
+                                        : const Icon(Icons.alt_route),
+                                    label: Text(
+                                      !hasEnoughPoints
+                                          ? 'Long-press map to add points'
+                                          : hasApiKey
+                                          ? 'Build Route'
+                                          : 'Add API Key to Build Route',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ],
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -602,7 +670,8 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       final pt = _selectedPoints[i];
       final coordinates = maplibre.LatLng(pt.lat, pt.lon);
       final isStart = i == 0;
-      final isDest = i == _selectedPoints.length - 1 && _selectedPoints.length >= 2;
+      final isDest =
+          i == _selectedPoints.length - 1 && _selectedPoints.length >= 2;
       final isWaypoint = !isStart && !isDest;
 
       final circle = await controller.addCircle(
@@ -657,6 +726,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       distanceFromStart: 0,
     );
 
+    _searchFocusNode.unfocus();
     setState(() {
       _selectedPoints.add(routePoint);
       _error = null;
@@ -791,10 +861,8 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(
-          storage: widget.storage,
-          settings: widget.settings,
-        ),
+        builder: (_) =>
+            SettingsScreen(storage: widget.storage, settings: widget.settings),
       ),
     );
     if (mounted) {
@@ -806,10 +874,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        action: SnackBarAction(
-          label: 'Settings',
-          onPressed: _openSettings,
-        ),
+        action: SnackBarAction(label: 'Settings', onPressed: _openSettings),
       ),
     );
   }
@@ -955,7 +1020,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       });
 
       await _updateMapMarkers();
-      
+
       final controller = _controller;
       if (controller != null) {
         await controller.animateCamera(
@@ -1027,11 +1092,10 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
-
 }
 
 class _PlannerStatusCard extends StatelessWidget {
@@ -1053,13 +1117,13 @@ class _PlannerStatusCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       decoration: BoxDecoration(
         color: selected
-            ? colorScheme.primary.withOpacity(0.12)
-            : colorScheme.surfaceContainerHighest.withOpacity(0.3),
+            ? colorScheme.primary.withValues(alpha: 0.12)
+            : colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: selected
-              ? colorScheme.primary.withOpacity(0.3)
-              : colorScheme.outlineVariant.withOpacity(0.2),
+              ? colorScheme.primary.withValues(alpha: 0.3)
+              : colorScheme.outlineVariant.withValues(alpha: 0.2),
           width: 1,
         ),
       ),
@@ -1071,7 +1135,7 @@ class _PlannerStatusCard extends StatelessWidget {
             size: 18,
             color: selected
                 ? colorScheme.primary
-                : colorScheme.onSurfaceVariant.withOpacity(0.5),
+                : colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
           ),
           const SizedBox(height: 4),
           Text(
@@ -1081,7 +1145,7 @@ class _PlannerStatusCard extends StatelessWidget {
               fontWeight: selected ? FontWeight.bold : FontWeight.normal,
               color: selected
                   ? colorScheme.primary
-                  : colorScheme.onSurfaceVariant.withOpacity(0.7),
+                  : colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
             ),
             textAlign: TextAlign.center,
             maxLines: 1,

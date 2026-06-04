@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
+
 import '../models/saved_route.dart';
 
 class OfflineMapService {
@@ -56,7 +59,10 @@ class OfflineMapService {
     const double padding = 0.015;
     final southwest = maplibre.LatLng(minLat - padding, minLon - padding);
     final northeast = maplibre.LatLng(maxLat + padding, maxLon + padding);
-    final bounds = maplibre.LatLngBounds(southwest: southwest, northeast: northeast);
+    final bounds = maplibre.LatLngBounds(
+      southwest: southwest,
+      northeast: northeast,
+    );
 
     final definition = maplibre.OfflineRegionDefinition(
       bounds: bounds,
@@ -76,5 +82,58 @@ class OfflineMapService {
       metadata: metadata,
       onEvent: onProgress,
     );
+  }
+
+  int estimateTileCountForRoute({
+    required SavedRoute route,
+    required int minZoom,
+    required int maxZoom,
+  }) {
+    if (route.points.isEmpty) {
+      return 0;
+    }
+
+    var minLat = route.points.first.lat;
+    var maxLat = route.points.first.lat;
+    var minLon = route.points.first.lon;
+    var maxLon = route.points.first.lon;
+
+    for (final pt in route.points) {
+      if (pt.lat < minLat) minLat = pt.lat;
+      if (pt.lat > maxLat) maxLat = pt.lat;
+      if (pt.lon < minLon) minLon = pt.lon;
+      if (pt.lon > maxLon) maxLon = pt.lon;
+    }
+
+    const padding = 0.015;
+    minLat = (minLat - padding).clamp(-85.05112878, 85.05112878).toDouble();
+    maxLat = (maxLat + padding).clamp(-85.05112878, 85.05112878).toDouble();
+    minLon = (minLon - padding).clamp(-180.0, 180.0).toDouble();
+    maxLon = (maxLon + padding).clamp(-180.0, 180.0).toDouble();
+
+    var total = 0;
+    for (var zoom = minZoom; zoom <= maxZoom; zoom++) {
+      final west = _lonToTileX(minLon, zoom);
+      final east = _lonToTileX(maxLon, zoom);
+      final north = _latToTileY(maxLat, zoom);
+      final south = _latToTileY(minLat, zoom);
+      total += (east - west + 1) * (south - north + 1);
+    }
+    return total;
+  }
+
+  int _lonToTileX(double lon, int zoom) {
+    final scale = 1 << zoom;
+    return (((lon + 180.0) / 360.0) * scale).floor().clamp(0, scale - 1);
+  }
+
+  int _latToTileY(double lat, int zoom) {
+    final scale = 1 << zoom;
+    final latRad = lat * math.pi / 180.0;
+    final y =
+        (1 - math.log(math.tan(latRad) + (1 / math.cos(latRad))) / math.pi) /
+        2 *
+        scale;
+    return y.floor().clamp(0, scale - 1);
   }
 }

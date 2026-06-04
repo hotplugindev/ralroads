@@ -37,7 +37,10 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Saved Routes', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Saved Routes',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         elevation: 0,
       ),
       body: _routes.isEmpty
@@ -54,7 +57,9 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                     side: BorderSide(
-                      color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                      color: theme.colorScheme.outlineVariant.withValues(
+                        alpha: 0.5,
+                      ),
                     ),
                   ),
                   child: InkWell(
@@ -73,7 +78,10 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
                       );
                     },
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
                       child: Row(
                         children: [
                           Container(
@@ -83,7 +91,9 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
                               gradient: LinearGradient(
                                 colors: [
                                   theme.colorScheme.primary,
-                                  theme.colorScheme.primary.withOpacity(0.7),
+                                  theme.colorScheme.primary.withValues(
+                                    alpha: 0.7,
+                                  ),
                                 ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
@@ -91,7 +101,9 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: theme.colorScheme.primary.withOpacity(0.2),
+                                  color: theme.colorScheme.primary.withValues(
+                                    alpha: 0.2,
+                                  ),
                                   blurRadius: 6,
                                   offset: const Offset(0, 3),
                                 ),
@@ -120,7 +132,8 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
                                   formatDate(route.createdAt),
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                                    color: theme.colorScheme.onSurfaceVariant
+                                        .withValues(alpha: 0.7),
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -131,7 +144,9 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
                                     _buildRouteBadge(
                                       context,
                                       icon: Icons.straighten,
-                                      label: formatDistance(route.totalDistance),
+                                      label: formatDistance(
+                                        route.totalDistance,
+                                      ),
                                     ),
                                     _buildRouteBadge(
                                       context,
@@ -197,22 +212,22 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
     );
   }
 
-  Widget _buildRouteBadge(BuildContext context, {required IconData icon, required String label}) {
+  Widget _buildRouteBadge(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+  }) {
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.primary.withOpacity(0.08),
+        color: theme.colorScheme.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 12,
-            color: theme.colorScheme.primary,
-          ),
+          Icon(icon, size: 12, color: theme.colorScheme.primary),
           const SizedBox(width: 4),
           Text(
             label,
@@ -338,10 +353,7 @@ class _RenameRouteDialogState extends State<_RenameRouteDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Save'),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('Save')),
       ],
     );
   }

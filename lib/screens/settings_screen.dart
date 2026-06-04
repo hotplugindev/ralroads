@@ -56,7 +56,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Settings',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         elevation: 0,
       ),
       body: ListView(
@@ -68,7 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
               side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
               ),
             ),
             child: Padding(
@@ -78,14 +81,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.vpn_key_outlined, color: theme.colorScheme.primary),
+                      Icon(
+                        Icons.vpn_key_outlined,
+                        color: theme.colorScheme.primary,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         'OPENROUTESERVICE API KEY',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.8,
+                          ),
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -129,7 +137,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       'Using development API key from build configuration.',
                       style: TextStyle(
                         fontSize: 11,
-                        color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                        color: theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.7,
+                        ),
                         fontStyle: FontStyle.italic,
                       ),
                     ),
@@ -159,7 +169,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         icon: _testing
                             ? const SizedBox.square(
                                 dimension: 14,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.check_circle_outline, size: 18),
                         label: const Text('Test Key'),
@@ -222,7 +234,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
               side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
               ),
             ),
             child: Column(
@@ -232,14 +244,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                   child: Row(
                     children: [
-                      Icon(Icons.warning_amber_rounded, color: theme.colorScheme.primary),
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: theme.colorScheme.primary,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         'ROAD WARNINGS VISIBILITY',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.8,
+                          ),
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -317,7 +334,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
               side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
               ),
             ),
             child: Column(
@@ -327,14 +344,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                   child: Row(
                     children: [
-                      Icon(Icons.record_voice_over_outlined, color: theme.colorScheme.primary),
+                      Icon(
+                        Icons.record_voice_over_outlined,
+                        color: theme.colorScheme.primary,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         'PACENOTE DETAIL LEVEL',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.8,
+                          ),
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -365,10 +387,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ],
                         selected: {widget.settings.pacenoteStyle},
-                        onSelectionChanged: (Set<PacenoteStyle> selection) async {
-                          await widget.settings.setPacenoteStyle(selection.first);
-                          setState(() {});
-                        },
+                        onSelectionChanged:
+                            (Set<PacenoteStyle> selection) async {
+                              await widget.settings.setPacenoteStyle(
+                                selection.first,
+                              );
+                              setState(() {});
+                            },
                       ),
                       const SizedBox(height: 12),
                       Text(
@@ -382,7 +407,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         },
                         style: TextStyle(
                           fontSize: 12,
-                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.8,
+                          ),
                         ),
                       ),
                     ],
@@ -398,7 +425,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
               side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
               ),
             ),
             child: Column(
@@ -408,14 +435,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                   child: Row(
                     children: [
-                      Icon(Icons.explore_outlined, color: theme.colorScheme.primary),
+                      Icon(
+                        Icons.explore_outlined,
+                        color: theme.colorScheme.primary,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         'MAP VIEW SETTINGS',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.8,
+                          ),
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -426,7 +458,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   context,
                   icon: Icons.navigation_outlined,
                   title: 'Heading-up map orientation',
-                  subtitle: 'Rotate map in driving direction. If disabled, map remains North-up.',
+                  subtitle:
+                      'Rotate map in driving direction. If disabled, map remains North-up.',
                   value: widget.settings.mapHeadingUp,
                   onChanged: (value) => _setWarningSetting(
                     () => widget.settings.setMapHeadingUp(value),
@@ -453,7 +486,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
               side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
               ),
             ),
             child: InkWell(
@@ -472,7 +505,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
-                    Icon(Icons.offline_pin_outlined, color: theme.colorScheme.primary),
+                    Icon(
+                      Icons.offline_pin_outlined,
+                      color: theme.colorScheme.primary,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -490,13 +526,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             'Manage cached regions and download maps for saved routes',
                             style: TextStyle(
                               fontSize: 11.5,
-                              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                              color: theme.colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.7),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
+                    Icon(
+                      Icons.chevron_right,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ],
                 ),
               ),
@@ -523,7 +563,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withOpacity(0.08),
+              color: theme.colorScheme.primary.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, color: theme.colorScheme.primary, size: 20),
@@ -547,17 +587,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle,
                     style: TextStyle(
                       fontSize: 11.5,
-                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                      color: theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.7,
+                      ),
                     ),
                   ),
                 ],
               ],
             ),
           ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-          ),
+          Switch(value: value, onChanged: onChanged),
         ],
       ),
     );
@@ -569,7 +608,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       thickness: 1,
       indent: 64,
       endIndent: 16,
-      color: theme.colorScheme.outlineVariant.withOpacity(0.3),
+      color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
     );
   }
 

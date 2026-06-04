@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -70,6 +69,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   final _matcher = GpsRouteMatcher();
   final _voice = VoiceService();
   late List<PaceNote> _notes;
+  late final List<RoadWarning> _visibleRoadWarnings;
+  late final List<SpeedLimitSegment> _visibleSpeedLimitSegments;
   StreamSubscription<Position>? _positionSubscription;
   maplibre.MapLibreMapController? _controller;
   maplibre.Line? _baseRouteLine;
@@ -109,6 +110,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   Timer? _simulationTimer;
   double _simulatedDistance = 0.0;
   DateTime? _lastCameraUpdateTime;
+  bool _cameraUpdateInFlight = false;
 
   int _findNextNoteIndex(double distance) {
     if (_notes.isEmpty) return -1;
@@ -174,12 +176,6 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     return null;
   }
 
-  List<RoadWarning> get _visibleRoadWarnings =>
-      filterRoadWarnings(widget.roadWarnings, widget.settings);
-
-  List<SpeedLimitSegment> get _visibleSpeedLimitSegments =>
-      widget.settings.showSpeedLimits ? widget.speedLimitSegments : const [];
-
   RoadWarning? get _nextRoadWarning {
     final idx = _findNextWarningIndex(_distanceAlongRoute);
     if (idx == -1) return null;
@@ -190,7 +186,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     final idx = _findCurrentSpeedLimitIndex(_distanceAlongRoute);
     if (idx == -1) return null;
     final seg = _visibleSpeedLimitSegments[idx];
-    if (_distanceAlongRoute >= seg.startDistance && _distanceAlongRoute <= seg.endDistance) {
+    if (_distanceAlongRoute >= seg.startDistance &&
+        _distanceAlongRoute <= seg.endDistance) {
       return seg;
     }
     return null;
@@ -214,6 +211,13 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     _notes = widget.pacenotes
         .map((note) => note.copyWith(spoken: false))
         .toList();
+    _visibleRoadWarnings = filterRoadWarnings(
+      widget.roadWarnings,
+      widget.settings,
+    );
+    _visibleSpeedLimitSegments = widget.settings.showSpeedLimits
+        ? widget.speedLimitSegments
+        : const [];
     _voice.init();
     _startLocationTracking();
   }
@@ -264,7 +268,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
             child: maplibre.MapLibreMap(
               styleString: getMapStyle(context, widget.settings),
               initialCameraPosition: _initialDriveCameraPosition(),
-              attributionButtonPosition: maplibre.AttributionButtonPosition.bottomRight,
+              attributionButtonPosition:
+                  maplibre.AttributionButtonPosition.bottomRight,
               attributionButtonMargins: const math.Point(-1000, -1000),
               myLocationEnabled: false,
               onMapCreated: (controller) {
@@ -316,14 +321,19 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     child: Row(
                       children: [
                         ValueListenableBuilder<bool>(
                           valueListenable: _simulationPausedNotifier,
                           builder: (context, paused, _) {
                             return IconButton(
-                              icon: Icon(paused ? Icons.play_arrow : Icons.pause),
+                              icon: Icon(
+                                paused ? Icons.play_arrow : Icons.pause,
+                              ),
                               tooltip: paused ? 'Play' : 'Pause',
                               onPressed: () {
                                 _simulationPausedNotifier.value = !paused;
@@ -348,7 +358,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                                 return DropdownButton<double>(
                                   value: speedKmh,
                                   isExpanded: true,
-                                  items: [30.0, 50.0, 70.0, 90.0, 120.0].map((speed) {
+                                  items: [30.0, 50.0, 70.0, 90.0, 120.0].map((
+                                    speed,
+                                  ) {
                                     return DropdownMenuItem<double>(
                                       value: speed,
                                       child: Text('${speed.round()} km/h'),
@@ -448,7 +460,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                 builder: (context, state, _) {
                   return DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface.withAlpha(238),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surface.withAlpha(238),
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: const [
                         BoxShadow(
@@ -487,7 +501,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                             note: state.nextNote,
                             distanceMeters: state.distanceToNote,
                           ),
-                          if (state.nextWarning != null && state.distanceToWarning != null) ...[
+                          if (state.nextWarning != null &&
+                              state.distanceToWarning != null) ...[
                             const SizedBox(height: 10),
                             _WarningRow(
                               warning: state.nextWarning!,
@@ -578,9 +593,13 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
     double calculatedSpeed = position.speed;
     final prevPos = _lastPosition;
-    if (calculatedSpeed < 0 || calculatedSpeed.isNaN || !calculatedSpeed.isFinite) {
+    if (calculatedSpeed < 0 ||
+        calculatedSpeed.isNaN ||
+        !calculatedSpeed.isFinite) {
       if (prevPos != null) {
-        final timeDiffSec = position.timestamp.difference(prevPos.timestamp).inMilliseconds / 1000.0;
+        final timeDiffSec =
+            position.timestamp.difference(prevPos.timestamp).inMilliseconds /
+            1000.0;
         if (timeDiffSec > 0.05) {
           final dist = haversineDistanceMeters(
             prevPos.latitude,
@@ -598,11 +617,15 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     }
 
     if (prevPos != null) {
-      final timeDiffSec = position.timestamp.difference(prevPos.timestamp).inMilliseconds / 1000.0;
+      final timeDiffSec =
+          position.timestamp.difference(prevPos.timestamp).inMilliseconds /
+          1000.0;
       if (timeDiffSec > 0.05) {
         final acceleration = (calculatedSpeed - _speedMps).abs() / timeDiffSec;
         if (acceleration > 15.0) {
-          calculatedSpeed = _speedMps + (calculatedSpeed > _speedMps ? 15.0 : -15.0) * timeDiffSec;
+          calculatedSpeed =
+              _speedMps +
+              (calculatedSpeed > _speedMps ? 15.0 : -15.0) * timeDiffSec;
           if (calculatedSpeed < 0) calculatedSpeed = 0;
         }
       }
@@ -621,8 +644,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       );
       if (dist > 150.0) {
         final fraction = 150.0 / dist;
-        visualLat = _lastVisualLat! + (position.latitude - _lastVisualLat!) * fraction;
-        visualLon = _lastVisualLon! + (position.longitude - _lastVisualLon!) * fraction;
+        visualLat =
+            _lastVisualLat! + (position.latitude - _lastVisualLat!) * fraction;
+        visualLon =
+            _lastVisualLon! + (position.longitude - _lastVisualLon!) * fraction;
       }
       visualLat = _lastVisualLat! * 0.25 + visualLat * 0.75;
       visualLon = _lastVisualLon! * 0.25 + visualLon * 0.75;
@@ -703,12 +728,12 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       if (currentNote.intoNoteId == null) {
         break;
       }
-      
+
       final nextIdx = _notes.indexWhere((n) => n.id == currentNote.intoNoteId);
       if (nextIdx == -1 || nextIdx <= currentIdx || _notes[nextIdx].spoken) {
         break;
       }
-      
+
       final nextNote = _notes[nextIdx];
       speakText = '$speakText into ${nextNote.rallyText}';
       currentIdx = nextIdx;
@@ -733,15 +758,17 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     }
 
     final distanceToWarning = warning.distanceFromStart - _distanceAlongRoute;
-    
+
     double triggerDistance = 70.0;
     if (warning.type == RoadWarningType.speedCamera) {
       triggerDistance = 180.0;
-    } else if (warning.type == RoadWarningType.stopSign || warning.type == RoadWarningType.speedBump) {
+    } else if (warning.type == RoadWarningType.stopSign ||
+        warning.type == RoadWarningType.speedBump) {
       triggerDistance = 80.0;
     } else if (warning.type == RoadWarningType.surfaceChange) {
       triggerDistance = 60.0;
-    } else if (warning.type == RoadWarningType.crest || warning.type == RoadWarningType.dip) {
+    } else if (warning.type == RoadWarningType.crest ||
+        warning.type == RoadWarningType.dip) {
       triggerDistance = 60.0;
     }
 
@@ -1010,7 +1037,11 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _updateCurrentLocationMarker(Position position, double visualLat, double visualLon) async {
+  Future<void> _updateCurrentLocationMarker(
+    Position position,
+    double visualLat,
+    double visualLon,
+  ) async {
     final controller = _controller;
     if (!_carImageLoaded || controller == null) {
       return;
@@ -1024,31 +1055,32 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     if (existingArrow != null && existingCircle != null) {
       await controller.updateCircle(
         existingCircle,
-        maplibre.CircleOptions(
-          geometry: coordinates,
-        ),
+        maplibre.CircleOptions(geometry: coordinates),
       );
       await controller.updateSymbol(
         existingArrow,
-        OverlapSymbolOptions(
-          geometry: coordinates,
-          iconRotate: heading,
-        ),
+        OverlapSymbolOptions(geometry: coordinates, iconRotate: heading),
       );
-      
+
       final existingOuter = _currentOuterCircle;
       if (existingOuter != null) {
-        try { await controller.removeCircle(existingOuter); } catch (_) {}
+        try {
+          await controller.removeCircle(existingOuter);
+        } catch (_) {}
         _currentOuterCircle = null;
       }
       return;
     }
 
     if (existingCircle != null) {
-      try { await controller.removeCircle(existingCircle); } catch (_) {}
+      try {
+        await controller.removeCircle(existingCircle);
+      } catch (_) {}
     }
     if (existingArrow != null) {
-      try { await controller.removeSymbol(existingArrow); } catch (_) {}
+      try {
+        await controller.removeSymbol(existingArrow);
+      } catch (_) {}
     }
 
     final circle = await controller.addCircle(
@@ -1082,32 +1114,55 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _followPosition(double lat, double lon) async {
+  Future<void> _followPosition(
+    double lat,
+    double lon, {
+    bool force = false,
+  }) async {
     final controller = _controller;
     if (controller == null) {
       return;
     }
+    if (!force && _cameraUpdateInFlight) {
+      return;
+    }
 
-    final double targetBearing = widget.settings.mapHeadingUp ? _lastGoodHeading : 0.0;
+    final now = DateTime.now();
+    final lastUpdate = _lastCameraUpdateTime;
+    if (!force &&
+        lastUpdate != null &&
+        now.difference(lastUpdate) < const Duration(milliseconds: 120)) {
+      return;
+    }
+    _lastCameraUpdateTime = now;
+
+    final double targetBearing = widget.settings.mapHeadingUp
+        ? _lastGoodHeading
+        : 0.0;
     final double targetTilt = widget.settings.mapHeadingUp ? 30.0 : 0.0;
 
-    await controller.animateCamera(
-      maplibre.CameraUpdate.newCameraPosition(
-        maplibre.CameraPosition(
-          target: maplibre.LatLng(lat, lon),
-          zoom: 16.5,
-          bearing: targetBearing,
-          tilt: targetTilt,
+    _cameraUpdateInFlight = true;
+    try {
+      await controller.animateCamera(
+        maplibre.CameraUpdate.newCameraPosition(
+          maplibre.CameraPosition(
+            target: maplibre.LatLng(lat, lon),
+            zoom: 16.5,
+            bearing: targetBearing,
+            tilt: targetTilt,
+          ),
         ),
-      ),
-      duration: const Duration(milliseconds: 90),
-    );
+        duration: const Duration(milliseconds: 70),
+      );
+    } finally {
+      _cameraUpdateInFlight = false;
+    }
   }
 
   Future<Uint8List> generateChevronImageBytes() async {
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder, const ui.Rect.fromLTWH(0, 0, 64, 64));
-    
+
     // White chevron arrow pointing UP
     final chevronPaint = ui.Paint()
       ..color = const ui.Color(0xFFFFFFFF)
@@ -1127,19 +1182,15 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   }
 
   void _toggleFollowMode() {
-    if (_followLocation) {
-      setState(() {
-        _followLocation = false;
-      });
+    if (_followLocationNotifier.value) {
+      _followLocationNotifier.value = false;
       return;
     }
 
-    setState(() {
-      _followLocation = true;
-    });
+    _followLocationNotifier.value = true;
 
     if (_lastVisualLat != null && _lastVisualLon != null) {
-      _followPosition(_lastVisualLat!, _lastVisualLon!);
+      _followPosition(_lastVisualLat!, _lastVisualLon!, force: true);
     } else {
       _fitNavigationCameraToRoute();
     }
@@ -1148,7 +1199,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   double _headingForPosition(Position position) {
     double? candidate;
     // 1. GPS heading if available and valid
-    if (_speedMps > 0.8 && position.heading.isFinite && position.heading >= 0 && position.heading <= 360) {
+    if (_speedMps > 0.8 &&
+        position.heading.isFinite &&
+        position.heading >= 0 &&
+        position.heading <= 360) {
       candidate = position.heading;
     }
 
@@ -1193,7 +1247,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
   void _startSimulation() {
     _simulationTimer?.cancel();
-    _simulationTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+    _simulationTimer = Timer.periodic(const Duration(milliseconds: 50), (
+      timer,
+    ) {
       if (_simulationPausedNotifier.value || !mounted) return;
 
       final double speedMps = _simulationSpeedKmhNotifier.value / 3.6;
@@ -1206,7 +1262,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         _lastMatchedIndex = 0;
       }
 
-      final interpolated = interpolateRoutePositionAtDistance(widget.routePoints, _simulatedDistance);
+      final interpolated = interpolateRoutePositionAtDistance(
+        widget.routePoints,
+        _simulatedDistance,
+      );
 
       final mockPosition = Position(
         latitude: interpolated.lat,
@@ -1238,7 +1297,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         final theme = Theme.of(context);
         final speedKmh = _speedMps * 3.6;
         final rawSpeedKmh = _rawSpeedMps * 3.6;
-        
+
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -1263,17 +1322,47 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                 ),
                 const Divider(),
                 const SizedBox(height: 8),
-                _buildDebugRow('GPS Accuracy', '${_gpsAccuracy.toStringAsFixed(1)} m'),
-                _buildDebugRow('GPS Raw Speed', '${rawSpeedKmh.toStringAsFixed(1)} km/h'),
-                _buildDebugRow('Smoothed Speed', '${speedKmh.toStringAsFixed(1)} km/h'),
-                _buildDebugRow('Smoothed Heading', '${_lastGoodHeading.toStringAsFixed(1)}°'),
-                _buildDebugRow('GPS Heading (Course)', '${_gpsHeading.toStringAsFixed(1)}°'),
-                _buildDebugRow('Matched Index', '$_lastMatchedIndex / ${widget.routePoints.length}'),
-                _buildDebugRow('Distance Along Route', '${(_distanceAlongRoute / 1000).toStringAsFixed(3)} km'),
-                _buildDebugRow('Off-Route Distance', '${_distanceFromRoute.toStringAsFixed(1)} m'),
-                _buildDebugRow('Route Points Count', '${widget.routePoints.length}'),
+                _buildDebugRow(
+                  'GPS Accuracy',
+                  '${_gpsAccuracy.toStringAsFixed(1)} m',
+                ),
+                _buildDebugRow(
+                  'GPS Raw Speed',
+                  '${rawSpeedKmh.toStringAsFixed(1)} km/h',
+                ),
+                _buildDebugRow(
+                  'Smoothed Speed',
+                  '${speedKmh.toStringAsFixed(1)} km/h',
+                ),
+                _buildDebugRow(
+                  'Smoothed Heading',
+                  '${_lastGoodHeading.toStringAsFixed(1)}°',
+                ),
+                _buildDebugRow(
+                  'GPS Heading (Course)',
+                  '${_gpsHeading.toStringAsFixed(1)}°',
+                ),
+                _buildDebugRow(
+                  'Matched Index',
+                  '$_lastMatchedIndex / ${widget.routePoints.length}',
+                ),
+                _buildDebugRow(
+                  'Distance Along Route',
+                  '${(_distanceAlongRoute / 1000).toStringAsFixed(3)} km',
+                ),
+                _buildDebugRow(
+                  'Off-Route Distance',
+                  '${_distanceFromRoute.toStringAsFixed(1)} m',
+                ),
+                _buildDebugRow(
+                  'Route Points Count',
+                  '${widget.routePoints.length}',
+                ),
                 _buildDebugRow('Pacenotes Count', '${widget.pacenotes.length}'),
-                _buildDebugRow('Warnings Count', '${widget.roadWarnings.length}'),
+                _buildDebugRow(
+                  'Warnings Count',
+                  '${widget.roadWarnings.length}',
+                ),
               ],
             ),
           ),
@@ -1289,7 +1378,13 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-          Text(value, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -1340,14 +1435,18 @@ class _SpeedCard extends StatelessWidget {
                   '$speedKmh',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.w900,
-                    color: isOverSpeed ? Colors.red.shade700 : colorScheme.onSurface,
+                    color: isOverSpeed
+                        ? Colors.red.shade700
+                        : colorScheme.onSurface,
                     height: 1.0,
                   ),
                 ),
                 Text(
                   'km/h',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: isOverSpeed ? Colors.red.shade700 : colorScheme.onSurfaceVariant,
+                    color: isOverSpeed
+                        ? Colors.red.shade700
+                        : colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -1367,7 +1466,7 @@ class _SpeedCard extends StatelessWidget {
                       color: Colors.black12,
                       blurRadius: 2,
                       offset: Offset(0, 1),
-                    )
+                    ),
                   ],
                 ),
                 alignment: Alignment.center,
@@ -1433,7 +1532,7 @@ class _DriveRoundButton extends StatelessWidget {
           : colorScheme.surface.withAlpha(220),
       foregroundColor: active
           ? colorScheme.onPrimary
-          : colorScheme.onSurface.withOpacity(0.55),
+          : colorScheme.onSurface.withValues(alpha: 0.55),
       onPressed: onPressed,
       child: Icon(icon),
     );
@@ -1492,7 +1591,9 @@ class _CalloutBadge extends StatelessWidget {
     final icon = switch (note.type) {
       PaceNoteType.roundabout => Icons.roundabout_right,
       PaceNoteType.junction => Icons.turn_right,
-      PaceNoteType.hairpinLeft || PaceNoteType.hairpinRight || PaceNoteType.hairpin => Icons.warning_amber_rounded,
+      PaceNoteType.hairpinLeft ||
+      PaceNoteType.hairpinRight ||
+      PaceNoteType.hairpin => Icons.warning_amber_rounded,
       PaceNoteType.warning => Icons.warning_rounded,
       PaceNoteType.straight => Icons.straight,
       PaceNoteType.keepLeft => Icons.turn_left,
@@ -1531,7 +1632,11 @@ class _WarningRow extends StatelessWidget {
         Icon(
           iconForRoadWarning(warning.type),
           color: Color(
-            int.parse(colorForRoadWarning(warning.type).substring(1), radix: 16) + 0xFF000000,
+            int.parse(
+                  colorForRoadWarning(warning.type).substring(1),
+                  radix: 16,
+                ) +
+                0xFF000000,
           ),
           size: 22,
         ),

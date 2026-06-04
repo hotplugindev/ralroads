@@ -6,7 +6,6 @@ import '../models/road_warning.dart';
 import '../models/route_point.dart';
 import '../models/speed_limit_segment.dart';
 import '../services/settings_service.dart';
-import 'geo_math.dart';
 
 class RoutePosition {
   final double lat;
@@ -60,9 +59,18 @@ RoutePoint? findNearestPoint(List<RoutePoint> points, double distanceMeters) {
   return d1 < d2 ? points[low] : points[high];
 }
 
-RoutePosition interpolateRoutePositionAtDistance(List<RoutePoint> points, double distanceMeters) {
+RoutePosition interpolateRoutePositionAtDistance(
+  List<RoutePoint> points,
+  double distanceMeters,
+) {
   if (points.isEmpty) {
-    return const RoutePosition(lat: 0.0, lon: 0.0, heading: 0.0, index: 0, elevation: 0.0);
+    return const RoutePosition(
+      lat: 0.0,
+      lon: 0.0,
+      heading: 0.0,
+      index: 0,
+      elevation: 0.0,
+    );
   }
   if (distanceMeters <= points.first.distanceFromStart) {
     return RoutePosition(
@@ -112,12 +120,16 @@ RoutePosition interpolateRoutePositionAtDistance(List<RoutePoint> points, double
   final p1 = points[high];
   final p2 = points[low];
   final segmentDist = p2.distanceFromStart - p1.distanceFromStart;
-  final fraction = segmentDist > 0 ? (distanceMeters - p1.distanceFromStart) / segmentDist : 0.0;
+  final fraction = segmentDist > 0
+      ? (distanceMeters - p1.distanceFromStart) / segmentDist
+      : 0.0;
 
   final lat = p1.lat + (p2.lat - p1.lat) * fraction;
   final lon = p1.lon + (p2.lon - p1.lon) * fraction;
-  final heading = p1.heading + normalizeAngleDeltaDegrees(p1.heading, p2.heading) * fraction;
-  
+  final heading =
+      p1.heading +
+      normalizeAngleDeltaDegrees(p1.heading, p2.heading) * fraction;
+
   final e1 = p1.elevation ?? 0.0;
   final e2 = p2.elevation ?? 0.0;
   final elevation = e1 + (e2 - e1) * fraction;
@@ -141,7 +153,6 @@ double normalizeAngleDeltaDegrees(double from, double to) {
   }
   return diff;
 }
-
 
 String colorForPaceNoteSeverity(int severity) {
   switch (severity) {
@@ -336,7 +347,9 @@ class OverlapSymbolOptions extends maplibre.SymbolOptions {
 
   @override
   Map<String, dynamic> toJson([bool addGeometry = true]) {
-    final Map<String, dynamic> json = Map<String, dynamic>.from(super.toJson(addGeometry));
+    final Map<String, dynamic> json = Map<String, dynamic>.from(
+      super.toJson(addGeometry),
+    );
     json['iconAllowOverlap'] = true;
     json['iconIgnorePlacement'] = true;
     json['textAllowOverlap'] = true;

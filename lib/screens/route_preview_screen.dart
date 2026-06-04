@@ -52,6 +52,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
   maplibre.Symbol? _highlightLabel;
   final List<maplibre.Circle> _pacenoteCircles = [];
   final List<maplibre.Symbol> _pacenoteLabels = [];
+  bool _mapStyleLoaded = false;
+  bool _previewMapDrawn = false;
+  String? _previewMapError;
 
   SavedRoute? _savedRoute;
   bool _isDownloadingMap = false;
@@ -72,17 +75,21 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     super.initState();
     _pacenoteGenerator = PacenoteGenerator(settings: widget.settings);
     _pacenotes = widget.pacenotes;
-    _roadWarnings = List<RoadWarning>.from(widget.savedRoute?.roadWarnings ?? const []);
+    _roadWarnings = List<RoadWarning>.from(
+      widget.savedRoute?.roadWarnings ?? const [],
+    );
     _speedLimitSegments = widget.savedRoute?.speedLimitSegments ?? const [];
     _savedRoute = widget.savedRoute;
-    
+
     _checkIfMapDownloaded();
 
     final hasElevationWarnings = _roadWarnings.any(
       (w) => w.type == RoadWarningType.crest || w.type == RoadWarningType.dip,
     );
     if (!hasElevationWarnings && widget.points.isNotEmpty) {
-      final elevWarnings = _pacenoteGenerator.detectElevationFeatures(widget.points);
+      final elevWarnings = _pacenoteGenerator.detectElevationFeatures(
+        widget.points,
+      );
       if (elevWarnings.isNotEmpty) {
         _roadWarnings = [..._roadWarnings, ...elevWarnings];
       }
@@ -125,6 +132,11 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     final route = _savedRoute;
     if (route == null) return;
 
+    final confirmed = await _confirmOfflineMapDownload(route);
+    if (!mounted || !confirmed) {
+      return;
+    }
+
     setState(() {
       _isDownloadingMap = true;
       _mapDownloadProgress = 0.0;
@@ -152,7 +164,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                 _mapDownloadProgress = 100.0;
               });
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Offline map downloaded successfully!')),
+                const SnackBar(
+                  content: Text('Offline map downloaded successfully!'),
+                ),
               );
             }
           } else if (status is maplibre.Error) {
@@ -161,7 +175,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                 _isDownloadingMap = false;
               });
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Failed to download map: ${status.cause}')),
+                SnackBar(
+                  content: Text('Failed to download map: ${status.cause}'),
+                ),
               );
             }
           }
@@ -179,6 +195,36 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     }
   }
 
+  Future<bool> _confirmOfflineMapDownload(SavedRoute route) async {
+    final estimatedTiles = OfflineMapService.instance.estimateTileCountForRoute(
+      route: route,
+      minZoom: 11,
+      maxZoom: 15,
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Download Route Map'),
+          content: Text(
+            'Route data, pacenotes, warnings, and speed limits are already saved locally. This only caches base map tiles for this route area.\n\nEstimated tiles: $estimatedTiles\nZoom: 11-15',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Download'),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed ?? false;
+  }
+
   Color _parseHexColor(String hex) {
     return Color(int.parse(hex.substring(1), radix: 16) + 0xFF000000);
   }
@@ -190,7 +236,10 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(routeName, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(
+          routeName,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         elevation: 0,
       ),
       body: ListView(
@@ -209,15 +258,21 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
               decoration: BoxDecoration(
                 color: theme.colorScheme.errorContainer,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: theme.colorScheme.error.withOpacity(0.5)),
+                border: Border.all(
+                  color: theme.colorScheme.error.withValues(alpha: 0.5),
+                ),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error, size: 36),
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    color: theme.colorScheme.error,
+                    size: 36,
+                  ),
                   const SizedBox(height: 8),
                   Text(
-                    'Empty route geometry! Map cannot render.',
+                    'No route geometry available.',
                     style: TextStyle(
                       color: theme.colorScheme.onErrorContainer,
                       fontWeight: FontWeight.bold,
@@ -233,26 +288,56 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+                  color: theme.colorScheme.outlineVariant.withValues(
+                    alpha: 0.5,
+                  ),
                 ),
               ),
-              child: maplibre.MapLibreMap(
-                styleString: getMapStyle(context, widget.settings),
-                initialCameraPosition: const maplibre.CameraPosition(
-                  target: maplibre.LatLng(43.8, 11.2),
-                  zoom: 5,
-                ),
-                attributionButtonPosition: maplibre.AttributionButtonPosition.bottomRight,
-                attributionButtonMargins: const math.Point(-1000, -1000),
-                myLocationEnabled: false,
-                onMapCreated: (controller) {
-                  _mapController = controller;
-                },
-                onStyleLoadedCallback: () async {
-                  await _drawRouteLine();
-                  await _drawPacenoteMarkers();
-                  await _fitCameraToRoute();
-                },
+              child: Stack(
+                children: [
+                  maplibre.MapLibreMap(
+                    styleString: getMapStyle(context, widget.settings),
+                    initialCameraPosition: const maplibre.CameraPosition(
+                      target: maplibre.LatLng(43.8, 11.2),
+                      zoom: 5,
+                    ),
+                    attributionButtonPosition:
+                        maplibre.AttributionButtonPosition.bottomRight,
+                    attributionButtonMargins: const math.Point(-1000, -1000),
+                    myLocationEnabled: false,
+                    onMapCreated: (controller) {
+                      _mapController = controller;
+                    },
+                    onStyleLoadedCallback: () async {
+                      _mapStyleLoaded = true;
+                      await _drawPreviewMapOnce();
+                    },
+                  ),
+                  if (_previewMapError != null)
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 12,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.errorContainer.withValues(
+                            alpha: 0.95,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Text(
+                            _previewMapError!,
+                            style: TextStyle(
+                              color: theme.colorScheme.onErrorContainer,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           const SizedBox(height: 16),
@@ -280,7 +365,10 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                     );
                   },
                   icon: const Icon(Icons.navigation),
-                  label: const Text('Start Drive', style: TextStyle(fontWeight: FontWeight.bold)),
+                  label: const Text(
+                    'Start Drive',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -292,66 +380,78 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          side: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+                          side: BorderSide(
+                            color: theme.colorScheme.primary,
+                            width: 1.5,
+                          ),
                         ),
                         onPressed: () => _saveRoute(context),
                         icon: const Icon(Icons.save),
-                        label: const Text('Save Route', style: TextStyle(fontWeight: FontWeight.bold)),
+                        label: const Text(
+                          'Save Route',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       )
                     : _isDownloadingMap
-                        ? ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            onPressed: null,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                SizedBox(
-                                  height: 16,
-                                  width: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    value: _mapDownloadProgress > 0 ? _mapDownloadProgress / 100 : null,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _mapDownloadProgress > 0
-                                      ? '${_mapDownloadProgress.toStringAsFixed(0)}%'
-                                      : 'Caching...',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              backgroundColor: _mapDownloaded
-                                  ? theme.colorScheme.secondaryContainer
-                                  : theme.colorScheme.primaryContainer,
-                              foregroundColor: _mapDownloaded
-                                  ? theme.colorScheme.onSecondaryContainer
-                                  : theme.colorScheme.onPrimaryContainer,
-                            ),
-                            onPressed: _downloadOfflineMap,
-                            icon: Icon(_mapDownloaded ? Icons.offline_pin : Icons.download),
-                            label: Text(
-                              _mapDownloaded ? 'Map Offline' : 'Get Offline',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
+                    ? ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
+                        ),
+                        onPressed: null,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                value: _mapDownloadProgress > 0
+                                    ? _mapDownloadProgress / 100
+                                    : null,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _mapDownloadProgress > 0
+                                  ? '${_mapDownloadProgress.toStringAsFixed(0)}%'
+                                  : 'Caching...',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          backgroundColor: _mapDownloaded
+                              ? theme.colorScheme.secondaryContainer
+                              : theme.colorScheme.primaryContainer,
+                          foregroundColor: _mapDownloaded
+                              ? theme.colorScheme.onSecondaryContainer
+                              : theme.colorScheme.onPrimaryContainer,
+                        ),
+                        onPressed: _downloadOfflineMap,
+                        icon: Icon(
+                          _mapDownloaded ? Icons.offline_pin : Icons.download,
+                        ),
+                        label: Text(
+                          _mapDownloaded ? 'Map Offline' : 'Get Offline',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
               ),
             ],
           ),
           const SizedBox(height: 12),
+          _buildOfflineStatus(context),
+          const SizedBox(height: 24),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -375,14 +475,19 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
               );
             },
             icon: const Icon(Icons.play_circle_outline),
-            label: const Text('Simulate Drive', style: TextStyle(fontWeight: FontWeight.bold)),
+            label: const Text(
+              'Simulate Drive',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
           const SizedBox(height: 24),
           _buildRoadInformation(context),
           const SizedBox(height: 24),
           Text(
             'Pacenotes',
-            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 8),
           if (_pacenotes.isEmpty)
@@ -398,62 +503,73 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
               ),
             )
           else
-            ..._pacenotes.asMap().entries.map(
-              (entry) {
-                final index = entry.key;
-                final note = entry.value;
-                final color = Color(
-                  int.parse(colorForPaceNote(note).substring(1), radix: 16) + 0xFF000000,
-                );
-                return Card(
-                  elevation: 0,
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  color: theme.colorScheme.surfaceContainerLow.withOpacity(0.6),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: theme.colorScheme.outlineVariant.withOpacity(0.3),
+            ..._pacenotes.asMap().entries.map((entry) {
+              final index = entry.key;
+              final note = entry.value;
+              final color = Color(
+                int.parse(colorForPaceNote(note).substring(1), radix: 16) +
+                    0xFF000000,
+              );
+              return Card(
+                elevation: 0,
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                color: theme.colorScheme.surfaceContainerLow.withValues(
+                  alpha: 0.6,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: 0.3,
                     ),
                   ),
-                  child: ListTile(
-                    dense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    leading: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: color.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      alignment: Alignment.center,
-                      child: note.type == PaceNoteType.straight
-                          ? Icon(Icons.straight, size: 20, color: color)
-                          : Text(
-                              shortCalloutLabel(note),
-                              style: TextStyle(
-                                color: color,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 13,
-                              ),
+                ),
+                child: ListTile(
+                  dense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    alignment: Alignment.center,
+                    child: note.type == PaceNoteType.straight
+                        ? Icon(Icons.straight, size: 20, color: color)
+                        : Text(
+                            shortCalloutLabel(note),
+                            style: TextStyle(
+                              color: color,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
                             ),
+                          ),
+                  ),
+                  title: Text(
+                    note.rallyText,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
                     ),
-                    title: Text(
-                      note.rallyText,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                    ),
-                    subtitle: Text(
-                      'At ${formatDistance(note.distanceFromStart)}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                  ),
+                  subtitle: Text(
+                    'At ${formatDistance(note.distanceFromStart)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.7,
                       ),
                     ),
-                    trailing: const Icon(Icons.edit, size: 16),
-                    onTap: () => _editPacenote(context, note, index),
                   ),
-                );
-              },
-            ),
+                  trailing: const Icon(Icons.edit, size: 16),
+                  onTap: () => _editPacenote(context, note, index),
+                ),
+              );
+            }),
         ],
       ),
     );
@@ -467,7 +583,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
 
     try {
       final enrichment = await _overpassService.enrichRoute(widget.points);
-      final elevationWarnings = _pacenoteGenerator.detectElevationFeatures(widget.points);
+      final elevationWarnings = _pacenoteGenerator.detectElevationFeatures(
+        widget.points,
+      );
       if (!mounted) {
         return;
       }
@@ -482,6 +600,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
         );
         _roadInfoLoading = false;
       });
+      if (_previewMapDrawn) {
+        await _drawPacenoteMarkers();
+      }
     } catch (_) {
       if (!mounted) {
         return;
@@ -494,6 +615,71 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
         const SnackBar(content: Text('Road warnings could not be loaded.')),
       );
     }
+  }
+
+  Widget _buildOfflineStatus(BuildContext context) {
+    final theme = Theme.of(context);
+    final routeSaved = _savedRoute != null;
+    final hasWarnings = _roadWarnings.isNotEmpty;
+    final hasSpeedLimits = _speedLimitSegments.isNotEmpty;
+
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Offline readiness',
+              style: theme.textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _OfflineStatusRow(
+              icon: Icons.route,
+              label: 'Route data',
+              value: routeSaved ? 'Ready' : 'Save route to prepare',
+              ready: routeSaved,
+            ),
+            _OfflineStatusRow(
+              icon: Icons.speaker_notes_outlined,
+              label: 'Pacenotes',
+              value: _pacenotes.isNotEmpty ? 'Ready' : 'None',
+              ready: _pacenotes.isNotEmpty,
+            ),
+            _OfflineStatusRow(
+              icon: Icons.warning_amber_rounded,
+              label: 'Warnings',
+              value: hasWarnings ? 'Ready' : 'None saved',
+              ready: hasWarnings,
+            ),
+            _OfflineStatusRow(
+              icon: Icons.speed,
+              label: 'Speed limits',
+              value: hasSpeedLimits ? 'Ready' : 'None saved',
+              ready: hasSpeedLimits,
+            ),
+            _OfflineStatusRow(
+              icon: Icons.map_outlined,
+              label: 'Map tiles',
+              value: _mapDownloaded
+                  ? 'Cached for this route'
+                  : 'Offline map unavailable. Route data still works.',
+              ready: _mapDownloaded,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildRoadInformation(BuildContext context) {
@@ -559,7 +745,7 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
             side: BorderSide(
-              color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
             ),
           ),
           child: Padding(
@@ -571,14 +757,20 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Icon(Icons.speed, size: 18, color: theme.colorScheme.primary),
+                    Icon(
+                      Icons.speed,
+                      size: 18,
+                      color: theme.colorScheme.primary,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'SPEED LIMITS',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                        color: theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.8,
+                        ),
                         letterSpacing: 0.5,
                       ),
                     ),
@@ -590,7 +782,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                     'No speed limits found',
                     style: TextStyle(
                       fontSize: 12,
-                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                      color: theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.7,
+                      ),
                     ),
                   )
                 else
@@ -601,7 +795,7 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                       return _SpeedLimitSign(speed: speed);
                     }).toList(),
                   ),
-                
+
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
                   child: Divider(height: 1),
@@ -611,14 +805,20 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Icon(Icons.warning_amber_rounded, size: 18, color: theme.colorScheme.primary),
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 18,
+                      color: theme.colorScheme.primary,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'ROAD WARNINGS & FEATURES',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                        color: theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.8,
+                        ),
                         letterSpacing: 0.5,
                       ),
                     ),
@@ -630,7 +830,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                     'No warnings or features detected',
                     style: TextStyle(
                       fontSize: 12,
-                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                      color: theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.7,
+                      ),
                     ),
                   )
                 else
@@ -638,18 +840,30 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                     spacing: 6,
                     runSpacing: 6,
                     children: warningCounts.entries.map((entry) {
-                      final color = _parseHexColor(colorForRoadWarning(entry.key));
+                      final color = _parseHexColor(
+                        colorForRoadWarning(entry.key),
+                      );
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: color.withOpacity(0.12),
+                          color: color.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: color.withOpacity(0.2), width: 1),
+                          border: Border.all(
+                            color: color.withValues(alpha: 0.2),
+                            width: 1,
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(iconForRoadWarning(entry.key), size: 12, color: color),
+                            Icon(
+                              iconForRoadWarning(entry.key),
+                              size: 12,
+                              color: color,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               '${entry.value} ${shortRoadWarningLabel(entry.key)}',
@@ -668,13 +882,15 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
             ),
           ),
         ),
-        
+
         // Detailed warnings list
         if (visibleWarnings.isNotEmpty) ...[
           const SizedBox(height: 20),
           Text(
             'Road Details',
-            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 8),
           ...visibleWarnings.take(12).map((warning) {
@@ -682,20 +898,27 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
             return Card(
               elevation: 0,
               margin: const EdgeInsets.symmetric(vertical: 4),
-              color: theme.colorScheme.surfaceContainerLow.withOpacity(0.6),
+              color: theme.colorScheme.surfaceContainerLow.withValues(
+                alpha: 0.6,
+              ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
                 side: BorderSide(
-                  color: theme.colorScheme.outlineVariant.withOpacity(0.3),
+                  color: theme.colorScheme.outlineVariant.withValues(
+                    alpha: 0.3,
+                  ),
                 ),
               ),
               child: ListTile(
                 dense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.15),
+                    color: color.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -706,13 +929,18 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                 ),
                 title: Text(
                   warning.text,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
                 ),
                 subtitle: Text(
                   'At ${formatDistance(warning.distanceFromStart)}',
                   style: TextStyle(
                     fontSize: 11,
-                    color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: 0.7,
+                    ),
                   ),
                 ),
               ),
@@ -744,9 +972,46 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
       ),
     );
 
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _routeLine = line;
     });
+  }
+
+  Future<void> _drawPreviewMapOnce() async {
+    if (_previewMapDrawn || !_mapStyleLoaded || _mapController == null) {
+      return;
+    }
+    if (widget.points.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _previewMapError = 'No route geometry available.';
+        });
+      }
+      return;
+    }
+
+    try {
+      await _drawRouteLine();
+      await _drawPacenoteMarkers();
+      await _fitCameraToRoute();
+      _previewMapDrawn = true;
+      if (mounted && _previewMapError != null) {
+        setState(() {
+          _previewMapError = null;
+        });
+      }
+    } catch (error) {
+      debugPrint('Route preview drawing failed: $error');
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _previewMapError = 'Route drawing failed.';
+      });
+    }
   }
 
   Future<void> _fitCameraToRoute() async {
@@ -879,7 +1144,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
             return Container(
               decoration: BoxDecoration(
                 color: theme.colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
               ),
               padding: EdgeInsets.fromLTRB(
                 16,
@@ -896,7 +1163,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.onSurfaceVariant.withOpacity(0.4),
+                        color: theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.4,
+                        ),
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -904,10 +1173,12 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                   const SizedBox(height: 16),
                   Text(
                     'Edit Pacenote',
-                    style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Note type / Direction selection
                   Text(
                     'DIRECTION & TYPE',
@@ -921,8 +1192,13 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                   DropdownButtonFormField<PaceNoteType>(
                     initialValue: noteType,
                     decoration: InputDecoration(
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                     ),
                     items: PaceNoteType.values.map((type) {
                       return DropdownMenuItem<PaceNoteType>(
@@ -936,9 +1212,13 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                           noteType = val;
                           if (val == PaceNoteType.straight) {
                             direction = 'straight';
-                          } else if (val == PaceNoteType.left || val == PaceNoteType.hairpinLeft || val == PaceNoteType.keepLeft) {
+                          } else if (val == PaceNoteType.left ||
+                              val == PaceNoteType.hairpinLeft ||
+                              val == PaceNoteType.keepLeft) {
                             direction = 'left';
-                          } else if (val == PaceNoteType.right || val == PaceNoteType.hairpinRight || val == PaceNoteType.keepRight) {
+                          } else if (val == PaceNoteType.right ||
+                              val == PaceNoteType.hairpinRight ||
+                              val == PaceNoteType.keepRight) {
                             direction = 'right';
                           }
                         });
@@ -984,7 +1264,8 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                           child: FilterChip(
                             label: const Text('Short'),
                             selected: isShort,
-                            onSelected: (val) => setModalState(() => isShort = val),
+                            onSelected: (val) =>
+                                setModalState(() => isShort = val),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -992,7 +1273,8 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                           child: FilterChip(
                             label: const Text('Long'),
                             selected: isLong,
-                            onSelected: (val) => setModalState(() => isLong = val),
+                            onSelected: (val) =>
+                                setModalState(() => isLong = val),
                           ),
                         ),
                       ],
@@ -1003,7 +1285,8 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                           child: FilterChip(
                             label: const Text('Opens'),
                             selected: opens,
-                            onSelected: (val) => setModalState(() => opens = val),
+                            onSelected: (val) =>
+                                setModalState(() => opens = val),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1011,7 +1294,8 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                           child: FilterChip(
                             label: const Text('Tightens'),
                             selected: tightens,
-                            onSelected: (val) => setModalState(() => tightens = val),
+                            onSelected: (val) =>
+                                setModalState(() => tightens = val),
                           ),
                         ),
                       ],
@@ -1033,7 +1317,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                     controller: textController,
                     decoration: InputDecoration(
                       hintText: 'e.g. Caution, gravel on corner',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -1045,7 +1331,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                         child: OutlinedButton(
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                           onPressed: () => Navigator.pop(context),
                           child: const Text('Cancel'),
@@ -1056,7 +1344,9 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                         child: FilledButton(
                           style: FilledButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                           onPressed: () {
                             final updatedNote = note.copyWith(
@@ -1094,10 +1384,21 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     final controller = _mapController;
     if (controller == null) return;
 
-    // Clear existing
-    await controller.clearCircles();
+    if (_highlightCircle != null) {
+      await controller.removeCircle(_highlightCircle!);
+      _highlightCircle = null;
+    }
+    if (_highlightLabel != null) {
+      await controller.removeSymbol(_highlightLabel!);
+      _highlightLabel = null;
+    }
+    if (_pacenoteCircles.isNotEmpty) {
+      await controller.removeCircles(_pacenoteCircles);
+    }
     _pacenoteCircles.clear();
-    await controller.clearSymbols();
+    if (_pacenoteLabels.isNotEmpty) {
+      await controller.removeSymbols(_pacenoteLabels);
+    }
     _pacenoteLabels.clear();
 
     final circleOptionsList = <maplibre.CircleOptions>[];
@@ -1145,6 +1446,7 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
   }
 
   Future<void> _saveRoute(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
     final now = DateTime.now();
     final route = SavedRoute(
       id: widget.savedRoute?.id ?? now.microsecondsSinceEpoch.toString(),
@@ -1158,15 +1460,12 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     );
 
     await widget.storage.saveRoute(route);
-    if (mounted) {
-      setState(() {
-        _savedRoute = route;
-      });
-      _checkIfMapDownloaded();
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Route saved')));
-    }
+    if (!mounted) return;
+    setState(() {
+      _savedRoute = route;
+    });
+    _checkIfMapDownloaded();
+    messenger.showSnackBar(const SnackBar(content: Text('Route saved')));
   }
 }
 
@@ -1190,7 +1489,7 @@ class _SummaryPanel extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
         ),
       ),
       child: Padding(
@@ -1230,7 +1529,7 @@ class _SummaryPanel extends StatelessWidget {
     return VerticalDivider(
       width: 1,
       thickness: 1,
-      color: theme.colorScheme.outlineVariant.withOpacity(0.3),
+      color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
     );
   }
 
@@ -1248,14 +1547,10 @@ class _SummaryPanel extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withOpacity(0.1),
+              color: theme.colorScheme.primary.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              icon,
-              color: theme.colorScheme.primary,
-              size: 20,
-            ),
+            child: Icon(icon, color: theme.colorScheme.primary, size: 20),
           ),
           const SizedBox(height: 8),
           Text(
@@ -1263,7 +1558,7 @@ class _SummaryPanel extends StatelessWidget {
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               letterSpacing: 0.8,
             ),
           ),
@@ -1276,6 +1571,54 @@ class _SummaryPanel extends StatelessWidget {
               color: theme.colorScheme.onSurface,
             ),
             textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OfflineStatusRow extends StatelessWidget {
+  const _OfflineStatusRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.ready,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool ready;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = ready
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: ready ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
           ),
         ],
       ),
@@ -1297,11 +1640,7 @@ class _SpeedLimitSign extends StatelessWidget {
         shape: BoxShape.circle,
         border: Border.all(color: Colors.red, width: 3),
         boxShadow: const [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 2,
-            offset: Offset(0, 1),
-          ),
+          BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1)),
         ],
       ),
       alignment: Alignment.center,
