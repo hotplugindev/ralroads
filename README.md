@@ -24,10 +24,6 @@ The app is built for enthusiasts who want more context than a simple blue line: 
 | --- | --- | --- |
 | ![Start My Location](images/start_my_location.jpeg) | ![Reverse Route](images/reverse_route.jpeg) | ![Pacenote Detail Level](images/pacenote_detail_settings.jpeg) |
 
-| Roadbook Editor | Preview Map Pacenotes |
-| --- | --- |
-| ![Roadbook Editor](images/roadbook_editor.jpeg) | ![Preview Map Pacenotes](images/preview_map_pacenotes.jpeg) |
-
 ### Screen Descriptions
 
 *   **Home Screen**: A clean starting hub that displays your list of saved routes, direct settings access, and an intuitive entry point to begin planning a new route.
