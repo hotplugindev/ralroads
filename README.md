@@ -31,7 +31,7 @@ The app is built for enthusiasts who want more context than a simple blue line: 
 ### Screen Descriptions
 
 *   **Home Screen**: A clean starting hub that displays your list of saved routes, direct settings access, and an intuitive entry point to begin planning a new route.
-*   **Route Planner**: Features a full-screen interactive map to set start, waypoint, and destination markers by tapping. It shows live status counts in a premium glassmorphic bottom panel and builds the route instantly. Now supports one-tap **Start at My Location** using your device GPS coordinate, and one-tap **Reverse Route** to invert your route coordinates.
+*   **Route Planner**: Features a full-screen interactive map to set start, waypoint, and destination markers by tapping. It shows live status counts in a premium glassmorphic bottom panel and builds the route instantly. Now supports online place/address search, one-tap **Start at My Location** using your device GPS coordinate, and one-tap **Reverse Route** to invert your route coordinates.
 *   **Route Preview**: Offers a comprehensive summary of the computed trip (distance, time, average speed) alongside an interactive **Route Map Preview** showing the route path and color-coded pacenote markers. Selecting any pacenote dynamically zooms, centers, and highlights it.
 *   **Roadbook Editor**: Accessible from the Route Preview screen by tapping any pacenote. Features a bottom sheet modal to customize pacenote type/direction, severity (1-6), modifiers (Short, Long, Opens, Tightens), and custom spoken callout texts. Edits are persistently saved to Hive storage.
 *   **Drive Mode (HUD)**: A high-fidelity, real-time navigation display featuring a dynamic high-contrast vehicle chevron matching heading direction, live speed and European speed limit sign indicators, upcoming co-driver voice notes, real-time warning cards (bumps, traffic lights, tunnels), and a toggleable auto-follow button.
@@ -41,6 +41,8 @@ The app is built for enthusiasts who want more context than a simple blue line: 
 ## Features
 
 - Interactive route planning with start, destination, and waypoint selection
+- Online place, address, road, and POI search using OpenRouteService geocoding when an API key is configured, with an OSM-based Photon fallback
+- Search results ranked near the current user position or map center when possible
 - **Start at My Location**: Auto-populate the first waypoint using live device GPS coordinates
 - **Reverse Route**: Invert the coordinate list of your planned route with a single tap
 - Live MapLibre navigation map using OpenFreeMap styling
@@ -67,7 +69,7 @@ The app is built for enthusiasts who want more context than a simple blue line: 
 
 ## How It Works
 
-1. Pick a start, destination, and any waypoints on the map (or use GPS position / reverse route).
+1. Pick a start, destination, and any waypoints on the map (or search for places, use GPS position, or reverse the route).
 2. RalRoads requests route geometry from OpenRouteService.
 3. The client analyzes the route locally to generate pacenotes from geometry.
 4. The app enriches the route with OpenStreetMap metadata from Overpass.
@@ -109,6 +111,8 @@ https://openrouteservice.org/sign-up/
 
 RalRoads uses OpenRouteService for online route planning. If the key is missing, invalid, rate-limited, or the service is unavailable, the app shows a user-facing error instead of treating that as a route result.
 
+Route planner search can also use OpenRouteService geocoding with the same key. If no key is available, RalRoads falls back to Photon for OSM-based online place search. Online search requires internet access; manual map picking still works without place search.
+
 ## Map And Road Data
 
 RalRoads uses MapLibre with OpenFreeMap/OpenStreetMap-based map display. Road warnings and metadata are loaded from OpenStreetMap through Overpass on a best-effort basis.
@@ -140,6 +144,7 @@ Pacenotes are generated from route geometry and available road context. They are
 
 - OpenStreetMap and Overpass metadata may be incomplete or outdated.
 - Online route planning depends on OpenRouteService availability and a valid API key.
+- Online place search depends on OpenRouteService or Photon availability and an internet connection.
 - Pacenote generation is best-effort and based on route geometry plus available context.
 - There is no backend account system or cloud sync.
 - Offline regional maps are not included yet.

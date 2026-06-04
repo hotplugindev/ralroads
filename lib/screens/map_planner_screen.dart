@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -6,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
 
-import '../models/geocoding_result.dart';
 import '../models/route_point.dart';
 import '../services/geocoding_service.dart';
 import '../services/ors_service.dart';
@@ -34,6 +34,7 @@ class MapPlannerScreen extends StatefulWidget {
 
 class _MapPlannerScreenState extends State<MapPlannerScreen> {
   late final OrsService _orsService;
+  late final GeocodingService _geocodingService;
   final List<RoutePoint> _selectedPoints = [];
   final List<maplibre.Circle> _pointCircles = [];
   final List<maplibre.Symbol> _pointLabels = [];
@@ -41,24 +42,33 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   maplibre.Line? _routeLine;
   maplibre.Circle? _currentLocationCircle;
   maplibre.Symbol? _currentLocationLabel;
+  maplibre.Circle? _searchPreviewCircle;
+  maplibre.Symbol? _searchPreviewLabel;
+  maplibre.LatLng? _lastCameraCenter;
+  maplibre.LatLng? _lastKnownUserLocation;
   bool _building = false;
   String? _error;
 
-  final _geocodingService = GeocodingService();
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
-  List<GeocodingResult> _searchResults = [];
+  Timer? _searchDebounce;
+  List<PlaceSearchResult> _searchResults = [];
   bool _searching = false;
+  bool _hasSearchResponse = false;
+  String? _searchError;
+  int _searchRequestId = 0;
 
   @override
   void initState() {
     super.initState();
     _orsService = OrsService(settings: widget.settings);
+    _geocodingService = GeocodingService(settings: widget.settings);
     _searchFocusNode.addListener(_onSearchFocusChanged);
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchFocusNode.removeListener(_onSearchFocusChanged);
     _searchFocusNode.dispose();
     _searchController.dispose();
@@ -69,32 +79,110 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     setState(() {});
   }
 
-  Future<void> _performSearch(String query) async {
-    if (query.trim().isEmpty) {
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+    final trimmed = query.trim();
+    final requestId = ++_searchRequestId;
+
+    if (trimmed.length < 2) {
       setState(() {
         _searchResults = const [];
+        _searching = false;
+        _hasSearchResponse = false;
+        _searchError = null;
       });
       return;
     }
+
     setState(() {
       _searching = true;
+      _searchError = null;
+      _hasSearchResponse = false;
     });
+
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      _performSearch(trimmed, requestId: requestId);
+    });
+  }
+
+  Future<void> _performSearch(
+    String query, {
+    int? requestId,
+    bool immediate = false,
+  }) async {
+    final trimmed = query.trim();
+    final activeRequestId = requestId ?? ++_searchRequestId;
+    _searchDebounce?.cancel();
+
+    if (trimmed.length < 2) {
+      setState(() {
+        _searchResults = const [];
+        _searching = false;
+        _hasSearchResponse = false;
+        _searchError = null;
+      });
+      return;
+    }
+
+    if (immediate) {
+      setState(() {
+        _searching = true;
+        _searchError = null;
+        _hasSearchResponse = false;
+      });
+    }
+
     try {
-      final results = await _geocodingService.search(query);
+      final near = _searchNearCoordinates();
+      final results = await _geocodingService.searchPlaces(
+        query: trimmed,
+        nearLat: near?.latitude,
+        nearLon: near?.longitude,
+      );
       if (!mounted) return;
+      if (activeRequestId != _searchRequestId) return;
       setState(() {
         _searchResults = results;
         _searching = false;
+        _hasSearchResponse = true;
+        _searchError = null;
+      });
+    } on GeocodingException catch (error) {
+      if (!mounted) return;
+      if (activeRequestId != _searchRequestId) return;
+      setState(() {
+        _searchResults = const [];
+        _searching = false;
+        _hasSearchResponse = true;
+        _searchError = error.message;
       });
     } catch (_) {
       if (!mounted) return;
+      if (activeRequestId != _searchRequestId) return;
       setState(() {
+        _searchResults = const [];
         _searching = false;
+        _hasSearchResponse = true;
+        _searchError = 'Place search unavailable.';
       });
     }
   }
 
-  Future<void> _selectSearchResult(GeocodingResult result) async {
+  maplibre.LatLng? _searchNearCoordinates() {
+    if (_lastKnownUserLocation != null) {
+      return _lastKnownUserLocation;
+    }
+    if (_lastCameraCenter != null) {
+      return _lastCameraCenter;
+    }
+    if (_selectedPoints.isNotEmpty) {
+      final start = _selectedPoints.first;
+      return maplibre.LatLng(start.lat, start.lon);
+    }
+    return null;
+  }
+
+  Future<void> _selectSearchResult(PlaceSearchResult result) async {
     final controller = _controller;
     if (controller == null) return;
 
@@ -104,21 +192,248 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       distanceFromStart: 0,
     );
 
-    setState(() {
-      _selectedPoints.add(routePoint);
-      _searchResults = const [];
-      _searchController.clear();
-      _error = null;
-    });
+    FocusScope.of(context).unfocus();
     _searchFocusNode.unfocus();
 
-    await _updateMapMarkers();
     await controller.animateCamera(
       maplibre.CameraUpdate.newLatLngZoom(
         maplibre.LatLng(result.lat, result.lon),
-        14,
+        16,
       ),
     );
+    _lastCameraCenter = maplibre.LatLng(result.lat, result.lon);
+    await _showSearchPreviewMarker(result);
+
+    if (!mounted) return;
+    final action = await _showPlaceActionSheet(result);
+    if (!mounted) return;
+    if (action == null) {
+      setState(() {
+        _searchResults = const [];
+        _searchController.clear();
+        _hasSearchResponse = false;
+        _searchError = null;
+      });
+      return;
+    }
+
+    setState(() {
+      switch (action) {
+        case _PlaceAction.setStart:
+          if (_selectedPoints.isEmpty) {
+            _selectedPoints.add(routePoint);
+          } else {
+            _selectedPoints[0] = routePoint;
+          }
+          break;
+        case _PlaceAction.addStop:
+          if (_selectedPoints.length >= 2) {
+            _selectedPoints.insert(_selectedPoints.length - 1, routePoint);
+          } else {
+            _selectedPoints.add(routePoint);
+          }
+          break;
+        case _PlaceAction.setDestination:
+          if (_selectedPoints.isEmpty) {
+            _selectedPoints.add(routePoint);
+          } else if (_selectedPoints.length == 1) {
+            _selectedPoints.add(routePoint);
+          } else {
+            _selectedPoints[_selectedPoints.length - 1] = routePoint;
+          }
+          break;
+      }
+      _searchResults = const [];
+      _searchController.clear();
+      _hasSearchResponse = false;
+      _searchError = null;
+      _error = null;
+    });
+
+    await _clearSearchPreviewMarker();
+    await _updateMapMarkers();
+  }
+
+  Future<_PlaceAction?> _showPlaceActionSheet(PlaceSearchResult result) {
+    final hasStart = _selectedPoints.isNotEmpty;
+    final hasDestination = _selectedPoints.length >= 2;
+    final actions = <_PlaceAction>[
+      if (!hasStart) _PlaceAction.setStart,
+      if (hasStart && !hasDestination) _PlaceAction.setDestination,
+      if (hasDestination) _PlaceAction.addStop,
+      _PlaceAction.setStart,
+      if (hasStart) _PlaceAction.setDestination,
+      if (hasDestination) _PlaceAction.addStop,
+    ];
+    final uniqueActions = <_PlaceAction>[];
+    for (final action in actions) {
+      if (!uniqueActions.contains(action)) {
+        uniqueActions.add(action);
+      }
+    }
+
+    return showModalBottomSheet<_PlaceAction>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  result.title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (result.subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    result.subtitle,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+                const SizedBox(height: 12),
+                for (final action in uniqueActions)
+                  ListTile(
+                    leading: Icon(_placeActionIcon(action)),
+                    title: Text(_placeActionLabel(action)),
+                    onTap: () => Navigator.of(context).pop(action),
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.visibility),
+                  title: const Text('Just view on map'),
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  IconData _placeActionIcon(_PlaceAction action) {
+    return switch (action) {
+      _PlaceAction.setStart => Icons.flag,
+      _PlaceAction.addStop => Icons.add_location_alt,
+      _PlaceAction.setDestination => Icons.place,
+    };
+  }
+
+  String _placeActionLabel(_PlaceAction action) {
+    return switch (action) {
+      _PlaceAction.setStart => 'Set as Start',
+      _PlaceAction.addStop => 'Add Stop',
+      _PlaceAction.setDestination => 'Set as Destination',
+    };
+  }
+
+  Future<void> _showSearchPreviewMarker(PlaceSearchResult result) async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    await _clearSearchPreviewMarker();
+
+    final coordinates = maplibre.LatLng(result.lat, result.lon);
+    final circle = await controller.addCircle(
+      maplibre.CircleOptions(
+        geometry: coordinates,
+        circleRadius: 8,
+        circleColor: '#1565C0',
+        circleStrokeColor: '#FFFFFF',
+        circleStrokeWidth: 3,
+        circleOpacity: 0.95,
+      ),
+    );
+    final label = await controller.addSymbol(
+      maplibre.SymbolOptions(
+        geometry: coordinates,
+        textField: 'Place',
+        textSize: 12,
+        textColor: '#FFFFFF',
+        textHaloColor: '#0D47A1',
+        textHaloWidth: 2,
+        textAnchor: 'top',
+        textOffset: const Offset(0, 1.25),
+        zIndex: 45,
+      ),
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _searchPreviewCircle = circle;
+      _searchPreviewLabel = label;
+    });
+  }
+
+  Future<void> _clearSearchPreviewMarker() async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    final label = _searchPreviewLabel;
+    if (label != null) {
+      await controller.removeSymbol(label);
+    }
+    final circle = _searchPreviewCircle;
+    if (circle != null) {
+      await controller.removeCircle(circle);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _searchPreviewCircle = null;
+      _searchPreviewLabel = null;
+    });
+  }
+
+  void _updateLastCameraCenter() {
+    final cameraPosition = _controller?.cameraPosition;
+    if (cameraPosition == null) {
+      return;
+    }
+    _lastCameraCenter = cameraPosition.target;
+  }
+
+  IconData _placeIcon(PlaceSearchResult result) {
+    final properties = result.raw['properties'] is Map
+        ? result.raw['properties'] as Map
+        : null;
+    final osmKey = properties?['osm_key']?.toString().toLowerCase();
+    final osmValue = properties?['osm_value']?.toString().toLowerCase();
+    final layer = properties?['layer']?.toString().toLowerCase();
+
+    if (layer == 'locality' ||
+        layer == 'localadmin' ||
+        osmValue == 'city' ||
+        osmValue == 'town' ||
+        osmValue == 'village') {
+      return Icons.location_city;
+    }
+    if (layer == 'street' ||
+        layer == 'address' ||
+        osmKey == 'highway' ||
+        osmKey == 'route') {
+      return Icons.add_road;
+    }
+    if (osmKey == 'amenity' ||
+        osmKey == 'shop' ||
+        osmValue == 'restaurant' ||
+        osmValue == 'cafe' ||
+        osmValue == 'parking') {
+      return Icons.place;
+    }
+    return Icons.location_on;
+  }
+
+  String _formatPlaceDistance(double meters) {
+    if (meters < 1000) {
+      return '${meters.round()} m';
+    }
+    return '${(meters / 1000).toStringAsFixed(1)} km';
   }
 
   @override
@@ -127,7 +442,15 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     final hasEnoughPoints = _selectedPoints.length >= 2;
     final waypointCount = math.max(0, _selectedPoints.length - 2);
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
-    final searchActive = _searchFocusNode.hasFocus || keyboardOpen;
+    final queryActive =
+        _searchController.text.trim().length >= 2 &&
+        (_searchFocusNode.hasFocus ||
+            keyboardOpen ||
+            _searchResults.isNotEmpty ||
+            _searching ||
+            _searchError != null);
+    final searchActive =
+        _searchFocusNode.hasFocus || keyboardOpen || queryActive;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -154,9 +477,12 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                 maplibre.AttributionButtonPosition.bottomRight,
             attributionButtonMargins: const math.Point(-1000, -1000),
             myLocationEnabled: false,
+            trackCameraPosition: true,
             onMapCreated: (controller) {
               _controller = controller;
+              _lastCameraCenter = const maplibre.LatLng(43.8, 11.2);
             },
+            onCameraIdle: _updateLastCameraCenter,
             onMapLongClick: _handleMapLongClick,
             onMapClick: (point, latLng) {
               FocusScope.of(context).unfocus();
@@ -201,8 +527,9 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                                 border: InputBorder.none,
                                 isDense: true,
                               ),
-                              onChanged: _performSearch,
-                              onSubmitted: (query) => _performSearch(query),
+                              onChanged: _onSearchChanged,
+                              onSubmitted: (query) =>
+                                  _performSearch(query, immediate: true),
                             ),
                           ),
                           if (_searchController.text.isNotEmpty)
@@ -221,9 +548,14 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                                 : IconButton(
                                     icon: const Icon(Icons.clear, size: 18),
                                     onPressed: () {
+                                      _searchDebounce?.cancel();
+                                      _searchRequestId++;
                                       setState(() {
                                         _searchController.clear();
                                         _searchResults = const [];
+                                        _searching = false;
+                                        _hasSearchResponse = false;
+                                        _searchError = null;
                                       });
                                     },
                                   ),
@@ -231,7 +563,9 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                       ),
                     ),
                   ),
-                  if (_searchResults.isNotEmpty)
+                  if (_searchResults.isNotEmpty ||
+                      _searchError != null ||
+                      (_hasSearchResponse && !_searching))
                     Card(
                       color: Theme.of(
                         context,
@@ -242,30 +576,56 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                       ),
                       child: Container(
                         constraints: const BoxConstraints(maxHeight: 220),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          padding: EdgeInsets.zero,
-                          itemCount: _searchResults.length,
-                          separatorBuilder: (context, index) =>
-                              const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final result = _searchResults[index];
-                            return ListTile(
-                              dense: true,
-                              title: Text(
-                                result.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                        child: _searchResults.isEmpty
+                            ? _SearchMessage(
+                                icon: _searchError == null
+                                    ? Icons.search_off
+                                    : Icons.wifi_off,
+                                message: _searchError ?? 'No places found.',
+                              )
+                            : ListView.separated(
+                                shrinkWrap: true,
+                                padding: EdgeInsets.zero,
+                                itemCount: _searchResults.length,
+                                separatorBuilder: (context, index) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final result = _searchResults[index];
+                                  return ListTile(
+                                    dense: true,
+                                    title: Text(
+                                      result.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    subtitle: result.subtitle.isNotEmpty
+                                        ? Text(
+                                            result.subtitle,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          )
+                                        : null,
+                                    leading: Icon(_placeIcon(result), size: 20),
+                                    trailing: result.distanceMeters == null
+                                        ? null
+                                        : Text(
+                                            _formatPlaceDistance(
+                                              result.distanceMeters!,
+                                            ),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                          ),
+                                    onTap: () => _selectSearchResult(result),
+                                  );
+                                },
                               ),
-                              subtitle: result.subtitle.isNotEmpty
-                                  ? Text(result.subtitle)
-                                  : null,
-                              leading: const Icon(Icons.place, size: 20),
-                              onTap: () => _selectSearchResult(result),
-                            );
-                          },
-                        ),
                       ),
                     ),
                 ],
@@ -744,6 +1104,14 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       if (_pointCircles.isNotEmpty) {
         await controller.removeCircles(_pointCircles);
       }
+      final previewLabel = _searchPreviewLabel;
+      if (previewLabel != null) {
+        await controller.removeSymbol(previewLabel);
+      }
+      final previewCircle = _searchPreviewCircle;
+      if (previewCircle != null) {
+        await controller.removeCircle(previewCircle);
+      }
       final line = _routeLine;
       if (line != null) {
         await controller.removeLine(line);
@@ -754,6 +1122,8 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       _selectedPoints.clear();
       _pointLabels.clear();
       _pointCircles.clear();
+      _searchPreviewLabel = null;
+      _searchPreviewCircle = null;
       _routeLine = null;
       _error = null;
     });
@@ -964,6 +1334,8 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
         position.latitude,
         position.longitude,
       );
+      _lastKnownUserLocation = coordinates;
+      _lastCameraCenter = coordinates;
       await _showCurrentLocationMarker(coordinates);
       await controller.animateCamera(
         maplibre.CameraUpdate.newLatLngZoom(coordinates, 15),
@@ -1009,6 +1381,10 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
         lon: position.longitude,
         distanceFromStart: 0,
       );
+      final coordinates = maplibre.LatLng(
+        position.latitude,
+        position.longitude,
+      );
 
       setState(() {
         if (_selectedPoints.isNotEmpty) {
@@ -1018,16 +1394,15 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
         }
         _error = null;
       });
+      _lastKnownUserLocation = coordinates;
+      _lastCameraCenter = coordinates;
 
       await _updateMapMarkers();
 
       final controller = _controller;
       if (controller != null) {
         await controller.animateCamera(
-          maplibre.CameraUpdate.newLatLngZoom(
-            maplibre.LatLng(position.latitude, position.longitude),
-            15,
-          ),
+          maplibre.CameraUpdate.newLatLngZoom(coordinates, 15),
         );
       }
     } catch (_) {
@@ -1095,6 +1470,35 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+enum _PlaceAction { setStart, addStop, setDestination }
+
+class _SearchMessage extends StatelessWidget {
+  const _SearchMessage({required this.icon, required this.message});
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            size: 20,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(message, style: Theme.of(context).textTheme.bodyMedium),
+          ),
+        ],
+      ),
+    );
   }
 }
 
