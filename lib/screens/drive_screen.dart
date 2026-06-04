@@ -27,6 +27,7 @@ class DriveScreen extends StatefulWidget {
     required this.roadWarnings,
     required this.speedLimitSegments,
     required this.settings,
+    this.isSimulation = false,
     super.key,
   });
 
@@ -35,6 +36,7 @@ class DriveScreen extends StatefulWidget {
   final List<RoadWarning> roadWarnings;
   final List<SpeedLimitSegment> speedLimitSegments;
   final SettingsService settings;
+  final bool isSimulation;
 
   @override
   State<DriveScreen> createState() => _DriveScreenState();
@@ -71,6 +73,13 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   double? _lastVisualLon;
   bool _gpsWeak = false;
   final Set<String> _spokenWarningIds = {};
+  double _rawSpeedMps = 0;
+  double _gpsAccuracy = 0;
+  double _gpsHeading = 0;
+  double _simulationSpeedKmh = 50.0;
+  bool _simulationPaused = false;
+  Timer? _simulationTimer;
+  double _simulatedDistance = 0.0;
 
   PaceNote? get _nextNote {
     for (final note in _notes) {
@@ -131,6 +140,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       debugPrint('Wakelock disable failed: $e');
     }
     _positionSubscription?.cancel();
+    _simulationTimer?.cancel();
     _voice.stop();
     super.dispose();
   }
@@ -214,11 +224,83 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
+          if (widget.isSimulation)
+            Positioned(
+              top: 72,
+              left: 12,
+              right: 12,
+              child: SafeArea(
+                child: Card(
+                  color: Theme.of(context).colorScheme.surface.withAlpha(230),
+                  elevation: 6,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: Icon(_simulationPaused ? Icons.play_arrow : Icons.pause),
+                          tooltip: _simulationPaused ? 'Play' : 'Pause',
+                          onPressed: () {
+                            setState(() {
+                              _simulationPaused = !_simulationPaused;
+                            });
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.replay),
+                          tooltip: 'Restart',
+                          onPressed: () {
+                            setState(() {
+                              _simulatedDistance = 0.0;
+                              _lastMatchedIndex = 0;
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<double>(
+                              value: _simulationSpeedKmh,
+                              isExpanded: true,
+                              items: [30.0, 50.0, 70.0, 90.0, 120.0].map((speed) {
+                                return DropdownMenuItem<double>(
+                                  value: speed,
+                                  child: Text('${speed.round()} km/h'),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                if (val != null) {
+                                  setState(() {
+                                    _simulationSpeedKmh = val;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.red),
+                          tooltip: 'Exit Simulation',
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             top: 12,
             left: 72,
             child: SafeArea(
+              child: GestureDetector(
+              onLongPress: _showDebugBottomSheet,
               child: _SpeedCard(speedMps: _speedMps, speedLimit: currentLimit, gpsWeak: _gpsWeak),
+            ),
             ),
           ),
           Positioned(
@@ -334,6 +416,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _startLocationTracking() async {
+    if (widget.isSimulation) {
+      _startSimulation();
+      return;
+    }
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       setState(() {
@@ -359,14 +445,14 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     if (defaultTargetPlatform == TargetPlatform.android) {
       locationSettings = AndroidSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 0,
-        intervalDuration: const Duration(milliseconds: 100),
+        distanceFilter: 1,
+        intervalDuration: const Duration(milliseconds: 500),
         forceLocationManager: false,
       );
     } else {
       locationSettings = const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 0,
+        distanceFilter: 1,
       );
     }
 
@@ -444,6 +530,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       _distanceAlongRoute = match.distanceAlongRoute;
       _distanceFromRoute = match.distanceFromRoute;
       _speedMps = newSpeed;
+      _rawSpeedMps = calculatedSpeed;
+      _gpsAccuracy = position.accuracy;
+      _gpsHeading = position.heading.isFinite ? position.heading : 0.0;
       _gpsWeak = position.accuracy > 20.0;
     });
 
@@ -564,6 +653,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       _notes = _notes.map((note) => note.copyWith(spoken: false)).toList();
       _spokenWarningIds.clear();
       _lastMatchedIndex = 0;
+      if (widget.isSimulation) {
+        _simulatedDistance = 0.0;
+      }
     });
   }
 
@@ -954,6 +1046,122 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       }
     }
     return _lastGoodHeading;
+  }
+
+  void _startSimulation() {
+    _simulationTimer?.cancel();
+    _simulationTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (_simulationPaused || !mounted) return;
+
+      final double speedMps = _simulationSpeedKmh / 3.6;
+      _simulatedDistance += speedMps * 0.5; // 0.5 seconds
+
+      if (widget.routePoints.isEmpty) return;
+
+      if (_simulatedDistance >= widget.routePoints.last.distanceFromStart) {
+        _simulatedDistance = 0.0;
+        _lastMatchedIndex = 0;
+      }
+
+      final nearestPt = findNearestPoint(widget.routePoints, _simulatedDistance);
+      if (nearestPt == null) return;
+
+      double bearing = _lastGoodHeading;
+      final nextIdx = widget.routePoints.indexOf(nearestPt) + 1;
+      if (nextIdx < widget.routePoints.length) {
+        bearing = bearingDegrees(
+          nearestPt.lat,
+          nearestPt.lon,
+          widget.routePoints[nextIdx].lat,
+          widget.routePoints[nextIdx].lon,
+        );
+      }
+
+      final mockPosition = Position(
+        latitude: nearestPt.lat,
+        longitude: nearestPt.lon,
+        timestamp: DateTime.now(),
+        accuracy: 3.0,
+        altitude: nearestPt.elevation ?? 0.0,
+        altitudeAccuracy: 0.0,
+        heading: bearing,
+        headingAccuracy: 0.0,
+        speed: speedMps,
+        speedAccuracy: 0.0,
+        floor: null,
+        isMocked: true,
+      );
+
+      _handlePosition(mockPosition);
+    });
+  }
+
+  void _showDebugBottomSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        final theme = Theme.of(context);
+        final speedKmh = _speedMps * 3.6;
+        final rawSpeedKmh = _rawSpeedMps * 3.6;
+        
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'GPS Telemetry & Matcher Status',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const Divider(),
+                const SizedBox(height: 8),
+                _buildDebugRow('GPS Accuracy', '${_gpsAccuracy.toStringAsFixed(1)} m'),
+                _buildDebugRow('GPS Raw Speed', '${rawSpeedKmh.toStringAsFixed(1)} km/h'),
+                _buildDebugRow('Smoothed Speed', '${speedKmh.toStringAsFixed(1)} km/h'),
+                _buildDebugRow('Smoothed Heading', '${_lastGoodHeading.toStringAsFixed(1)}°'),
+                _buildDebugRow('GPS Heading (Course)', '${_gpsHeading.toStringAsFixed(1)}°'),
+                _buildDebugRow('Matched Index', '$_lastMatchedIndex / ${widget.routePoints.length}'),
+                _buildDebugRow('Distance Along Route', '${(_distanceAlongRoute / 1000).toStringAsFixed(3)} km'),
+                _buildDebugRow('Off-Route Distance', '${_distanceFromRoute.toStringAsFixed(1)} m'),
+                _buildDebugRow('Route Points Count', '${widget.routePoints.length}'),
+                _buildDebugRow('Pacenotes Count', '${widget.pacenotes.length}'),
+                _buildDebugRow('Warnings Count', '${widget.roadWarnings.length}'),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDebugRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+          Text(value, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
   }
 }
 

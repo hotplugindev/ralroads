@@ -14,7 +14,7 @@ class OrsService {
 
   final SettingsService _settings;
   final Dio _dio;
-  final PacenoteGenerator _pacenoteGenerator = PacenoteGenerator();
+  late final PacenoteGenerator _pacenoteGenerator = PacenoteGenerator(settings: _settings);
 
   bool get hasApiKey => _settings.hasEffectiveOrsApiKey();
 

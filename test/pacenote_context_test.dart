@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ralroads/main.dart';
 import 'package:ralroads/models/pace_note.dart';
@@ -5,6 +6,7 @@ import 'package:ralroads/models/road_warning.dart';
 import 'package:ralroads/models/route_point.dart';
 import 'package:ralroads/models/speed_limit_segment.dart';
 import 'package:ralroads/services/pacenote_generator.dart';
+import 'package:ralroads/services/settings_service.dart';
 
 void main() {
   test('smoothHeading handles wraparound', () {
@@ -177,13 +179,12 @@ void main() {
     // and no sharp corner nearby.
     final points = <RoutePoint>[];
     for (var i = 0; i < 30; i++) {
-      // 7m spacing
       final dist = i * 7.0;
-      // Heading changes slightly to make a mild curve
       final double latOffset = i < 10 ? 0.0 : (i - 10) * 0.00002;
       points.add(RoutePoint(
         lat: 45.0 + i * 0.00006 + latOffset,
         lon: 7.0,
+        distanceFromStart: dist,
       ));
     }
     
@@ -195,4 +196,33 @@ void main() {
       expect(corner.severity, isNot(6));
     }
   });
+
+  test('PacenoteGenerator handles Calm, Balanced, and Rally styles', () {
+    final points = <RoutePoint>[];
+    for (var i = 0; i < 30; i++) {
+      points.add(RoutePoint(
+        lat: 45.0 + math.sin(i * 0.08) * 0.0003,
+        lon: 7.0 + i * 0.0001,
+      ));
+    }
+
+    final calmGenerator = PacenoteGenerator(settings: FakeSettingsService(PacenoteStyle.calm));
+    final balancedGenerator = PacenoteGenerator(settings: FakeSettingsService(PacenoteStyle.balanced));
+    final rallyGenerator = PacenoteGenerator(settings: FakeSettingsService(PacenoteStyle.rally));
+
+    final calmNotes = calmGenerator.generate(points);
+    final balancedNotes = balancedGenerator.generate(points);
+    final rallyNotes = rallyGenerator.generate(points);
+
+    expect(rallyNotes.length, greaterThanOrEqualTo(balancedNotes.length));
+    expect(balancedNotes.length, greaterThanOrEqualTo(calmNotes.length));
+  });
+}
+
+class FakeSettingsService extends SettingsService {
+  FakeSettingsService(this._style);
+  final PacenoteStyle _style;
+
+  @override
+  PacenoteStyle get pacenoteStyle => _style;
 }

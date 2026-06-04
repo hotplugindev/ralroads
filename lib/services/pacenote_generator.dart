@@ -4,8 +4,14 @@ import '../models/road_warning.dart';
 import '../models/route_point.dart';
 import '../models/speed_limit_segment.dart';
 import '../utils/geo_math.dart';
+import 'settings_service.dart';
 
 class PacenoteGenerator {
+  PacenoteGenerator({SettingsService? settings}) : _settings = settings;
+
+  final SettingsService? _settings;
+
+  PacenoteStyle get _style => _settings?.pacenoteStyle ?? PacenoteStyle.balanced;
   List<RoutePoint> densifyRoutePoints(List<RoutePoint> points, {double targetSpacingM = 5.0}) {
     if (points.length < 2) return points;
     final densified = <RoutePoint>[];
@@ -98,7 +104,13 @@ class PacenoteGenerator {
         r = thetaRad > 0.0001 ? distDiff / thetaRad : 9999.0;
       }
 
-      if (r < 180.0) {
+      final curveRadiusThreshold = switch (_style) {
+        PacenoteStyle.calm => 140.0,
+        PacenoteStyle.balanced => 180.0,
+        PacenoteStyle.rally => 220.0,
+      };
+
+      if (r < curveRadiusThreshold) {
         pointTypes.add(delta < 0 ? 'L' : 'R');
       } else {
         pointTypes.add('S');
@@ -162,24 +174,34 @@ class PacenoteGenerator {
         final r = radiusInfo.minRadius;
         bool isHairpin = false;
 
+        final h1 = _style == PacenoteStyle.calm ? 18.0 : (_style == PacenoteStyle.rally ? 26.0 : 22.0);
+        final h2 = _style == PacenoteStyle.calm ? 32.0 : (_style == PacenoteStyle.rally ? 44.0 : 38.0);
+        final h3 = _style == PacenoteStyle.calm ? 48.0 : (_style == PacenoteStyle.rally ? 66.0 : 58.0);
+        final h4 = _style == PacenoteStyle.calm ? 70.0 : (_style == PacenoteStyle.rally ? 95.0 : 85.0);
+        final h5 = _style == PacenoteStyle.calm ? 100.0 : (_style == PacenoteStyle.rally ? 140.0 : 125.0);
+
         if (r < 24.0 && totalHeadingChange.abs() >= 65.0) {
           isHairpin = true;
           severity = 1;
         } else if (r < 30.0 && totalHeadingChange.abs() >= 85.0) {
           isHairpin = true;
           severity = 1;
-        } else if (r < 22.0) {
+        } else if (r < h1) {
           severity = 1;
-        } else if (r < 38.0) {
+        } else if (r < h2) {
           severity = 2;
-        } else if (r < 58.0) {
+        } else if (r < h3) {
           severity = 3;
-        } else if (r < 85.0) {
+        } else if (r < h4) {
           severity = 4;
-        } else if (r < 125.0) {
+        } else if (r < h5) {
           severity = 5;
         } else {
           severity = 6;
+        }
+
+        if (_style == PacenoteStyle.calm && severity >= 5) {
+          continue;
         }
 
         final mid = seg.startIndex + (seg.endIndex - seg.startIndex) ~/ 2;
@@ -525,16 +547,32 @@ class PacenoteGenerator {
   }
 
   int _indexNearDistance(List<RoutePoint> points, double targetDistance) {
-    var bestIndex = 0;
-    var bestDelta = double.infinity;
-    for (var i = 0; i < points.length; i++) {
-      final delta = (points[i].distanceFromStart - targetDistance).abs();
-      if (delta < bestDelta) {
-        bestDelta = delta;
-        bestIndex = i;
+    if (points.isEmpty) return 0;
+    if (targetDistance <= points.first.distanceFromStart) return 0;
+    if (targetDistance >= points.last.distanceFromStart) return points.length - 1;
+
+    var low = 0;
+    var high = points.length - 1;
+
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      final midDist = points[mid].distanceFromStart;
+
+      if (midDist == targetDistance) {
+        return mid;
+      } else if (midDist < targetDistance) {
+        low = mid + 1;
+      } else {
+        high = mid - 1;
       }
     }
-    return bestIndex;
+
+    if (low >= points.length) return high;
+    if (high < 0) return low;
+
+    final diff1 = (points[low].distanceFromStart - targetDistance).abs();
+    final diff2 = (points[high].distanceFromStart - targetDistance).abs();
+    return diff1 < diff2 ? low : high;
   }
 
   List<_RouteSegment> refineSegments(List<_RouteSegment> input, List<RoutePoint> points) {

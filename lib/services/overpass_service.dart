@@ -1,20 +1,22 @@
 import 'dart:math' as math;
-
 import 'package:dio/dio.dart';
-
+import 'package:flutter/foundation.dart';
 import '../models/road_warning.dart';
 import '../models/route_point.dart';
 import '../models/speed_limit_segment.dart';
 import '../utils/geo_math.dart';
 
+
 class RoadEnrichment {
   const RoadEnrichment({
     required this.roadWarnings,
     required this.speedLimitSegments,
+    this.isPartial = false,
   });
 
   final List<RoadWarning> roadWarnings;
   final List<SpeedLimitSegment> speedLimitSegments;
+  final bool isPartial;
 }
 
 class OverpassService {
@@ -27,80 +29,126 @@ class OverpassService {
 
   final Dio _dio;
 
+  List<List<RoutePoint>> _chunkPoints(List<RoutePoint> points, {double maxChunkLengthM = 8000.0}) {
+    if (points.isEmpty) return [];
+    final chunks = <List<RoutePoint>>[];
+    var currentChunk = <RoutePoint>[];
+    var chunkStartDist = points.first.distanceFromStart;
+
+    for (final pt in points) {
+      if (currentChunk.isEmpty) {
+        currentChunk.add(pt);
+        chunkStartDist = pt.distanceFromStart;
+      } else {
+        if (pt.distanceFromStart - chunkStartDist > maxChunkLengthM) {
+          currentChunk.add(pt);
+          chunks.add(currentChunk);
+          currentChunk = [pt];
+          chunkStartDist = pt.distanceFromStart;
+        } else {
+          currentChunk.add(pt);
+        }
+      }
+    }
+    if (currentChunk.isNotEmpty) {
+      chunks.add(currentChunk);
+    }
+    return chunks;
+  }
+
   Future<RoadEnrichment> enrichRoute(List<RoutePoint> routePoints) async {
     if (routePoints.length < 2) {
       return const RoadEnrichment(roadWarnings: [], speedLimitSegments: []);
     }
 
-    try {
-      final query = _buildQuery(routePoints);
-      final response = await _dio.post<Map<String, dynamic>>(
-        _endpoint,
-        data: {'data': query},
-        options: Options(
-          sendTimeout: const Duration(seconds: 12),
-          receiveTimeout: const Duration(seconds: 28),
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'RalRoads/0.1 contact: local-dev',
-          },
-        ),
-      );
+    final chunks = _chunkPoints(routePoints, maxChunkLengthM: 8000.0);
+    final warnings = <RoadWarning>[];
+    final speedLimits = <SpeedLimitSegment>[];
+    var isPartial = false;
 
-      final elements = response.data?['elements'] as List<dynamic>? ?? const [];
-      final warnings = <RoadWarning>[];
-      final speedLimits = <SpeedLimitSegment>[];
+    // Limit to max 6 queries to avoid spamming the public server
+    final maxChunksToQuery = math.min(chunks.length, 6);
+    if (chunks.length > 6) {
+      isPartial = true;
+    }
 
-      for (final element in elements.whereType<Map<String, dynamic>>()) {
-        final tags = Map<String, dynamic>.from(
-          element['tags'] as Map<dynamic, dynamic>? ?? const {},
+    for (var chunkIdx = 0; chunkIdx < maxChunksToQuery; chunkIdx++) {
+      final chunk = chunks[chunkIdx];
+      try {
+        final query = _buildQuery(chunk);
+        final response = await _dio.post<Map<String, dynamic>>(
+          _endpoint,
+          data: {'data': query},
+          options: Options(
+            sendTimeout: const Duration(seconds: 12),
+            receiveTimeout: const Duration(seconds: 28),
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'User-Agent': 'RalRoads/0.1 contact: local-dev',
+            },
+          ),
         );
-        final type = element['type'] as String?;
 
-        if (type == 'node') {
-          final warning = _warningFromNode(element, tags, routePoints);
-          if (warning != null) {
-            warnings.add(warning);
-          }
-          continue;
-        }
+        final elements = response.data?['elements'] as List<dynamic>? ?? const [];
 
-        if (type == 'way') {
-          final geometry = _geometryFromWay(element);
-          if (geometry.isEmpty) {
+        for (final element in elements.whereType<Map<String, dynamic>>()) {
+          final tags = Map<String, dynamic>.from(
+            element['tags'] as Map<dynamic, dynamic>? ?? const {},
+          );
+          final type = element['type'] as String?;
+
+          if (type == 'node') {
+            final warning = _warningFromNode(element, tags, routePoints);
+            if (warning != null) {
+              warnings.add(warning);
+            }
             continue;
           }
 
-          if (tags['maxspeed'] != null) {
-            final segment = _speedLimitFromWay(
-              element,
-              tags,
-              geometry,
-              routePoints,
-            );
-            if (segment != null) {
-              speedLimits.add(segment);
+          if (type == 'way') {
+            final geometry = _geometryFromWay(element);
+            if (geometry.isEmpty) {
+              continue;
+            }
+
+            if (tags['maxspeed'] != null) {
+              final segment = _speedLimitFromWay(
+                element,
+                tags,
+                geometry,
+                routePoints,
+              );
+              if (segment != null) {
+                speedLimits.add(segment);
+              }
+            }
+
+            final warning = _warningFromWay(element, tags, geometry, routePoints);
+            if (warning != null) {
+              warnings.add(warning);
             }
           }
-
-          final warning = _warningFromWay(element, tags, geometry, routePoints);
-          if (warning != null) {
-            warnings.add(warning);
-          }
         }
+      } catch (error) {
+        isPartial = true;
+        debugPrint('Overpass chunk $chunkIdx failed: $error');
+        if (chunkIdx == 0) {
+          if (error is DioException) {
+            throw OverpassException(error.message ?? 'Overpass request failed.');
+          }
+          throw OverpassException('Road warning query failed: $error');
+        }
+        break;
       }
-
-      return RoadEnrichment(
-        roadWarnings: _dedupeWarnings(warnings)
-          ..sort((a, b) => a.distanceFromStart.compareTo(b.distanceFromStart)),
-        speedLimitSegments: speedLimits
-          ..sort((a, b) => a.startDistance.compareTo(b.startDistance)),
-      );
-    } on DioException catch (error) {
-      throw OverpassException(error.message ?? 'Overpass request failed.');
-    } catch (error) {
-      throw OverpassException('Road warning parsing failed: $error');
     }
+
+    return RoadEnrichment(
+      roadWarnings: _dedupeWarnings(warnings)
+        ..sort((a, b) => a.distanceFromStart.compareTo(b.distanceFromStart)),
+      speedLimitSegments: speedLimits
+        ..sort((a, b) => a.startDistance.compareTo(b.startDistance)),
+      isPartial: isPartial,
+    );
   }
 
   String _buildQuery(List<RoutePoint> points) {

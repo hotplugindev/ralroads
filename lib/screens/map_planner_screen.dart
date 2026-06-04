@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
 
+import '../models/geocoding_result.dart';
 import '../models/route_point.dart';
+import '../services/geocoding_service.dart';
 import '../services/ors_service.dart';
 import '../services/pacenote_generator.dart';
 import '../services/route_storage_service.dart';
@@ -30,7 +32,7 @@ class MapPlannerScreen extends StatefulWidget {
 
 class _MapPlannerScreenState extends State<MapPlannerScreen> {
   late final OrsService _orsService;
-  final _pacenoteGenerator = PacenoteGenerator();
+  late final PacenoteGenerator _pacenoteGenerator;
   final List<RoutePoint> _selectedPoints = [];
   final List<maplibre.Circle> _pointCircles = [];
   final List<maplibre.Symbol> _pointLabels = [];
@@ -41,10 +43,71 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   bool _building = false;
   String? _error;
 
+  final _geocodingService = GeocodingService();
+  final _searchController = TextEditingController();
+  List<GeocodingResult> _searchResults = [];
+  bool _searching = false;
+
   @override
   void initState() {
     super.initState();
     _orsService = OrsService(settings: widget.settings);
+    _pacenoteGenerator = PacenoteGenerator(settings: widget.settings);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = const [];
+      });
+      return;
+    }
+    setState(() {
+      _searching = true;
+    });
+    try {
+      final results = await _geocodingService.search(query);
+      setState(() {
+        _searchResults = results;
+        _searching = false;
+      });
+    } catch (_) {
+      setState(() {
+        _searching = false;
+      });
+    }
+  }
+
+  Future<void> _selectSearchResult(GeocodingResult result) async {
+    final controller = _controller;
+    if (controller == null) return;
+
+    final routePoint = RoutePoint(
+      lat: result.lat,
+      lon: result.lon,
+      distanceFromStart: 0,
+    );
+
+    setState(() {
+      _selectedPoints.add(routePoint);
+      _searchResults = const [];
+      _searchController.clear();
+      _error = null;
+    });
+
+    await _updateMapMarkers();
+    await controller.animateCamera(
+      maplibre.CameraUpdate.newLatLngZoom(
+        maplibre.LatLng(result.lat, result.lon),
+        14,
+      ),
+    );
   }
 
   @override
@@ -81,6 +144,118 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
             },
             onMapLongClick: _handleMapLongClick,
           ),
+          Positioned(
+            top: 12,
+            left: 12,
+            right: 72,
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Card(
+                    color: Theme.of(context).colorScheme.surface.withAlpha(235),
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.search, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              decoration: const InputDecoration(
+                                hintText: 'Search place or coordinates...',
+                                border: InputBorder.none,
+                                isDense: true,
+                              ),
+                              onChanged: _performSearch,
+                              onSubmitted: (query) => _performSearch(query),
+                            ),
+                          ),
+                          if (_searchController.text.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () {
+                                setState(() {
+                                  _searchController.clear();
+                                  _searchResults = const [];
+                                });
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_searchResults.isNotEmpty)
+                    Card(
+                      color: Theme.of(context).colorScheme.surface.withAlpha(240),
+                      elevation: 8,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Container(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          padding: EdgeInsets.zero,
+                          itemCount: _searchResults.length,
+                          separatorBuilder: (context, index) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final result = _searchResults[index];
+                            return ListTile(
+                              dense: true,
+                              title: Text(
+                                result.name,
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: result.subtitle.isNotEmpty
+                                  ? Text(result.subtitle)
+                                  : null,
+                              leading: const Icon(Icons.place, size: 20),
+                              onTap: () => _selectSearchResult(result),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (_selectedPoints.isEmpty)
+            Positioned(
+              top: 76,
+              left: 12,
+              right: 12,
+              child: SafeArea(
+                child: Card(
+                  color: Theme.of(context).colorScheme.secondaryContainer.withAlpha(220),
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 20),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Long-press on the map to add waypoints, or search for places above.',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             top: 12,
             right: 12,
@@ -138,6 +313,19 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                                   ),
                                 ),
                               ),
+                              if (_selectedPoints.length >= 2) ...[
+                                const SizedBox(width: 8),
+                                TextButton.icon(
+                                  onPressed: _building ? null : _reverseRoute,
+                                  icon: const Icon(Icons.swap_vert, size: 18),
+                                  label: const Text('Reverse'),
+                                  style: TextButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                                    minimumSize: Size.zero,
+                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                           const SizedBox(height: 12),
@@ -170,6 +358,102 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                               ),
                             ],
                           ),
+                          if (_selectedPoints.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              constraints: const BoxConstraints(maxHeight: 150),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: ReorderableListView.builder(
+                                buildDefaultDragHandles: false,
+                                shrinkWrap: true,
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                itemCount: _selectedPoints.length,
+                                onReorder: (oldIndex, newIndex) async {
+                                  setState(() {
+                                    if (oldIndex < newIndex) {
+                                      newIndex -= 1;
+                                    }
+                                    final pt = _selectedPoints.removeAt(oldIndex);
+                                    _selectedPoints.insert(newIndex, pt);
+                                    _error = null;
+                                  });
+                                  await _updateMapMarkers();
+                                },
+                                itemBuilder: (context, index) {
+                                  final pt = _selectedPoints[index];
+                                  final isStart = index == 0;
+                                  final isDest = index == _selectedPoints.length - 1;
+                                  
+                                  String role = 'Stop $index';
+                                  IconData icon = Icons.more_horiz;
+                                  Color color = Colors.orange;
+                                  
+                                  if (isStart) {
+                                    role = 'Start';
+                                    icon = Icons.flag;
+                                    color = Colors.green;
+                                  } else if (isDest && _selectedPoints.length > 1) {
+                                    role = 'Destination';
+                                    icon = Icons.place;
+                                    color = Colors.red;
+                                  }
+                                  
+                                  return Container(
+                                    key: ObjectKey(pt),
+                                    padding: const EdgeInsets.symmetric(vertical: 4),
+                                    decoration: BoxDecoration(
+                                      border: Border(
+                                        bottom: BorderSide(
+                                          color: Theme.of(context).dividerColor.withAlpha(30),
+                                        ),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        ReorderableDragStartListener(
+                                          index: index,
+                                          child: const Padding(
+                                            padding: EdgeInsets.symmetric(horizontal: 4),
+                                            child: Icon(Icons.drag_handle, size: 20, color: Colors.grey),
+                                          ),
+                                        ),
+                                        Icon(icon, color: color, size: 18),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          role,
+                                          style: const TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            '${pt.lat.toStringAsFixed(5)}, ${pt.lon.toStringAsFixed(5)}',
+                                            style: Theme.of(context).textTheme.bodySmall,
+                                            textAlign: TextAlign.right,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          onPressed: () async {
+                                            setState(() {
+                                              _selectedPoints.removeAt(index);
+                                              _error = null;
+                                            });
+                                            await _updateMapMarkers();
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
                           if (_error != null) ...[
                             const SizedBox(height: 10),
                             Text(
@@ -197,6 +481,24 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                                   ),
                                   onPressed: _building ? null : _clear,
                                   child: const Text('Clear'),
+                                ),
+                                const SizedBox(width: 12),
+                              ] else ...[
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(vertical: 14),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    onPressed: _building ? null : _useCurrentLocationAsStart,
+                                    icon: const Icon(Icons.my_location),
+                                    label: const Text(
+                                      'Start at My Location',
+                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
                                 ),
                                 const SizedBox(width: 12),
                               ],
@@ -589,6 +891,53 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
         timeLimit: Duration(seconds: 12),
       ),
     );
+  }
+
+  Future<void> _useCurrentLocationAsStart() async {
+    try {
+      final position = await _getCurrentPosition();
+      if (position == null) return;
+
+      final routePoint = RoutePoint(
+        lat: position.latitude,
+        lon: position.longitude,
+        distanceFromStart: 0,
+      );
+
+      setState(() {
+        if (_selectedPoints.isNotEmpty) {
+          _selectedPoints.insert(0, routePoint);
+        } else {
+          _selectedPoints.add(routePoint);
+        }
+        _error = null;
+      });
+
+      await _updateMapMarkers();
+      
+      final controller = _controller;
+      if (controller != null) {
+        await controller.animateCamera(
+          maplibre.CameraUpdate.newLatLngZoom(
+            maplibre.LatLng(position.latitude, position.longitude),
+            15,
+          ),
+        );
+      }
+    } catch (_) {
+      _showSnackBar('Could not get current location.');
+    }
+  }
+
+  void _reverseRoute() {
+    if (_selectedPoints.length < 2) return;
+    setState(() {
+      final reversed = _selectedPoints.reversed.toList();
+      _selectedPoints.clear();
+      _selectedPoints.addAll(reversed);
+      _error = null;
+    });
+    _updateMapMarkers();
   }
 
   Future<void> _showCurrentLocationMarker(maplibre.LatLng coordinates) async {

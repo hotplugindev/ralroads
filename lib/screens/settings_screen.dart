@@ -317,6 +317,87 @@ class _SettingsScreenState extends State<SettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.record_voice_over_outlined, color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        'PACENOTE DETAIL LEVEL',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SegmentedButton<PacenoteStyle>(
+                        segments: const [
+                          ButtonSegment<PacenoteStyle>(
+                            value: PacenoteStyle.calm,
+                            icon: Icon(Icons.volume_mute),
+                            label: Text('Calm'),
+                          ),
+                          ButtonSegment<PacenoteStyle>(
+                            value: PacenoteStyle.balanced,
+                            icon: Icon(Icons.volume_down),
+                            label: Text('Balanced'),
+                          ),
+                          ButtonSegment<PacenoteStyle>(
+                            value: PacenoteStyle.rally,
+                            icon: Icon(Icons.volume_up),
+                            label: Text('Rally'),
+                          ),
+                        ],
+                        selected: {widget.settings.pacenoteStyle},
+                        onSelectionChanged: (Set<PacenoteStyle> selection) async {
+                          await widget.settings.setPacenoteStyle(selection.first);
+                          setState(() {});
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        switch (widget.settings.pacenoteStyle) {
+                          PacenoteStyle.calm =>
+                            'Filters minor curves (only alerts for severe curves). Reduced co-driver verbal warnings for a quieter drive.',
+                          PacenoteStyle.balanced =>
+                            'Standard curve detection. Alerts for all typical turns and hazards.',
+                          PacenoteStyle.rally =>
+                            'Extremely detailed rally-style pacenotes. Alerts for all bends, micro-corners, and slight curves.',
+                        },
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            elevation: 0,
+            color: theme.colorScheme.surfaceContainerLow,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: theme.colorScheme.outlineVariant.withOpacity(0.5),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                   child: Row(
                     children: [

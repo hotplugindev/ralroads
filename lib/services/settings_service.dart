@@ -3,6 +3,12 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../models/road_warning.dart';
 import 'local_hive.dart';
 
+enum PacenoteStyle {
+  calm,
+  balanced,
+  rally,
+}
+
 class SettingsService {
   static const _boxName = 'settings';
   static const _orsApiKeyKey = 'ors_api_key';
@@ -12,7 +18,23 @@ class SettingsService {
   static const _showSpeedBumpsKey = 'show_speed_bumps';
   static const _showRoadFeaturesKey = 'show_road_features';
   static const _showSpeedCamerasKey = 'show_speed_cameras';
+  static const _pacenoteStyleKey = 'pacenote_style';
   static const developmentOrsApiKey = String.fromEnvironment('ORS_API_KEY');
+
+  PacenoteStyle get pacenoteStyle {
+    final value = _box?.get(_pacenoteStyleKey);
+    if (value is String) {
+      return PacenoteStyle.values.firstWhere(
+        (e) => e.name == value,
+        orElse: () => PacenoteStyle.balanced,
+      );
+    }
+    return PacenoteStyle.balanced;
+  }
+
+  Future<void> setPacenoteStyle(PacenoteStyle style) async {
+    await _box?.put(_pacenoteStyleKey, style.name);
+  }
 
   Box<dynamic>? _box;
 
