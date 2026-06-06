@@ -201,17 +201,17 @@ class CalloutScheduler extends ChangeNotifier {
     double baseLead = 4.0;
     switch (callout.priority) {
       case CalloutPriority.critical:
-        baseLead = callout.estimatedSpeakingDuration + 7.0;
+        baseLead = callout.estimatedSpeakingDuration + 4.5;
         break;
       case CalloutPriority.high:
-        baseLead = callout.estimatedSpeakingDuration + 6.0;
+        baseLead = callout.estimatedSpeakingDuration + 3.5;
         break;
       case CalloutPriority.normal:
-        baseLead = callout.estimatedSpeakingDuration + 5.0;
+        baseLead = callout.estimatedSpeakingDuration + 2.5;
         break;
       case CalloutPriority.low:
       case CalloutPriority.informational:
-        baseLead = callout.estimatedSpeakingDuration + 3.5;
+        baseLead = callout.estimatedSpeakingDuration + 1.5;
         break;
     }
     return baseLead;
@@ -222,11 +222,11 @@ class CalloutScheduler extends ChangeNotifier {
     final speechAndReactionDistance =
         effectiveSpeed * _calculateLeadTime(callout);
     final baseDistance = switch (callout.priority) {
-      CalloutPriority.critical => 130.0,
-      CalloutPriority.high => 110.0,
-      CalloutPriority.normal => 85.0,
-      CalloutPriority.low => 65.0,
-      CalloutPriority.informational => 55.0,
+      CalloutPriority.critical => 85.0,
+      CalloutPriority.high => 75.0,
+      CalloutPriority.normal => 60.0,
+      CalloutPriority.low => 45.0,
+      CalloutPriority.informational => 35.0,
     };
     final source = callout.source;
     var semanticBoost = 0.0;
@@ -243,7 +243,7 @@ class CalloutScheduler extends ChangeNotifier {
     }
     return math
         .max(baseDistance + semanticBoost, speechAndReactionDistance)
-        .clamp(45.0, 320.0);
+        .clamp(30.0, 320.0);
   }
 
   double _estimateSpeechDuration(String text) {
