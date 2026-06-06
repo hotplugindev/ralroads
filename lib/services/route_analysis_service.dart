@@ -9,6 +9,7 @@ import '../models/route_point.dart';
 import '../models/saved_route.dart';
 import 'overpass_service.dart';
 import 'pacenote_generator.dart';
+import 'route_semantic_engine.dart';
 import 'route_storage_service.dart';
 
 class RouteAnalysisService extends ChangeNotifier {
@@ -59,35 +60,42 @@ class RouteAnalysisService extends ChangeNotifier {
       final endDist = math.min((i + 1) * chunkLengthM, totalDist);
 
       final chunkPoints = routePoints
-          .where((p) =>
-              p.distanceFromStart >= startDist &&
-              p.distanceFromStart <= endDist)
+          .where(
+            (p) =>
+                p.distanceFromStart >= startDist &&
+                p.distanceFromStart <= endDist,
+          )
           .toList();
 
-      _chunks.add(RouteChunk(
-        id: 'chunk_${routeId}_$i',
-        index: i,
-        startDistance: startDist,
-        endDistance: endDist,
-        rawGeometry: chunkPoints,
-        displayGeometry: chunkPoints,
-        status: RouteChunkStatus.pending,
-        sectors: const [],
-        warnings: const [],
-        notes: const [],
-        speedLimits: const [],
-      ));
+      _chunks.add(
+        RouteChunk(
+          id: 'chunk_${routeId}_$i',
+          index: i,
+          startDistance: startDist,
+          endDistance: endDist,
+          rawGeometry: chunkPoints,
+          displayGeometry: chunkPoints,
+          status: RouteChunkStatus.pending,
+          sectors: const [],
+          warnings: const [],
+          notes: const [],
+          speedLimits: const [],
+        ),
+      );
     }
   }
 
   RouteAnalysisManifest get manifest {
     final total = _chunks.length;
-    final ready =
-        _chunks.where((c) => c.status == RouteChunkStatus.ready).length;
-    final partial =
-        _chunks.where((c) => c.status == RouteChunkStatus.partial).length;
-    final failed =
-        _chunks.where((c) => c.status == RouteChunkStatus.failed).length;
+    final ready = _chunks
+        .where((c) => c.status == RouteChunkStatus.ready)
+        .length;
+    final partial = _chunks
+        .where((c) => c.status == RouteChunkStatus.partial)
+        .length;
+    final failed = _chunks
+        .where((c) => c.status == RouteChunkStatus.failed)
+        .length;
     final isComplete = (ready + failed) == total && total > 0;
 
     return RouteAnalysisManifest(
@@ -132,9 +140,13 @@ class RouteAnalysisService extends ChangeNotifier {
         list.addAll(c.notes);
       } else {
         // Fall back to initial notes in this chunk range
-        list.addAll(initialPacenotes.where((n) =>
-            n.distanceFromStart >= c.startDistance &&
-            n.distanceFromStart <= c.endDistance));
+        list.addAll(
+          initialPacenotes.where(
+            (n) =>
+                n.distanceFromStart >= c.startDistance &&
+                n.distanceFromStart <= c.endDistance,
+          ),
+        );
       }
     }
     list.sort((a, b) => a.distanceFromStart.compareTo(b.distanceFromStart));
@@ -148,8 +160,9 @@ class RouteAnalysisService extends ChangeNotifier {
       maneuvers: const [],
       intersections: const [],
       chunks: _chunks,
-      totalDistanceMeters:
-          routePoints.isEmpty ? 0.0 : routePoints.last.distanceFromStart,
+      totalDistanceMeters: routePoints.isEmpty
+          ? 0.0
+          : routePoints.last.distanceFromStart,
       analysisManifest: manifest,
     );
   }
@@ -159,8 +172,9 @@ class RouteAnalysisService extends ChangeNotifier {
       id: routeId,
       name: routeName,
       createdAt: createdAt,
-      totalDistance:
-          routePoints.isEmpty ? 0.0 : routePoints.last.distanceFromStart,
+      totalDistance: routePoints.isEmpty
+          ? 0.0
+          : routePoints.last.distanceFromStart,
       points: routePoints,
       pacenotes: allPacenotes,
       roadWarnings: allWarnings,
@@ -207,35 +221,50 @@ class RouteAnalysisService extends ChangeNotifier {
       );
 
       final compPoints = routePoints
-          .where((p) =>
-              p.distanceFromStart >= compStart &&
-              p.distanceFromStart <= compEnd)
+          .where(
+            (p) =>
+                p.distanceFromStart >= compStart &&
+                p.distanceFromStart <= compEnd,
+          )
           .toList();
 
       // 2. Query Overpass and detect elevation
       final enrichment = await overpassService.enrichRoute(compPoints);
-      final elevationWarnings =
-          pacenoteGenerator.detectElevationFeatures(compPoints);
-      final combinedWarnings = [...enrichment.roadWarnings, ...elevationWarnings];
+      final elevationWarnings = pacenoteGenerator.detectElevationFeatures(
+        compPoints,
+      );
+      final combinedWarnings = [
+        ...enrichment.roadWarnings,
+        ...elevationWarnings,
+      ];
 
       // 3. Filter warnings back strictly to chunk boundaries
       final isLastChunk = i == _chunks.length - 1;
-      final chunkWarnings = combinedWarnings.where((w) =>
-          w.distanceFromStart >= chunk.startDistance &&
-          w.distanceFromStart <
-              (isLastChunk ? chunk.endDistance + 0.1 : chunk.endDistance))
+      final chunkWarnings = combinedWarnings
+          .where(
+            (w) =>
+                w.distanceFromStart >= chunk.startDistance &&
+                w.distanceFromStart <
+                    (isLastChunk ? chunk.endDistance + 0.1 : chunk.endDistance),
+          )
           .toList();
 
       // 4. Overlapping speed limits
-      final chunkSpeedLimits = enrichment.speedLimitSegments.where((s) =>
-          s.startDistance < chunk.endDistance &&
-          s.endDistance > chunk.startDistance)
+      final chunkSpeedLimits = enrichment.speedLimitSegments
+          .where(
+            (s) =>
+                s.startDistance < chunk.endDistance &&
+                s.endDistance > chunk.startDistance,
+          )
           .toList();
 
       // 5. Filter and refine pacenotes
-      final chunkPacenotes = initialPacenotes.where((n) =>
-          n.distanceFromStart >= chunk.startDistance &&
-          n.distanceFromStart <= chunk.endDistance)
+      final chunkPacenotes = initialPacenotes
+          .where(
+            (n) =>
+                n.distanceFromStart >= chunk.startDistance &&
+                n.distanceFromStart <= chunk.endDistance,
+          )
           .toList();
 
       final refinedPacenotes = pacenoteGenerator.refinePacenotesWithRoadContext(
@@ -253,7 +282,10 @@ class RouteAnalysisService extends ChangeNotifier {
         rawGeometry: chunk.rawGeometry,
         displayGeometry: chunk.displayGeometry,
         status: RouteChunkStatus.ready,
-        sectors: const [],
+        sectors: RouteSemanticEngine.sectorsFromPacenotes(
+          refinedPacenotes,
+          chunk.rawGeometry,
+        ),
         warnings: chunkWarnings,
         notes: refinedPacenotes,
         speedLimits: chunkSpeedLimits,

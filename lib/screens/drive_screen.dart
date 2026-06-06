@@ -184,7 +184,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     if (idx == -1) return null;
     for (var i = idx; i < _notes.length; i++) {
       final note = _notes[i];
-      if (!_scheduler.spokenIds.contains(note.id) && !_scheduler.expiredIds.contains(note.id)) {
+      if (!_scheduler.spokenIds.contains(note.id) &&
+          !_scheduler.expiredIds.contains(note.id)) {
         return note;
       }
     }
@@ -196,7 +197,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     if (idx == -1) return null;
     for (var i = idx; i < _visibleRoadWarnings.length; i++) {
       final warning = _visibleRoadWarnings[i];
-      if (!_scheduler.spokenIds.contains(warning.id) && !_scheduler.expiredIds.contains(warning.id)) {
+      if (!_scheduler.spokenIds.contains(warning.id) &&
+          !_scheduler.expiredIds.contains(warning.id)) {
         return warning;
       }
     }
@@ -376,21 +378,49 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                             ),
                           ),
                           InkWell(
-                            onTap: () => setState(() => _showDebugOverlay = false),
+                            onTap: () =>
+                                setState(() => _showDebugOverlay = false),
                             child: const Icon(Icons.close, size: 16),
                           ),
                         ],
                       ),
                       const Divider(height: 12),
-                      _buildDebugOverlayRow('Fused Speed', '${(_speedMps * 3.6).toStringAsFixed(1)} km/h'),
-                      _buildDebugOverlayRow('GPS Heading', '${_gpsHeading.toStringAsFixed(1)}°'),
-                      _buildDebugOverlayRow('GPS Accuracy', '${_gpsAccuracy.toStringAsFixed(1)} m'),
-                      _buildDebugOverlayRow('Match Index', '$_lastMatchedIndex/${_activeRoutePoints.length}'),
-                      _buildDebugOverlayRow('Distance Along', '${_distanceAlongRoute.toStringAsFixed(1)} m'),
-                      _buildDebugOverlayRow('Distance From', '${_distanceFromRoute.toStringAsFixed(1)} m'),
-                      _buildDebugOverlayRow('Queue Size', '${_scheduler.queue.length}'),
-                      _buildDebugOverlayRow('Spoken Notes', '${_scheduler.spokenIds.length}'),
-                      _buildDebugOverlayRow('Expired Notes', '${_scheduler.expiredIds.length}'),
+                      _buildDebugOverlayRow(
+                        'Fused Speed',
+                        '${(_speedMps * 3.6).toStringAsFixed(1)} km/h',
+                      ),
+                      _buildDebugOverlayRow(
+                        'GPS Heading',
+                        '${_gpsHeading.toStringAsFixed(1)}°',
+                      ),
+                      _buildDebugOverlayRow(
+                        'GPS Accuracy',
+                        '${_gpsAccuracy.toStringAsFixed(1)} m',
+                      ),
+                      _buildDebugOverlayRow(
+                        'Match Index',
+                        '$_lastMatchedIndex/${_activeRoutePoints.length}',
+                      ),
+                      _buildDebugOverlayRow(
+                        'Distance Along',
+                        '${_distanceAlongRoute.toStringAsFixed(1)} m',
+                      ),
+                      _buildDebugOverlayRow(
+                        'Distance From',
+                        '${_distanceFromRoute.toStringAsFixed(1)} m',
+                      ),
+                      _buildDebugOverlayRow(
+                        'Queue Size',
+                        '${_scheduler.queue.length}',
+                      ),
+                      _buildDebugOverlayRow(
+                        'Spoken Notes',
+                        '${_scheduler.spokenIds.length}',
+                      ),
+                      _buildDebugOverlayRow(
+                        'Expired Notes',
+                        '${_scheduler.expiredIds.length}',
+                      ),
                       if (_scheduler.queue.isNotEmpty) ...[
                         const Divider(height: 12),
                         Text(
@@ -398,7 +428,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -503,7 +535,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                     heroTag: 'drive-style',
                     tooltip: _labelForStyle(widget.settings.pacenoteStyle),
                     icon: _iconForStyle(widget.settings.pacenoteStyle),
-                    active: widget.settings.pacenoteStyle != PacenoteStyle.balanced,
+                    active:
+                        widget.settings.pacenoteStyle != PacenoteStyle.balanced,
                     onPressed: _cyclePacenoteStyle,
                   ),
                   const SizedBox(height: 10),
@@ -552,20 +585,27 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                           ),
                         ],
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                       child: Row(
                         children: [
                           Container(
                             width: 50,
                             height: 50,
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.onErrorContainer.withAlpha(38),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onErrorContainer.withAlpha(38),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
                               Icons.warning_amber_rounded,
                               size: 30,
-                              color: Theme.of(context).colorScheme.onErrorContainer,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onErrorContainer,
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -574,11 +614,15 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _isRerouting ? 'Recalculating Route...' : 'Off Route',
+                                  _isRerouting
+                                      ? 'Recalculating Route...'
+                                      : 'Off Route',
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: Theme.of(context).colorScheme.onErrorContainer,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onErrorContainer,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
@@ -588,7 +632,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                                       : 'Rerouting automatically in a few seconds',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: Theme.of(context).colorScheme.onErrorContainer.withAlpha(204),
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onErrorContainer
+                                        .withAlpha(204),
                                   ),
                                 ),
                               ],
@@ -601,7 +648,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                 );
               }
 
-              if (state.nextNote != null && state.distanceToNote != null && state.distanceToNote! < 300) {
+              if (state.nextNote != null &&
+                  state.distanceToNote != null &&
+                  state.distanceToNote! < 300) {
+                final note = state.nextNote!;
                 return Positioned(
                   top: 80,
                   left: 16,
@@ -619,44 +669,62 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                           ),
                         ],
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                       child: Row(
                         children: [
                           Container(
                             width: 50,
                             height: 50,
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.onPrimaryContainer.withAlpha(38),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onPrimaryContainer.withAlpha(38),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
-                              _iconForPaceNote(state.nextNote!),
+                              _iconForPaceNote(note),
                               size: 30,
-                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onPrimaryContainer,
                             ),
                           ),
                           const SizedBox(width: 16),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  state.nextNote!.text,
-                                  maxLines: 1,
+                                  displayTextForPaceNote(note),
+                                  maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimaryContainer,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'In ${state.distanceToNote!.round()} m',
+                                  secondaryTextForPaceNote(
+                                    note,
+                                    state.distanceToNote,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
-                                    color: Theme.of(context).colorScheme.onPrimaryContainer.withAlpha(204),
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onPrimaryContainer
+                                        .withAlpha(204),
                                   ),
                                 ),
                               ],
@@ -734,7 +802,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(153),
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant
+                                          .withAlpha(153),
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -755,7 +826,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(153),
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant
+                                          .withAlpha(153),
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -776,7 +850,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(153),
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant
+                                          .withAlpha(153),
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -785,7 +862,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.bold,
-                                      color: Theme.of(context).colorScheme.primary,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
                                     ),
                                   ),
                                 ],
@@ -797,7 +876,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                             borderRadius: BorderRadius.circular(4),
                             child: LinearProgressIndicator(
                               value: state.progressPercentage,
-                              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
                               color: Theme.of(context).colorScheme.primary,
                               minHeight: 6,
                             ),
@@ -886,7 +967,11 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       _updateCurrentLocationMarker(state);
 
       if (_followLocationNotifier.value) {
-        _followPosition(state.displayLat, state.displayLon, state.headingDegrees);
+        _followPosition(
+          state.displayLat,
+          state.displayLon,
+          state.headingDegrees,
+        );
       }
     }
 
@@ -906,7 +991,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     if (offRoute) {
       if (_lastOnRouteTime == null) {
         _lastOnRouteTime = DateTime.now();
-      } else if (DateTime.now().difference(_lastOnRouteTime!).inSeconds >= 5 && !_isRerouting) {
+      } else if (DateTime.now().difference(_lastOnRouteTime!).inSeconds >= 5 &&
+          !_isRerouting) {
         _recalculateRoute();
       }
     } else {
@@ -971,7 +1057,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     required String? permissionMessage,
   }) {
     final remainingDistanceMeters = _activeRoutePoints.isNotEmpty
-        ? math.max(0.0, _activeRoutePoints.last.distanceFromStart - _distanceAlongRoute)
+        ? math.max(
+            0.0,
+            _activeRoutePoints.last.distanceFromStart - _distanceAlongRoute,
+          )
         : 0.0;
 
     double remainingDurationSeconds = 0.0;
@@ -981,7 +1070,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       final segmentLength = p.distanceFromStart - prevDist;
       if (segmentLength <= 0) continue;
       final limitSegment = _visibleSpeedLimitSegments.firstWhere(
-        (s) => p.distanceFromStart >= s.startDistance && p.distanceFromStart <= s.endDistance,
+        (s) =>
+            p.distanceFromStart >= s.startDistance &&
+            p.distanceFromStart <= s.endDistance,
         orElse: () => const SpeedLimitSegment(
           id: 'default',
           startDistance: 0.0,
@@ -995,11 +1086,19 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       prevDist = p.distanceFromStart;
     }
 
-    final etaTime = DateTime.now().add(Duration(seconds: remainingDurationSeconds.round()));
-    final etaString = "${etaTime.hour.toString().padLeft(2, '0')}:${etaTime.minute.toString().padLeft(2, '0')}";
+    final etaTime = DateTime.now().add(
+      Duration(seconds: remainingDurationSeconds.round()),
+    );
+    final etaString =
+        "${etaTime.hour.toString().padLeft(2, '0')}:${etaTime.minute.toString().padLeft(2, '0')}";
 
-    final totalDistance = _activeRoutePoints.isNotEmpty ? _activeRoutePoints.last.distanceFromStart : 1.0;
-    final progressPercentage = (_distanceAlongRoute / totalDistance).clamp(0.0, 1.0);
+    final totalDistance = _activeRoutePoints.isNotEmpty
+        ? _activeRoutePoints.last.distanceFromStart
+        : 1.0;
+    final progressPercentage = (_distanceAlongRoute / totalDistance).clamp(
+      0.0,
+      1.0,
+    );
 
     return DriveState(
       nextNote: nextNote,
@@ -1032,20 +1131,29 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       return;
     }
 
-    final startPoint = RoutePoint(lat: currentPos.latitude, lon: currentPos.longitude);
+    final startPoint = RoutePoint(
+      lat: currentPos.latitude,
+      lon: currentPos.longitude,
+    );
     final destination = _activeRoutePoints.last;
 
     try {
       _speechService.speak('Off route. Recalculating route.', () {});
 
-      final newPoints = await OrsService(settings: widget.settings).buildRoute([startPoint, destination]);
+      final newPoints = await OrsService(
+        settings: widget.settings,
+      ).buildRoute([startPoint, destination]);
       if (newPoints.isEmpty) throw Exception('No points returned');
 
-      final newPacenotes = PacenoteGenerator(settings: widget.settings).generate(newPoints);
+      final newPacenotes = PacenoteGenerator(
+        settings: widget.settings,
+      ).generate(newPoints);
 
       setState(() {
         _activeRoutePoints = newPoints;
-        _notes = newPacenotes.map((note) => note.copyWith(spoken: false)).toList();
+        _notes = newPacenotes
+            .map((note) => note.copyWith(spoken: false))
+            .toList();
         _visibleRoadWarnings = [];
         _visibleSpeedLimitSegments = [];
         _lastMatchedIndex = 0;
@@ -1069,10 +1177,12 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       _lastOnRouteTime = null;
 
       _enrichRecalculatedRoute(newPoints);
-
     } catch (e) {
       debugPrint('Rerouting failed: $e');
-      _speechService.speak('Recalculating route failed. Please check internet connection.', () {});
+      _speechService.speak(
+        'Recalculating route failed. Please check internet connection.',
+        () {},
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -1087,8 +1197,13 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       final enrichment = await OverpassService().enrichRoute(newPoints);
       if (mounted) {
         setState(() {
-          _visibleRoadWarnings = filterRoadWarnings(enrichment.roadWarnings, widget.settings);
-          _visibleSpeedLimitSegments = widget.settings.showSpeedLimits ? enrichment.speedLimitSegments : const [];
+          _visibleRoadWarnings = filterRoadWarnings(
+            enrichment.roadWarnings,
+            widget.settings,
+          );
+          _visibleSpeedLimitSegments = widget.settings.showSpeedLimits
+              ? enrichment.speedLimitSegments
+              : const [];
         });
 
         _scheduler.reset();
@@ -1380,9 +1495,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _updateCurrentLocationMarker(
-    FusedNavigationState state,
-  ) async {
+  Future<void> _updateCurrentLocationMarker(FusedNavigationState state) async {
     final controller = _controller;
     if (controller == null || !_mapStyleReady || !_driverLayerAdded) {
       return;
@@ -1395,7 +1508,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         await controller.addImage('car_chevron', bytes);
         _carImageLoaded = true;
       } catch (e) {
-        debugPrint('Error adding car_chevron in updateCurrentLocationMarker: $e');
+        debugPrint(
+          'Error adding car_chevron in updateCurrentLocationMarker: $e',
+        );
         _carImageLoaded = true;
       }
     }
@@ -1416,9 +1531,11 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
             'properties': {
               'iconImage': 'car_chevron',
               'iconSize': 1.0,
-              'iconRotate': normalizeHeading(state.headingDegrees + driverIconHeadingOffsetDegrees),
+              'iconRotate': normalizeHeading(
+                state.headingDegrees + driverIconHeadingOffsetDegrees,
+              ),
             },
-          }
+          },
         ],
       });
     } catch (e) {
@@ -1449,9 +1566,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     }
     _lastCameraUpdateTime = now;
 
-    final double targetBearing = widget.settings.mapHeadingUp
-        ? heading
-        : 0.0;
+    final double targetBearing = widget.settings.mapHeadingUp ? heading : 0.0;
     final double targetTilt = widget.settings.mapHeadingUp ? 40.0 : 0.0;
 
     final speedKmh = _speedMps * 3.6;
@@ -1524,13 +1639,16 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
     final state = _fusionService.currentState;
     if (state != null) {
-      _followPosition(state.displayLat, state.displayLon, state.headingDegrees, force: true);
+      _followPosition(
+        state.displayLat,
+        state.displayLon,
+        state.headingDegrees,
+        force: true,
+      );
     } else {
       _fitNavigationCameraToRoute();
     }
   }
-
-
 
   void _showDebugBottomSheet() {
     showModalBottomSheet<void>(
@@ -1611,16 +1729,20 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                   const Divider(),
                   Text(
                     'Queue Elements:',
-                    style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 4),
-                  ..._scheduler.queue.map((item) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Text(
-                          '- [Priority ${item.priority}] ${item.text} (Dist: ${(item.routeDistance - _distanceAlongRoute).toStringAsFixed(1)}m)',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      )),
+                  ..._scheduler.queue.map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text(
+                        '- [Priority ${item.priority}] ${item.text} (Dist: ${(item.routeDistance - _distanceAlongRoute).toStringAsFixed(1)}m)',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -1841,7 +1963,9 @@ class _CalloutRow extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                note?.rallyText ?? 'No more callouts',
+                note == null
+                    ? 'No more callouts'
+                    : displayTextForPaceNote(note),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleLarge,

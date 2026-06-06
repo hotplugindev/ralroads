@@ -6,6 +6,7 @@ import '../models/road_warning.dart';
 import '../models/route_point.dart';
 import '../models/speed_limit_segment.dart';
 import '../services/settings_service.dart';
+import 'format_helpers.dart';
 
 class RoutePosition {
   final double lat;
@@ -215,6 +216,32 @@ String shortCalloutLabel(PaceNote note) {
     return '${direction}H';
   }
   return '$direction${note.severity}';
+}
+
+String displayTextForPaceNote(PaceNote note) {
+  final text = note.text.trim();
+  return text.isNotEmpty ? text : note.rallyText;
+}
+
+String secondaryTextForPaceNote(PaceNote note, double? distanceMeters) {
+  final parts = <String>[];
+  if (distanceMeters != null) {
+    parts.add('In ${formatDistance(distanceMeters)}');
+  }
+  if (note.recommendedSpeedKmh != null &&
+      note.type != PaceNoteType.straight &&
+      note.type != PaceNoteType.roundabout) {
+    parts.add('${note.recommendedSpeedKmh} km/h');
+  }
+  if (note.distanceMeters != null && note.type != PaceNoteType.straight) {
+    parts.add('${note.distanceMeters} m');
+  }
+  if (note.opens) {
+    parts.add('opens');
+  } else if (note.tightens) {
+    parts.add('tightens');
+  }
+  return parts.isEmpty ? note.direction : parts.join(' | ');
 }
 
 List<RoadWarning> filterRoadWarnings(

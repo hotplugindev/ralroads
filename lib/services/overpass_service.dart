@@ -6,7 +6,6 @@ import '../models/route_point.dart';
 import '../models/speed_limit_segment.dart';
 import '../utils/geo_math.dart';
 
-
 class RoadEnrichment {
   const RoadEnrichment({
     required this.roadWarnings,
@@ -39,7 +38,10 @@ class OverpassService {
 
   final Dio _dio;
 
-  List<List<RoutePoint>> _chunkPoints(List<RoutePoint> points, {double maxChunkLengthM = 8000.0}) {
+  List<List<RoutePoint>> _chunkPoints(
+    List<RoutePoint> points, {
+    double maxChunkLengthM = 8000.0,
+  }) {
     if (points.isEmpty) return [];
     final chunks = <List<RoutePoint>>[];
     var currentChunk = <RoutePoint>[];
@@ -98,14 +100,17 @@ class OverpassService {
           ),
         );
 
-        final elements = response.data?['elements'] as List<dynamic>? ?? const [];
+        final elements =
+            response.data?['elements'] as List<dynamic>? ?? const [];
         allElements.addAll(elements);
       } catch (error) {
         isPartial = true;
         debugPrint('Overpass chunk $chunkIdx failed: $error');
         if (chunkIdx == 0) {
           if (error is DioException) {
-            throw OverpassException(error.message ?? 'Overpass request failed.');
+            throw OverpassException(
+              error.message ?? 'Overpass request failed.',
+            );
           }
           throw OverpassException('Road warning query failed: $error');
         }
@@ -130,14 +135,19 @@ class OverpassService {
     final warnings = <RoadWarning>[];
     final speedLimits = <SpeedLimitSegment>[];
 
-    for (final element in params.allElements.whereType<Map<String, dynamic>>()) {
+    for (final element
+        in params.allElements.whereType<Map<String, dynamic>>()) {
       final tags = Map<String, dynamic>.from(
         element['tags'] as Map<dynamic, dynamic>? ?? const {},
       );
       final type = element['type'] as String?;
 
       if (type == 'node') {
-        final warning = parser._warningFromNode(element, tags, params.routePoints);
+        final warning = parser._warningFromNode(
+          element,
+          tags,
+          params.routePoints,
+        );
         if (warning != null) {
           warnings.add(warning);
         }
@@ -162,7 +172,12 @@ class OverpassService {
           }
         }
 
-        final warning = parser._warningFromWay(element, tags, geometry, params.routePoints);
+        final warning = parser._warningFromWay(
+          element,
+          tags,
+          geometry,
+          params.routePoints,
+        );
         if (warning != null) {
           warnings.add(warning);
         }
@@ -176,9 +191,6 @@ class OverpassService {
         ..sort((a, b) => a.startDistance.compareTo(b.startDistance)),
     );
   }
-
-
-
 
   String _buildQuery(List<RoutePoint> points) {
     var south = points.first.lat;
@@ -246,7 +258,10 @@ out body geom;
       final routeHeading = routePoints[match.routeIndex].heading;
       final parsedDirection = double.tryParse(directionTag.toString());
       if (parsedDirection != null) {
-        final headingDiff = normalizeAngleDeltaDegrees(routeHeading, parsedDirection).abs();
+        final headingDiff = normalizeAngleDeltaDegrees(
+          routeHeading,
+          parsedDirection,
+        ).abs();
         if (headingDiff > 60.0) {
           return null;
         }
@@ -314,7 +329,9 @@ out body geom;
     }
 
     final closeLimit = isRoundabout ? 15.0 : 20.0;
-    final closeMatches = matches.where((m) => m.match.distanceToRouteMeters <= closeLimit).toList();
+    final closeMatches = matches
+        .where((m) => m.match.distanceToRouteMeters <= closeLimit)
+        .toList();
 
     if (closeMatches.isEmpty) {
       return WayMembershipResult(
@@ -365,7 +382,8 @@ out body geom;
       final m1 = matches[i];
       final m2 = matches[i + 1];
 
-      if (m1.match.distanceToRouteMeters > closeLimit || m2.match.distanceToRouteMeters > closeLimit) {
+      if (m1.match.distanceToRouteMeters > closeLimit ||
+          m2.match.distanceToRouteMeters > closeLimit) {
         continue;
       }
 
@@ -381,7 +399,9 @@ out body geom;
       }
     }
 
-    final alignmentRatio = totalPointsCheck > 0 ? alignedPointsCount / totalPointsCheck : 1.0;
+    final alignmentRatio = totalPointsCheck > 0
+        ? alignedPointsCount / totalPointsCheck
+        : 1.0;
     final isMember = overlapLength >= 15.0 && alignmentRatio >= 0.6;
     final confidence = isMember ? alignmentRatio : 0.0;
 
@@ -407,7 +427,11 @@ out body geom;
     }
 
     final isRoundabout = mapped.$1 == RoadWarningType.roundabout;
-    final membership = _calculateWayRouteMembership(geometry, routePoints, isRoundabout: isRoundabout);
+    final membership = _calculateWayRouteMembership(
+      geometry,
+      routePoints,
+      isRoundabout: isRoundabout,
+    );
     if (!membership.isMember) {
       return null;
     }
@@ -419,7 +443,15 @@ out body geom;
       lon: membership.matchLon,
       distanceFromStart: membership.startDistance,
       text: mapped.$2,
-      tags: tags,
+      tags: {
+        ...tags,
+        'osm_id': element['id'],
+        'route_membership_confidence': membership.confidence,
+        'route_membership_start': membership.startDistance,
+        'route_membership_end': membership.endDistance,
+        'route_membership_overlap':
+            membership.endDistance - membership.startDistance,
+      },
     );
   }
 
@@ -450,7 +482,11 @@ out body geom;
       return null;
     }
 
-    final membership = _calculateWayRouteMembership(geometry, routePoints, isRoundabout: false);
+    final membership = _calculateWayRouteMembership(
+      geometry,
+      routePoints,
+      isRoundabout: false,
+    );
     if (!membership.isMember) {
       return null;
     }
