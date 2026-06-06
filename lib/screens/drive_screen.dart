@@ -17,6 +17,9 @@ import '../services/settings_service.dart';
 import '../services/navigation_fusion_service.dart';
 import '../services/callout_speech_service.dart';
 import '../services/callout_scheduler.dart';
+import '../services/ors_service.dart';
+import '../services/overpass_service.dart';
+import '../services/pacenote_generator.dart';
 import '../utils/geo_math.dart';
 import '../utils/format_helpers.dart';
 import '../utils/ui_helpers.dart';
@@ -31,6 +34,10 @@ class DriveState {
   final bool offRoute;
   final bool gpsWeak;
   final String? permissionMessage;
+  final double remainingDistanceMeters;
+  final double remainingDurationSeconds;
+  final String etaString;
+  final double progressPercentage;
 
   const DriveState({
     this.nextNote,
@@ -42,6 +49,10 @@ class DriveState {
     this.offRoute = false,
     this.gpsWeak = false,
     this.permissionMessage,
+    this.remainingDistanceMeters = 0.0,
+    this.remainingDurationSeconds = 0.0,
+    this.etaString = '--:--',
+    this.progressPercentage = 0.0,
   });
 }
 
@@ -66,14 +77,18 @@ class DriveScreen extends StatefulWidget {
 }
 
 class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
+  static const double driverIconHeadingOffsetDegrees = 0.0;
   final _matcher = GpsRouteMatcher();
   late final CalloutSpeechService _speechService;
   late final CalloutScheduler _scheduler;
   late final NavigationFusionService _fusionService;
   bool _showDebugOverlay = false;
+  late List<RoutePoint> _activeRoutePoints;
   late List<PaceNote> _notes;
-  late final List<RoadWarning> _visibleRoadWarnings;
-  late final List<SpeedLimitSegment> _visibleSpeedLimitSegments;
+  late List<RoadWarning> _visibleRoadWarnings;
+  late List<SpeedLimitSegment> _visibleSpeedLimitSegments;
+  bool _isRerouting = false;
+  DateTime? _lastOnRouteTime;
   maplibre.MapLibreMapController? _controller;
   maplibre.Line? _baseRouteLine;
   final List<maplibre.Line> _dangerLines = [];
@@ -212,6 +227,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Wakelock enable failed: $e');
     }
+    _activeRoutePoints = widget.routePoints;
     _notes = widget.pacenotes
         .map((note) => note.copyWith(spoken: false))
         .toList();
@@ -235,10 +251,11 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     _scheduler.loadRouteData(
       notes: _notes,
       warnings: _visibleRoadWarnings,
+      speedLimits: _visibleSpeedLimitSegments,
     );
 
     _fusionService = NavigationFusionService(
-      routePoints: widget.routePoints,
+      routePoints: _activeRoutePoints,
       settings: widget.settings,
     );
     _fusionService.addListener(_onFusionUpdate);
@@ -275,6 +292,26 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Wakelock toggle on lifecycle failed: $e');
     }
+  }
+
+  IconData _iconForPaceNote(PaceNote note) {
+    if (note.type == PaceNoteType.left) {
+      return Icons.turn_left;
+    } else if (note.type == PaceNoteType.right) {
+      return Icons.turn_right;
+    }
+    return switch (note.type) {
+      PaceNoteType.roundabout => Icons.rotate_left,
+      PaceNoteType.junction => Icons.turn_right,
+      PaceNoteType.hairpinLeft => Icons.u_turn_left,
+      PaceNoteType.hairpinRight => Icons.u_turn_right,
+      PaceNoteType.hairpin => Icons.u_turn_left,
+      PaceNoteType.warning => Icons.warning_rounded,
+      PaceNoteType.straight => Icons.straight,
+      PaceNoteType.keepLeft => Icons.turn_slight_left,
+      PaceNoteType.keepRight => Icons.turn_slight_right,
+      _ => Icons.navigation,
+    };
   }
 
   @override
@@ -346,9 +383,11 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                       ),
                       const Divider(height: 12),
                       _buildDebugOverlayRow('Fused Speed', '${(_speedMps * 3.6).toStringAsFixed(1)} km/h'),
-                      _buildDebugOverlayRow('Fused Heading', '${_gpsHeading.toStringAsFixed(1)}°'),
+                      _buildDebugOverlayRow('GPS Heading', '${_gpsHeading.toStringAsFixed(1)}°'),
                       _buildDebugOverlayRow('GPS Accuracy', '${_gpsAccuracy.toStringAsFixed(1)} m'),
-                      _buildDebugOverlayRow('Match Index', '$_lastMatchedIndex/${widget.routePoints.length}'),
+                      _buildDebugOverlayRow('Match Index', '$_lastMatchedIndex/${_activeRoutePoints.length}'),
+                      _buildDebugOverlayRow('Distance Along', '${_distanceAlongRoute.toStringAsFixed(1)} m'),
+                      _buildDebugOverlayRow('Distance From', '${_distanceFromRoute.toStringAsFixed(1)} m'),
                       _buildDebugOverlayRow('Queue Size', '${_scheduler.queue.length}'),
                       _buildDebugOverlayRow('Spoken Notes', '${_scheduler.spokenIds.length}'),
                       _buildDebugOverlayRow('Expired Notes', '${_scheduler.expiredIds.length}'),
@@ -378,7 +417,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                 ),
               ),
             ),
-          if (widget.routePoints.isEmpty)
+          if (_activeRoutePoints.isEmpty)
             Positioned(
               top: 96,
               left: 16,
@@ -491,6 +530,149 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
+          // Maneuver / Off-route HUD (Phase 14 & 16)
+          ValueListenableBuilder<DriveState>(
+            valueListenable: _driveStateNotifier,
+            builder: (context, state, _) {
+              if (state.offRoute) {
+                return Positioned(
+                  top: 80,
+                  left: 16,
+                  right: 80,
+                  child: SafeArea(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 10,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.onErrorContainer.withAlpha(38),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.warning_amber_rounded,
+                              size: 30,
+                              color: Theme.of(context).colorScheme.onErrorContainer,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _isRerouting ? 'Recalculating Route...' : 'Off Route',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(context).colorScheme.onErrorContainer,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _isRerouting
+                                      ? 'Fetching new coordinates from OpenRouteService'
+                                      : 'Rerouting automatically in a few seconds',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Theme.of(context).colorScheme.onErrorContainer.withAlpha(204),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              if (state.nextNote != null && state.distanceToNote != null && state.distanceToNote! < 300) {
+                return Positioned(
+                  top: 80,
+                  left: 16,
+                  right: 80,
+                  child: SafeArea(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 10,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.onPrimaryContainer.withAlpha(38),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              _iconForPaceNote(state.nextNote!),
+                              size: 30,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  state.nextNote!.text,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'In ${state.distanceToNote!.round()} m',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Theme.of(context).colorScheme.onPrimaryContainer.withAlpha(204),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              return const SizedBox.shrink();
+            },
+          ),
+
           Positioned(
             left: 12,
             right: 12,
@@ -528,16 +710,6 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                             ),
                             const SizedBox(height: 8),
                           ],
-                          if (state.offRoute) ...[
-                            Text(
-                              'Off route',
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                          ],
                           _CalloutRow(
                             note: state.nextNote,
                             distanceMeters: state.distanceToNote,
@@ -550,6 +722,86 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                               distanceMeters: state.distanceToWarning!,
                             ),
                           ],
+                          const Divider(height: 24),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Remaining',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(153),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${(state.remainingDistanceMeters / 1000.0).toStringAsFixed(1)} km',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    'Time Left',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(153),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${(state.remainingDurationSeconds / 60.0).toStringAsFixed(0)} min',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    'ETA',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(153),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    state.etaString,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: state.progressPercentage,
+                              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                              color: Theme.of(context).colorScheme.primary,
+                              minHeight: 6,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -564,14 +816,14 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   }
 
   maplibre.CameraPosition _initialDriveCameraPosition() {
-    if (widget.routePoints.isEmpty) {
+    if (_activeRoutePoints.isEmpty) {
       return const maplibre.CameraPosition(
         target: maplibre.LatLng(43.8, 11.2),
         zoom: 5,
       );
     }
 
-    final first = widget.routePoints.first;
+    final first = _activeRoutePoints.first;
     return maplibre.CameraPosition(
       target: maplibre.LatLng(first.lat, first.lon),
       zoom: 12,
@@ -651,7 +903,17 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         : math.max(0.0, nextWarning.distanceFromStart - _distanceAlongRoute);
     final offRoute = _distanceFromRoute > 60 && _lastPosition != null;
 
-    _driveStateNotifier.value = DriveState(
+    if (offRoute) {
+      if (_lastOnRouteTime == null) {
+        _lastOnRouteTime = DateTime.now();
+      } else if (DateTime.now().difference(_lastOnRouteTime!).inSeconds >= 5 && !_isRerouting) {
+        _recalculateRoute();
+      }
+    } else {
+      _lastOnRouteTime = null;
+    }
+
+    _driveStateNotifier.value = _buildDriveState(
       nextNote: nextNote,
       distanceToNote: distanceToNote,
       nextWarning: nextWarning,
@@ -669,6 +931,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     _scheduler.loadRouteData(
       notes: _notes,
       warnings: _visibleRoadWarnings,
+      speedLimits: _visibleSpeedLimitSegments,
     );
     _lastMatchedIndex = 0;
 
@@ -683,7 +946,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         : math.max(0.0, nextWarning.distanceFromStart - _distanceAlongRoute);
     final offRoute = _distanceFromRoute > 60 && _lastPosition != null;
 
-    _driveStateNotifier.value = DriveState(
+    _driveStateNotifier.value = _buildDriveState(
       nextNote: nextNote,
       distanceToNote: distanceToNote,
       nextWarning: nextWarning,
@@ -694,6 +957,154 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       gpsWeak: _gpsWeak,
       permissionMessage: _permissionMessage,
     );
+  }
+
+  DriveState _buildDriveState({
+    required PaceNote? nextNote,
+    required double? distanceToNote,
+    required RoadWarning? nextWarning,
+    required double? distanceToWarning,
+    required SpeedLimitSegment? currentLimit,
+    required double speedMps,
+    required bool offRoute,
+    required bool gpsWeak,
+    required String? permissionMessage,
+  }) {
+    final remainingDistanceMeters = _activeRoutePoints.isNotEmpty
+        ? math.max(0.0, _activeRoutePoints.last.distanceFromStart - _distanceAlongRoute)
+        : 0.0;
+
+    double remainingDurationSeconds = 0.0;
+    double prevDist = _distanceAlongRoute;
+    for (var i = _lastMatchedIndex + 1; i < _activeRoutePoints.length; i++) {
+      final p = _activeRoutePoints[i];
+      final segmentLength = p.distanceFromStart - prevDist;
+      if (segmentLength <= 0) continue;
+      final limitSegment = _visibleSpeedLimitSegments.firstWhere(
+        (s) => p.distanceFromStart >= s.startDistance && p.distanceFromStart <= s.endDistance,
+        orElse: () => const SpeedLimitSegment(
+          id: 'default',
+          startDistance: 0.0,
+          endDistance: 0.0,
+          rawMaxspeed: '60',
+          parsedKmh: 60,
+        ),
+      );
+      final speedLimitMps = (limitSegment.parsedKmh ?? 60) / 3.6;
+      remainingDurationSeconds += segmentLength / speedLimitMps;
+      prevDist = p.distanceFromStart;
+    }
+
+    final etaTime = DateTime.now().add(Duration(seconds: remainingDurationSeconds.round()));
+    final etaString = "${etaTime.hour.toString().padLeft(2, '0')}:${etaTime.minute.toString().padLeft(2, '0')}";
+
+    final totalDistance = _activeRoutePoints.isNotEmpty ? _activeRoutePoints.last.distanceFromStart : 1.0;
+    final progressPercentage = (_distanceAlongRoute / totalDistance).clamp(0.0, 1.0);
+
+    return DriveState(
+      nextNote: nextNote,
+      distanceToNote: distanceToNote,
+      nextWarning: nextWarning,
+      distanceToWarning: distanceToWarning,
+      currentLimit: currentLimit,
+      speedMps: speedMps,
+      offRoute: offRoute,
+      gpsWeak: gpsWeak,
+      permissionMessage: permissionMessage,
+      remainingDistanceMeters: remainingDistanceMeters,
+      remainingDurationSeconds: remainingDurationSeconds,
+      etaString: etaString,
+      progressPercentage: progressPercentage,
+    );
+  }
+
+  Future<void> _recalculateRoute() async {
+    if (_isRerouting) return;
+    setState(() {
+      _isRerouting = true;
+    });
+
+    final currentPos = _lastPosition;
+    if (currentPos == null) {
+      setState(() {
+        _isRerouting = false;
+      });
+      return;
+    }
+
+    final startPoint = RoutePoint(lat: currentPos.latitude, lon: currentPos.longitude);
+    final destination = _activeRoutePoints.last;
+
+    try {
+      _speechService.speak('Off route. Recalculating route.', () {});
+
+      final newPoints = await OrsService(settings: widget.settings).buildRoute([startPoint, destination]);
+      if (newPoints.isEmpty) throw Exception('No points returned');
+
+      final newPacenotes = PacenoteGenerator(settings: widget.settings).generate(newPoints);
+
+      setState(() {
+        _activeRoutePoints = newPoints;
+        _notes = newPacenotes.map((note) => note.copyWith(spoken: false)).toList();
+        _visibleRoadWarnings = [];
+        _visibleSpeedLimitSegments = [];
+        _lastMatchedIndex = 0;
+        _distanceAlongRoute = 0;
+        _distanceFromRoute = 0;
+      });
+
+      _fusionService.updateRoutePoints(_activeRoutePoints);
+
+      _scheduler.reset();
+      _scheduler.loadRouteData(
+        notes: _notes,
+        warnings: _visibleRoadWarnings,
+        speedLimits: _visibleSpeedLimitSegments,
+      );
+
+      if (_controller != null) {
+        await _drawNavigationRoute();
+      }
+
+      _lastOnRouteTime = null;
+
+      _enrichRecalculatedRoute(newPoints);
+
+    } catch (e) {
+      debugPrint('Rerouting failed: $e');
+      _speechService.speak('Recalculating route failed. Please check internet connection.', () {});
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRerouting = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _enrichRecalculatedRoute(List<RoutePoint> newPoints) async {
+    try {
+      final enrichment = await OverpassService().enrichRoute(newPoints);
+      if (mounted) {
+        setState(() {
+          _visibleRoadWarnings = filterRoadWarnings(enrichment.roadWarnings, widget.settings);
+          _visibleSpeedLimitSegments = widget.settings.showSpeedLimits ? enrichment.speedLimitSegments : const [];
+        });
+
+        _scheduler.reset();
+        _scheduler.loadRouteData(
+          notes: _notes,
+          warnings: _visibleRoadWarnings,
+          speedLimits: _visibleSpeedLimitSegments,
+        );
+
+        if (_controller != null) {
+          await _drawNavigationRoute();
+        }
+      }
+    } catch (e) {
+      debugPrint('Enriching recalculated route failed: $e');
+    }
   }
 
   void _toggleVoice() {
@@ -734,7 +1145,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
   Future<void> _drawNavigationRoute() async {
     final controller = _controller;
-    if (controller == null || widget.routePoints.length < 2) {
+    if (controller == null || _activeRoutePoints.length < 2) {
       return;
     }
 
@@ -765,7 +1176,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
     _baseRouteLine = await controller.addLine(
       maplibre.LineOptions(
-        geometry: widget.routePoints
+        geometry: _activeRoutePoints
             .map((point) => maplibre.LatLng(point.lat, point.lon))
             .toList(),
         lineColor: '#607D8B',
@@ -774,14 +1185,14 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       ),
     );
 
-    for (final note in widget.pacenotes) {
+    for (final note in _notes) {
       if (note.type == PaceNoteType.straight) {
         continue;
       }
       final start = note.startDistance ?? (note.distanceFromStart - 25);
       final end = note.endDistance ?? (note.distanceFromStart + 45);
       final segment = routeSegmentBetweenDistances(
-        widget.routePoints,
+        _activeRoutePoints,
         start,
         end,
       );
@@ -800,7 +1211,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       }
 
       final markerPoint = nearestRoutePointAtDistance(
-        widget.routePoints,
+        _activeRoutePoints,
         note.startDistance ?? note.distanceFromStart,
       );
       if (markerPoint != null) {
@@ -906,6 +1317,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
               iconImage: [maplibre.Expressions.get, 'iconImage'],
               iconSize: [maplibre.Expressions.get, 'iconSize'],
               iconRotate: [maplibre.Expressions.get, 'iconRotate'],
+              iconRotationAlignment: 'map',
             ),
             enableInteraction: false,
           );
@@ -922,8 +1334,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       final state = _fusionService.currentState;
       if (state != null) {
         await _updateCurrentLocationMarker(state);
-      } else if (widget.routePoints.isNotEmpty) {
-        final first = widget.routePoints.first;
+      } else if (_activeRoutePoints.isNotEmpty) {
+        final first = _activeRoutePoints.first;
         final mockState = FusedNavigationState(
           rawLat: first.lat,
           rawLon: first.lon,
@@ -953,13 +1365,13 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
   Future<void> _fitNavigationCameraToRoute() async {
     final controller = _controller;
-    if (controller == null || widget.routePoints.isEmpty) {
+    if (controller == null || _activeRoutePoints.isEmpty) {
       return;
     }
 
     await controller.animateCamera(
       maplibre.CameraUpdate.newLatLngBounds(
-        routeBoundsFromPoints(widget.routePoints),
+        routeBoundsFromPoints(_activeRoutePoints),
         left: 48,
         top: 80,
         right: 48,
@@ -1004,7 +1416,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
             'properties': {
               'iconImage': 'car_chevron',
               'iconSize': 1.0,
-              'iconRotate': state.headingDegrees,
+              'iconRotate': normalizeHeading(state.headingDegrees + driverIconHeadingOffsetDegrees),
             },
           }
         ],
@@ -1173,7 +1585,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                 ),
                 _buildDebugRow(
                   'Matched Index',
-                  '$_lastMatchedIndex / ${widget.routePoints.length}',
+                  '$_lastMatchedIndex / ${_activeRoutePoints.length}',
                 ),
                 _buildDebugRow(
                   'Distance Along Route',

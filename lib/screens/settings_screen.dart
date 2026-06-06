@@ -432,6 +432,132 @@ class _SettingsScreenState extends State<SettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.directions_car_filled_outlined,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'ROUTE PLANNING PROFILE',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.8,
+                          ),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      DropdownButtonFormField<OrsProfile>(
+                        decoration: InputDecoration(
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
+                        value: widget.settings.orsProfile,
+                        onChanged: (OrsProfile? profile) async {
+                          if (profile != null) {
+                            await widget.settings.setOrsProfile(profile);
+                            setState(() {});
+                          }
+                        },
+                        items: const [
+                          DropdownMenuItem(
+                            value: OrsProfile.drivingCar,
+                            child: Row(
+                              children: [
+                                Icon(Icons.directions_car, size: 18),
+                                SizedBox(width: 8),
+                                Text('Driving (Car)'),
+                              ],
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: OrsProfile.drivingHgv,
+                            child: Row(
+                              children: [
+                                Icon(Icons.local_shipping, size: 18),
+                                SizedBox(width: 8),
+                                Text('Heavy Goods Vehicle (HGV)'),
+                              ],
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: OrsProfile.cyclingRoad,
+                            child: Row(
+                              children: [
+                                Icon(Icons.directions_bike, size: 18),
+                                SizedBox(width: 8),
+                                Text('Cycling (Road)'),
+                              ],
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: OrsProfile.footWalking,
+                            child: Row(
+                              children: [
+                                Icon(Icons.directions_walk, size: 18),
+                                SizedBox(width: 8),
+                                Text('Walking'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        switch (widget.settings.orsProfile) {
+                          OrsProfile.drivingCar =>
+                            'Optimized for standard passenger vehicles. Standard speed limits and road preferences.',
+                          OrsProfile.drivingHgv =>
+                            'Optimized for trucks and large vehicles. Avoids weight and height restricted roads.',
+                          OrsProfile.cyclingRoad =>
+                            'Optimized for road cycling. Prefers paved roads and avoids major highways.',
+                          OrsProfile.footWalking =>
+                            'Optimized for pedestrian routing. Prefers walking paths and sidewalks.',
+                        },
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.8,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            elevation: 0,
+            color: theme.colorScheme.surfaceContainerLow,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                   child: Row(
                     children: [

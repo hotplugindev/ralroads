@@ -6,7 +6,12 @@ double degreesToRadians(double degrees) => degrees * math.pi / 180;
 
 double radiansToDegrees(double radians) => radians * 180 / math.pi;
 
+double normalizeHeading(double heading) {
+  return (heading % 360 + 360) % 360;
+}
+
 double haversineDistanceMeters(
+
   double lat1,
   double lon1,
   double lat2,

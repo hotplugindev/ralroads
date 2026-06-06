@@ -4,6 +4,7 @@ import '../models/pace_note.dart';
 import '../models/road_warning.dart';
 import '../models/route_point.dart';
 import '../models/speed_limit_segment.dart';
+import '../models/matched_route.dart';
 import '../utils/geo_math.dart';
 import 'settings_service.dart';
 
@@ -191,13 +192,19 @@ class PacenoteGenerator {
           : (seg.type == 'L' ? RoadSectorType.leftCurve : RoadSectorType.rightCurve);
 
       sectors.add(RoadSector(
+        id: 'sector_${type.name}_${seg.startDistance.round()}',
+        type: type,
         startDistance: seg.startDistance,
         endDistance: seg.endDistance,
-        type: type,
+        lengthMeters: seg.length,
+        totalHeadingChange: totalHeadingChange,
         averageCurvature: totalHeadingChange.abs() / math.max(1.0, seg.length),
         peakCurvature: radiusInfo.minRadius < 9999.0 ? 1.0 / radiusInfo.minRadius : 0.0,
-        approximateRadius: radiusInfo.minRadius,
+        approximateRadiusMeters: radiusInfo.minRadius,
         confidence: 1.0,
+        modifiers: const [],
+        matchedEdgeIndexes: const [],
+        context: const {},
       ));
     }
 
@@ -224,7 +231,7 @@ class PacenoteGenerator {
         }
       } else {
         final direction = sector.type == RoadSectorType.leftCurve ? 'left' : 'right';
-        final radius = sector.approximateRadius;
+        final radius = sector.approximateRadiusMeters ?? 9999.0;
         final totalHeadingChange = sector.averageCurvature * sector.length;
 
         int severity = 6;
@@ -236,10 +243,7 @@ class PacenoteGenerator {
         final h4 = _style == PacenoteStyle.calm ? 70.0 : (_style == PacenoteStyle.rally ? 95.0 : 85.0);
         final h5 = _style == PacenoteStyle.calm ? 100.0 : (_style == PacenoteStyle.rally ? 140.0 : 125.0);
 
-        if (radius < 24.0 && totalHeadingChange >= 65.0) {
-          isHairpin = true;
-          severity = 1;
-        } else if (radius < 30.0 && totalHeadingChange >= 85.0) {
+        if (totalHeadingChange.abs() >= 120.0 && radius <= 15.0) {
           isHairpin = true;
           severity = 1;
         } else if (radius < h1) {
@@ -525,32 +529,38 @@ class PacenoteGenerator {
     final warnings = <RoadWarning>[];
     if (points.length < 20) return warnings;
 
-    // Smooth elevations using a moving average window of 11 points (approx 55m at 5m spacing)
+    // Dual-pass Gaussian-weighted smoothing to clean up raw ORS elevation profiles
     final smoothed = <double>[];
+    const sigma = 5.0;
+    const window = 12; // ~120m search window
     for (var i = 0; i < points.length; i++) {
-      var sum = 0.0;
-      var count = 0;
-      const half = 5;
-      for (var j = i - half; j <= i + half; j++) {
+      if (points[i].elevation == null) {
+        smoothed.add(0.0);
+        continue;
+      }
+      var weightedSum = 0.0;
+      var weightSum = 0.0;
+      for (var j = i - window; j <= i + window; j++) {
         if (j >= 0 && j < points.length && points[j].elevation != null) {
-          sum += points[j].elevation!;
-          count++;
+          final dist = (j - i).abs();
+          final w = math.exp(-(dist * dist) / (2 * sigma * sigma));
+          weightedSum += points[j].elevation! * w;
+          weightSum += w;
         }
       }
-      smoothed.add(count > 0 ? sum / count : (points[i].elevation ?? 0.0));
+      smoothed.add(weightSum > 0 ? weightedSum / weightSum : points[i].elevation!);
     }
 
-    // Scan for peaks (crests) and valleys (dips)
-    // Look ahead of 10 points (50m) to confirm peak/valley
-    const lookahead = 10;
+    // Peak and valley detection using local search window
+    const lookahead = 12; // Search +/- 60m to confirm crest/dip
     for (var i = lookahead; i < points.length - lookahead; i++) {
       final currentElev = smoothed[i];
       if (points[i].elevation == null) continue;
 
-      // Check peak (crest)
+      // 1. Check Peak (Crest)
       bool isPeak = true;
       for (var j = i - lookahead; j <= i + lookahead; j++) {
-        if (smoothed[j] > currentElev) {
+        if (smoothed[j] > currentElev + 0.0001) {
           isPeak = false;
           break;
         }
@@ -558,26 +568,37 @@ class PacenoteGenerator {
       if (isPeak) {
         final diffBefore = currentElev - smoothed[i - lookahead];
         final diffAfter = currentElev - smoothed[i + lookahead];
-        // Elevation must rise by at least 1.0 meters and fall by at least 1.0 meters
-        if (diffBefore >= 1.0 && diffAfter >= 1.0) {
+
+        // Compute slope gradient
+        final distBefore = points[i].distanceFromStart - points[i - lookahead].distanceFromStart;
+        final distAfter = points[i + lookahead].distanceFromStart - points[i].distanceFromStart;
+
+        final slopeBefore = distBefore > 0 ? diffBefore / distBefore : 0.0;
+        final slopeAfter = distAfter > 0 ? diffAfter / distAfter : 0.0;
+        final slopeChange = (slopeBefore + slopeAfter) * 100.0; // total percentage change
+
+        // Required threshold: elevation rise/fall of >= 1.2m and slope change >= 3.0%
+        if (diffBefore >= 1.2 && diffAfter >= 1.2 && slopeChange >= 3.0) {
           final pt = points[i];
+          final isSevere = slopeChange >= 7.0 || (diffBefore >= 2.5 && diffAfter >= 2.5);
+
           warnings.add(RoadWarning(
             id: 'crest-${pt.distanceFromStart.round()}',
             type: RoadWarningType.crest,
             lat: pt.lat,
             lon: pt.lon,
             distanceFromStart: pt.distanceFromStart,
-            text: 'Crest',
+            text: isSevere ? 'Blind Crest' : 'Crest',
           ));
           i += lookahead; // Skip to avoid duplicate detections
           continue;
         }
       }
 
-      // Check valley (dip)
+      // 2. Check Valley (Dip)
       bool isValley = true;
       for (var j = i - lookahead; j <= i + lookahead; j++) {
-        if (smoothed[j] < currentElev) {
+        if (smoothed[j] < currentElev - 0.0001) {
           isValley = false;
           break;
         }
@@ -585,17 +606,30 @@ class PacenoteGenerator {
       if (isValley) {
         final diffBefore = smoothed[i - lookahead] - currentElev;
         final diffAfter = smoothed[i + lookahead] - currentElev;
-        if (diffBefore >= 1.0 && diffAfter >= 1.0) {
+
+        // Compute slope gradient
+        final distBefore = points[i].distanceFromStart - points[i - lookahead].distanceFromStart;
+        final distAfter = points[i + lookahead].distanceFromStart - points[i].distanceFromStart;
+
+        final slopeBefore = distBefore > 0 ? diffBefore / distBefore : 0.0;
+        final slopeAfter = distAfter > 0 ? diffAfter / distAfter : 0.0;
+        final slopeChange = (slopeBefore + slopeAfter) * 100.0; // total percentage change
+
+        // Required threshold: elevation fall/rise of >= 1.2m and slope change >= 3.0%
+        if (diffBefore >= 1.2 && diffAfter >= 1.2 && slopeChange >= 3.0) {
           final pt = points[i];
+          final isSevere = slopeChange >= 7.0 || (diffBefore >= 2.5 && diffAfter >= 2.5);
+
           warnings.add(RoadWarning(
             id: 'dip-${pt.distanceFromStart.round()}',
             type: RoadWarningType.dip,
             lat: pt.lat,
             lon: pt.lon,
             distanceFromStart: pt.distanceFromStart,
-            text: 'Dip',
+            text: isSevere ? 'Severe Dip' : 'Dip',
           ));
           i += lookahead;
+          continue;
         }
       }
     }
@@ -846,34 +880,4 @@ class _RadiusInfo {
   const _RadiusInfo({required this.minRadius, required this.avgRadius});
 }
 
-enum RoadSectorType {
-  straight,
-  leftCurve,
-  rightCurve,
-  hairpinLeft,
-  hairpinRight,
-}
-
-class RoadSector {
-  final double startDistance;
-  final double endDistance;
-  final RoadSectorType type;
-  final double averageCurvature;
-  final double peakCurvature;
-  final double approximateRadius;
-  final double confidence;
-  final List<String> modifiers;
-
-  RoadSector({
-    required this.startDistance,
-    required this.endDistance,
-    required this.type,
-    required this.averageCurvature,
-    required this.peakCurvature,
-    required this.approximateRadius,
-    required this.confidence,
-    this.modifiers = const [],
-  });
-
-  double get length => endDistance - startDistance;
-}
+// RoadSector and RoadSectorType are now imported from matched_route.dart

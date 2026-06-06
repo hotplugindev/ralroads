@@ -70,7 +70,7 @@ class FusedNavigationState {
 }
 
 class NavigationFusionService extends ChangeNotifier {
-  final List<RoutePoint> routePoints;
+  List<RoutePoint> routePoints;
   final SettingsService settings;
   final GpsRouteMatcher matcher = GpsRouteMatcher();
 
@@ -84,6 +84,14 @@ class NavigationFusionService extends ChangeNotifier {
 
   int _lastMatchedIndex = 0;
   int get lastMatchedIndex => _lastMatchedIndex;
+
+  void updateRoutePoints(List<RoutePoint> newPoints) {
+    routePoints = newPoints;
+    _lastMatchedIndex = 0;
+    _distanceAlongRoute = 0;
+    _distanceFromRoute = 0;
+    notifyListeners();
+  }
 
   double _distanceAlongRoute = 0;
   double get distanceAlongRoute => _distanceAlongRoute;

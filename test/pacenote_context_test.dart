@@ -7,6 +7,10 @@ import 'package:ralroads/models/route_point.dart';
 import 'package:ralroads/models/speed_limit_segment.dart';
 import 'package:ralroads/services/pacenote_generator.dart';
 import 'package:ralroads/services/settings_service.dart';
+import 'package:ralroads/services/route_event_scorer.dart';
+import 'package:ralroads/services/callout_scheduler.dart';
+import 'package:ralroads/services/callout_speech_service.dart';
+import 'package:flutter/foundation.dart';
 
 void main() {
   test('smoothHeading handles wraparound', () {
@@ -217,6 +221,92 @@ void main() {
     expect(rallyNotes.length, greaterThanOrEqualTo(balancedNotes.length));
     expect(balancedNotes.length, greaterThanOrEqualTo(calmNotes.length));
   });
+
+  test('RouteEventScorer scores curves and warnings properly by mode', () {
+    const sharpCurve = PaceNote(
+      id: 'c1',
+      distanceFromStart: 100,
+      direction: 'left',
+      severity: 1,
+      type: PaceNoteType.corner,
+      text: 'left 1',
+    );
+    const mildCurve = PaceNote(
+      id: 'c2',
+      distanceFromStart: 200,
+      direction: 'right',
+      severity: 5,
+      type: PaceNoteType.corner,
+      text: 'right 5',
+    );
+
+    // Calm mode
+    final sharpCalm = RouteEventScorer.scorePaceNote(sharpCurve, 80.0, 50.0, 'calm');
+    final mildCalm = RouteEventScorer.scorePaceNote(mildCurve, 80.0, 50.0, 'calm');
+    expect(sharpCalm.finalScore, greaterThan(mildCalm.finalScore));
+    expect(mildCalm.speechValue, lessThan(0.3));
+
+    // Rally mode
+    final mildRally = RouteEventScorer.scorePaceNote(mildCurve, 80.0, 50.0, 'rally');
+    expect(mildRally.speechValue, greaterThan(mildCalm.speechValue));
+  });
+
+  test('CalloutScheduler merges PaceNote and RoadWarning with over template', () {
+    final speechService = FakeCalloutSpeechService();
+    final scheduler = CalloutScheduler(
+      speechService: speechService,
+      settings: FakeSettingsService(PacenoteStyle.rally),
+    );
+
+    final notes = [
+      const PaceNote(
+        id: 'n1',
+        distanceFromStart: 50,
+        direction: 'left',
+        severity: 3,
+        type: PaceNoteType.corner,
+        text: 'left 3',
+      ),
+    ];
+    final warnings = [
+      const RoadWarning(
+        id: 'w1',
+        type: RoadWarningType.crest,
+        lat: 45.0,
+        lon: 7.0,
+        distanceFromStart: 70,
+        text: 'Crest',
+      ),
+    ];
+
+    speechService.speak('busy', () {});
+    scheduler.loadRouteData(notes: notes, warnings: warnings);
+    scheduler.update(40.0, 20.0);
+
+    expect(scheduler.queue.length, equals(1));
+    expect(scheduler.queue.first.text, contains('crest into left 3'));
+  });
+
+  test('CalloutScheduler prunes queue when density exceeds 90%', () {
+    final speechService = FakeCalloutSpeechService();
+    final scheduler = CalloutScheduler(
+      speechService: speechService,
+      settings: FakeSettingsService(PacenoteStyle.rally),
+    );
+
+    final notes = [
+      const PaceNote(id: 'n1', distanceFromStart: 50, direction: 'left', severity: 1, type: PaceNoteType.corner, text: 'left 1'),
+      const PaceNote(id: 'n2', distanceFromStart: 55, direction: 'right', severity: 5, type: PaceNoteType.corner, text: 'right 5'),
+      const PaceNote(id: 'n3', distanceFromStart: 60, direction: 'left', severity: 6, type: PaceNoteType.corner, text: 'left 6'),
+      const PaceNote(id: 'n4', distanceFromStart: 65, direction: 'right', severity: 5, type: PaceNoteType.corner, text: 'right 5'),
+    ];
+
+    speechService.speak('busy', () {});
+    scheduler.loadRouteData(notes: notes, warnings: const []);
+    scheduler.update(35.0, 5.0);
+
+    expect(scheduler.queue.length, lessThan(4));
+  });
 }
 
 class FakeSettingsService extends SettingsService {
@@ -225,4 +315,36 @@ class FakeSettingsService extends SettingsService {
 
   @override
   PacenoteStyle get pacenoteStyle => _style;
+}
+
+class FakeCalloutSpeechService implements CalloutSpeechService {
+  bool _speaking = false;
+  bool _enabled = true;
+
+  @override
+  bool get isSpeaking => _speaking;
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  void setEnabled(bool enabled) {
+    _enabled = enabled;
+  }
+
+  @override
+  Future<void> speak(String text, VoidCallback onComplete) async {
+    _speaking = true;
+    Future.microtask(() {
+      if (_speaking) {
+        _speaking = false;
+        onComplete();
+      }
+    });
+  }
+
+  @override
+  Future<void> stop() async {
+    _speaking = false;
+  }
 }

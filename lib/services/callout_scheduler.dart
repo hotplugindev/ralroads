@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import '../models/pace_note.dart';
 import '../models/road_warning.dart';
 import '../models/speed_limit_segment.dart';
 import '../services/settings_service.dart';
 import 'callout_speech_service.dart';
+import 'route_event_scorer.dart';
 
 enum CalloutPriority {
   critical,
@@ -24,6 +26,7 @@ class ScheduledCallout {
   final bool canMerge;
   final bool canInterrupt;
   final dynamic source;
+  final double compositeScore;
 
   ScheduledCallout({
     required this.id,
@@ -35,6 +38,7 @@ class ScheduledCallout {
     this.canMerge = true,
     this.canInterrupt = false,
     this.source,
+    this.compositeScore = 0.5,
   });
 
   ScheduledCallout copyWith({
@@ -47,6 +51,7 @@ class ScheduledCallout {
     bool? canMerge,
     bool? canInterrupt,
     dynamic source,
+    double? compositeScore,
   }) {
     return ScheduledCallout(
       id: id ?? this.id,
@@ -58,6 +63,7 @@ class ScheduledCallout {
       canMerge: canMerge ?? this.canMerge,
       canInterrupt: canInterrupt ?? this.canInterrupt,
       source: source ?? this.source,
+      compositeScore: compositeScore ?? this.compositeScore,
     );
   }
 }
@@ -121,9 +127,10 @@ class CalloutModeConfig {
 class CalloutScheduler extends ChangeNotifier {
   final CalloutSpeechService speechService;
   final SettingsService settings;
-  
+
   List<PaceNote> allNotes = [];
   List<RoadWarning> allWarnings = [];
+  List<SpeedLimitSegment> allSpeedLimits = [];
 
   final List<ScheduledCallout> _queue = [];
   List<ScheduledCallout> get queue => List.unmodifiable(_queue);
@@ -151,9 +158,11 @@ class CalloutScheduler extends ChangeNotifier {
   void loadRouteData({
     required List<PaceNote> notes,
     required List<RoadWarning> warnings,
+    List<SpeedLimitSegment> speedLimits = const [],
   }) {
     allNotes = notes;
     allWarnings = warnings;
+    allSpeedLimits = speedLimits;
     _queue.clear();
     _spokenIds.clear();
     _expiredIds.clear();
@@ -168,6 +177,27 @@ class CalloutScheduler extends ChangeNotifier {
     _activeCallout = null;
     speechService.stop();
     notifyListeners();
+  }
+
+  double _getSpeedLimitAt(double distance) {
+    if (allSpeedLimits.isEmpty) return 80.0;
+    for (final limit in allSpeedLimits) {
+      if (distance >= limit.startDistance && distance <= limit.endDistance) {
+        return limit.parsedKmh?.toDouble() ?? 80.0;
+      }
+    }
+    return 80.0;
+  }
+
+  double _calculatePrecedingStraight(double fromDistance) {
+    double lastEventDistance = 0.0;
+    for (final note in allNotes) {
+      if (note.distanceFromStart >= fromDistance) break;
+      if (note.type != PaceNoteType.straight) {
+        lastEventDistance = note.distanceFromStart;
+      }
+    }
+    return fromDistance - lastEventDistance;
   }
 
   // Calculate dynamic lead time in seconds
@@ -199,102 +229,122 @@ class CalloutScheduler extends ChangeNotifier {
   // Maps PaceNote to ScheduledCallout
   ScheduledCallout? _mapPaceNote(PaceNote note) {
     final config = CalloutModeConfig.fromStyle(settings.pacenoteStyle);
-    
-    // Filter curves by maximum severity in Calm/Balanced modes
-    if (note.type == PaceNoteType.left || note.type == PaceNoteType.right) {
-      if (note.severity > config.maxCurveSeverity) {
+    final modeStr = settings.pacenoteStyle.name;
+
+    final speedLimit = _getSpeedLimitAt(note.distanceFromStart);
+    final straightBefore = _calculatePrecedingStraight(note.distanceFromStart);
+
+    final scoreResult = RouteEventScorer.scorePaceNote(
+      note,
+      speedLimit,
+      straightBefore,
+      modeStr,
+    );
+
+    int calculatedPriority = 3;
+    if (scoreResult.finalScore >= 0.7) {
+      calculatedPriority = 1;
+    } else if (scoreResult.finalScore >= 0.45) {
+      calculatedPriority = 2;
+    }
+
+    if (settings.pacenoteStyle == PacenoteStyle.calm) {
+      if (calculatedPriority != 1 && scoreResult.finalScore < 0.7) {
         return null;
       }
     }
 
-    CalloutPriority priority = CalloutPriority.normal;
-    switch (note.type) {
-      case PaceNoteType.hairpinLeft:
-      case PaceNoteType.hairpinRight:
-        priority = CalloutPriority.critical;
-        break;
-      case PaceNoteType.left:
-      case PaceNoteType.right:
-        if (note.severity <= 2) {
-          priority = CalloutPriority.high;
-        } else if (note.severity <= 4) {
-          priority = CalloutPriority.normal;
-        } else {
-          priority = CalloutPriority.low;
+    if (settings.pacenoteStyle == PacenoteStyle.balanced) {
+      if (calculatedPriority == 3 || scoreResult.finalScore < 0.4) {
+        return null;
+      }
+      if (note.type == PaceNoteType.left || note.type == PaceNoteType.right || note.type == PaceNoteType.corner) {
+        if (note.severity >= 5) {
+          return null;
         }
-        break;
-      case PaceNoteType.roundabout:
-      case PaceNoteType.junction:
-        priority = CalloutPriority.normal;
-        break;
-      case PaceNoteType.keepLeft:
-      case PaceNoteType.keepRight:
-        priority = CalloutPriority.normal;
-        break;
-      case PaceNoteType.straight:
-        priority = CalloutPriority.informational;
-        if (!config.allowStraights) return null;
-        break;
-      default:
-        priority = CalloutPriority.normal;
+      }
+    }
+
+    CalloutPriority priority = CalloutPriority.normal;
+    if (calculatedPriority == 1) {
+      priority = CalloutPriority.critical;
+    } else if (calculatedPriority == 2) {
+      priority = CalloutPriority.high;
+    } else if (note.type == PaceNoteType.straight) {
+      priority = CalloutPriority.informational;
+    } else {
+      priority = CalloutPriority.low;
     }
 
     if (!config.allowedPriorities.contains(priority)) {
-      return null;
+      if (note.type == PaceNoteType.straight && !config.allowStraights) {
+        return null;
+      }
     }
 
     final speechText = note.text.isNotEmpty ? note.text : note.rallyText;
     final duration = _estimateSpeechDuration(speechText);
-    
+
     return ScheduledCallout(
       id: note.id,
       text: speechText,
       priority: priority,
       routeDistance: note.distanceFromStart,
-      expirationDistance: note.distanceFromStart + 15.0, // Expire 15m after the geometry start
+      expirationDistance: note.distanceFromStart + 15.0,
       estimatedSpeakingDuration: duration,
       canMerge: note.type != PaceNoteType.roundabout && note.type != PaceNoteType.junction,
       canInterrupt: priority == CalloutPriority.critical || priority == CalloutPriority.high,
       source: note,
+      compositeScore: scoreResult.finalScore,
     );
   }
 
   // Maps RoadWarning to ScheduledCallout
   ScheduledCallout? _mapWarning(RoadWarning warning) {
     final config = CalloutModeConfig.fromStyle(settings.pacenoteStyle);
+    final modeStr = settings.pacenoteStyle.name;
+
+    final speedLimit = _getSpeedLimitAt(warning.distanceFromStart);
+    final straightBefore = _calculatePrecedingStraight(warning.distanceFromStart);
+
+    final scoreResult = RouteEventScorer.scoreRoadWarning(
+      warning,
+      speedLimit,
+      straightBefore,
+      modeStr,
+    );
+
+    int calculatedPriority = 3;
+    if (scoreResult.finalScore >= 0.7) {
+      calculatedPriority = 1;
+    } else if (scoreResult.finalScore >= 0.45) {
+      calculatedPriority = 2;
+    }
+
+    if (settings.pacenoteStyle == PacenoteStyle.calm) {
+      if (calculatedPriority != 1 && scoreResult.finalScore < 0.7) {
+        return null;
+      }
+    }
+
+    if (settings.pacenoteStyle == PacenoteStyle.balanced) {
+      if (calculatedPriority == 3 || scoreResult.finalScore < 0.4) {
+        return null;
+      }
+    }
 
     CalloutPriority priority = CalloutPriority.normal;
-    switch (warning.type) {
-      case RoadWarningType.speedCamera:
-        priority = CalloutPriority.high;
-        break;
-      case RoadWarningType.stopSign:
-      case RoadWarningType.giveWay:
-        priority = CalloutPriority.critical;
-        break;
-      case RoadWarningType.speedBump:
-      case RoadWarningType.trafficLight:
-        priority = CalloutPriority.normal;
-        break;
-      case RoadWarningType.crest:
-      case RoadWarningType.dip:
-        priority = CalloutPriority.normal;
-        break;
-      case RoadWarningType.tunnel:
-        priority = CalloutPriority.low;
-        if (!config.allowTunnels) return null;
-        break;
-      case RoadWarningType.bridge:
-        priority = CalloutPriority.informational;
-        if (!config.allowBridges) return null;
-        break;
-      case RoadWarningType.surfaceChange:
-        priority = CalloutPriority.low;
-        if (!config.allowSurfaces) return null;
-        break;
-      default:
-        priority = CalloutPriority.normal;
+    if (calculatedPriority == 1) {
+      priority = CalloutPriority.critical;
+    } else if (calculatedPriority == 2) {
+      priority = CalloutPriority.high;
+    } else {
+      priority = CalloutPriority.low;
     }
+
+    if (warning.type == RoadWarningType.tunnel && !config.allowTunnels) return null;
+    if (warning.type == RoadWarningType.bridge && !config.allowBridges) return null;
+    if (warning.type == RoadWarningType.surfaceChange && !config.allowSurfaces) return null;
 
     if (!config.allowedPriorities.contains(priority)) {
       return null;
@@ -312,6 +362,7 @@ class CalloutScheduler extends ChangeNotifier {
       canMerge: warning.type != RoadWarningType.stopSign && warning.type != RoadWarningType.giveWay,
       canInterrupt: priority == CalloutPriority.critical || priority == CalloutPriority.high,
       source: warning,
+      compositeScore: scoreResult.finalScore,
     );
   }
 
@@ -336,11 +387,11 @@ class CalloutScheduler extends ChangeNotifier {
 
     // 2. Scan for and trigger upcoming callouts
     final scanHorizon = 300.0;
-    
+
     // Process Pacenotes
     for (final note in allNotes) {
       if (_spokenIds.contains(note.id) || _expiredIds.contains(note.id)) continue;
-      
+
       final mapped = _mapPaceNote(note);
       if (mapped == null) {
         _expiredIds.add(note.id); // Filtered out by mode config
@@ -384,7 +435,10 @@ class CalloutScheduler extends ChangeNotifier {
     // 3. Process Merge Rules
     _processQueueMerge();
 
-    // 4. Trigger Queue Playback / Interruption
+    // 4. Prune Queue if too dense
+    _pruneQueueIfDense();
+
+    // 5. Trigger Queue Playback / Interruption
     _processSpeechPlayback();
   }
 
@@ -396,12 +450,34 @@ class CalloutScheduler extends ChangeNotifier {
 
   void _sortQueue() {
     _queue.sort((a, b) {
-      // Sort by priority (higher priority first)
       final prioDiff = a.priority.index.compareTo(b.priority.index);
       if (prioDiff != 0) return prioDiff;
-      // If same priority, sort by distance (closer first)
+      final scoreDiff = b.compositeScore.compareTo(a.compositeScore);
+      if (scoreDiff != 0) return scoreDiff;
       return a.routeDistance.compareTo(b.routeDistance);
     });
+  }
+
+  // Prune lower composite scores when queue is crowded
+  void _pruneQueueIfDense() {
+    if (_queue.length < 2) return;
+    final totalSpeechDuration = _queue.fold<double>(0.0, (sum, item) => sum + item.estimatedSpeakingDuration);
+    final maxDist = _queue.map((q) => q.routeDistance).reduce(math.max);
+    final distRemaining = maxDist - _currentRouteDistance;
+    final speed = math.max(5.0, _currentSpeedMps);
+    final availableTime = distRemaining / speed;
+
+    if (availableTime > 0) {
+      final density = totalSpeechDuration / availableTime;
+      if (density > 0.90) {
+        _queue.removeWhere((item) {
+          if (item.priority == CalloutPriority.critical || item.compositeScore >= 0.7) {
+            return false;
+          }
+          return item.compositeScore < 0.4;
+        });
+      }
+    }
   }
 
   // Merge nearby callouts
@@ -413,8 +489,6 @@ class CalloutScheduler extends ChangeNotifier {
       final first = _queue[i];
       final second = _queue[i + 1];
 
-      // Rules:
-      // 1. Must be close (within 85 meters or 3.5 seconds)
       final distDiff = (second.routeDistance - first.routeDistance).abs();
       final timeDiff = _currentSpeedMps > 1.0 ? distDiff / _currentSpeedMps : 999.0;
 
@@ -422,13 +496,24 @@ class CalloutScheduler extends ChangeNotifier {
       final bothMergeable = first.canMerge && second.canMerge;
 
       if (isClose && bothMergeable) {
-        // Build merged text
-        String mergedText;
-        if (first.source is PaceNote && (first.source as PaceNote).type == PaceNoteType.straight) {
-          mergedText = '${first.text} into ${second.text}';
-        } else if (first.source is RoadWarning && (first.source as RoadWarning).type == RoadWarningType.speedBump) {
-          mergedText = '${first.text}, then ${second.text}';
-        } else {
+        String mergedText = '';
+        if (first.source is PaceNote && second.source is RoadWarning) {
+          final warning = second.source as RoadWarning;
+          if (warning.type == RoadWarningType.crest) {
+            mergedText = '${first.text} over crest';
+          } else if (warning.type == RoadWarningType.dip) {
+            mergedText = '${first.text} through dip';
+          }
+        } else if (first.source is RoadWarning && second.source is PaceNote) {
+          final warning = first.source as RoadWarning;
+          if (warning.type == RoadWarningType.crest) {
+            mergedText = 'crest into ${second.text}';
+          } else if (warning.type == RoadWarningType.dip) {
+            mergedText = 'dip into ${second.text}';
+          }
+        }
+
+        if (mergedText.isEmpty) {
           mergedText = '${first.text} into ${second.text}';
         }
 
@@ -440,22 +525,20 @@ class CalloutScheduler extends ChangeNotifier {
           routeDistance: first.routeDistance,
           expirationDistance: second.expirationDistance,
           estimatedSpeakingDuration: _estimateSpeechDuration(mergedText),
-          canMerge: false, // Don't merge a merged note again
+          canMerge: false,
           canInterrupt: first.canInterrupt || second.canInterrupt,
           source: first.source,
+          compositeScore: math.max(first.compositeScore, second.compositeScore),
         );
 
-        // Mark both original notes as spoken
         _spokenIds.add(first.id);
         _spokenIds.add(second.id);
 
-        // Replace both in queue with merged note
-        _queue.removeAt(i + 1); // remove second
-        _queue[i] = mergedCallout; // replace first
+        _queue.removeAt(i + 1);
+        _queue[i] = mergedCallout;
 
         _sortQueue();
         notifyListeners();
-        // Check same index again in case another merge is possible (limit to 3 chained notes in reality)
       } else {
         i++;
       }
@@ -467,12 +550,11 @@ class CalloutScheduler extends ChangeNotifier {
 
     final nextCallout = _queue.first;
 
-    // Check interruption
     if (speechService.isSpeaking && _activeCallout != null) {
       final canInterrupt = nextCallout.priority.index < _activeCallout!.priority.index && nextCallout.canInterrupt;
       if (canInterrupt) {
         debugPrint('Interrupting active speech: "${_activeCallout!.text}" (priority ${_activeCallout!.priority}) with "${nextCallout.text}" (priority ${nextCallout.priority})');
-        speechService.stop(); // This will trigger cleanup and callback
+        speechService.stop();
         _queue.removeAt(0);
         _activeCallout = nextCallout;
         _spokenIds.add(nextCallout.id);
@@ -494,7 +576,6 @@ class CalloutScheduler extends ChangeNotifier {
   void _onSpeechComplete() {
     _activeCallout = null;
     notifyListeners();
-    // Check if there are other items waiting in the queue
     _processSpeechPlayback();
   }
 }

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../models/route_point.dart';
+import '../utils/geo_math.dart';
 import 'pacenote_generator.dart';
 import 'settings_service.dart';
 
@@ -9,8 +10,16 @@ class OrsService {
     : _settings = settings,
       _dio = dio ?? Dio();
 
-  static const _endpoint =
-      'https://api.openrouteservice.org/v2/directions/driving-car/geojson';
+  String get _endpoint {
+    final profile = _settings.orsProfile;
+    final pathSegment = switch (profile) {
+      OrsProfile.drivingCar => 'driving-car',
+      OrsProfile.drivingHgv => 'driving-hgv',
+      OrsProfile.cyclingRoad => 'cycling-road',
+      OrsProfile.footWalking => 'foot-walking',
+    };
+    return 'https://api.openrouteservice.org/v2/directions/$pathSegment/geojson';
+  }
 
   final SettingsService _settings;
   final Dio _dio;
@@ -18,7 +27,7 @@ class OrsService {
 
   bool get hasApiKey => _settings.hasEffectiveOrsApiKey();
 
-  Future<List<RoutePoint>> buildRoute(List<RoutePoint> points) async {
+  Future<Map<String, dynamic>> buildRouteGeoJson(List<RoutePoint> points) async {
     if (points.length < 2) {
       throw const OrsRequestException('Add at least a start and destination.');
     }
@@ -33,9 +42,10 @@ class OrsService {
         _endpoint,
         data: {
           'coordinates': points.map((point) => [point.lon, point.lat]).toList(),
-          'instructions': false,
+          'instructions': true,
           'geometry': true,
           'elevation': true,
+          'extra_info': ['surface', 'waytype', 'steepness', 'suitability'],
           'radiuses': List.filled(points.length, -1),
         },
         options: Options(
@@ -46,34 +56,47 @@ class OrsService {
         ),
       );
 
-      final features = response.data?['features'] as List<dynamic>?;
-      if (features == null || features.isEmpty) {
-        throw const OrsRequestException('OpenRouteService returned no route.');
+      final data = response.data;
+      if (data == null) {
+        throw const OrsRequestException('OpenRouteService returned no data.');
       }
-
-      final geometry =
-          (features.first as Map<String, dynamic>)['geometry']
-              as Map<String, dynamic>?;
-      final coordinates = geometry?['coordinates'] as List<dynamic>?;
-      if (coordinates == null || coordinates.isEmpty) {
-        throw const OrsRequestException(
-          'OpenRouteService returned an empty route geometry.',
-        );
-      }
-
-      final routePoints = coordinates.map((coordinate) {
-        final pair = coordinate as List<dynamic>;
-        return RoutePoint(
-          lon: (pair[0] as num).toDouble(),
-          lat: (pair[1] as num).toDouble(),
-          elevation: pair.length >= 3 ? (pair[2] as num).toDouble() : null,
-        );
-      }).toList();
-
-      return _pacenoteGenerator.enrichRoutePoints(routePoints);
+      return data;
     } on DioException catch (error) {
       throw _mapDioException(error);
     }
+  }
+
+  Future<List<RoutePoint>> buildRoute(List<RoutePoint> points) async {
+    final geoJson = await buildRouteGeoJson(points);
+    final features = geoJson['features'] as List<dynamic>?;
+    if (features == null || features.isEmpty) {
+      throw const OrsRequestException('OpenRouteService returned no route.');
+    }
+
+    final geometry =
+        (features.first as Map<String, dynamic>)['geometry']
+            as Map<String, dynamic>?;
+    final coordinates = geometry?['coordinates'] as List<dynamic>?;
+    if (coordinates == null || coordinates.isEmpty) {
+      throw const OrsRequestException(
+        'OpenRouteService returned an empty route geometry.',
+      );
+    }
+
+    var routePoints = coordinates.map((coordinate) {
+      final pair = coordinate as List<dynamic>;
+      return RoutePoint(
+        lon: (pair[0] as num).toDouble(),
+        lat: (pair[1] as num).toDouble(),
+        elevation: pair.length >= 3 ? (pair[2] as num).toDouble() : null,
+      );
+    }).toList();
+
+    if (routePoints.length > 2000) {
+      routePoints = simplifyPoints(routePoints, 1.5);
+    }
+
+    return _pacenoteGenerator.enrichRoutePoints(routePoints);
   }
 
   Future<bool> validateApiKey(String key) async {

@@ -30,9 +30,9 @@ The app is built for enthusiasts who want more context than a simple blue line: 
 *   **Route Planner**: Features a full-screen interactive map to set start, waypoint, and destination markers by tapping. It shows live status counts in a premium glassmorphic bottom panel and builds the route instantly. Now supports online place/address search, one-tap **Start at My Location** using your device GPS coordinate, and one-tap **Reverse Route** to invert your route coordinates.
 *   **Route Preview**: Offers a comprehensive summary of the computed trip (distance, time, average speed) alongside an interactive **Route Map Preview** showing the route path and color-coded pacenote markers. Selecting any pacenote dynamically zooms, centers, and highlights it.
 *   **Roadbook Editor**: Accessible from the Route Preview screen by tapping any pacenote. Features a bottom sheet modal to customize pacenote type/direction, severity (1-6), modifiers (Short, Long, Opens, Tightens), and custom spoken callout texts. Edits are persistently saved to Hive storage.
-*   **Drive Mode (HUD)**: A high-fidelity, real-time navigation display featuring a dynamic high-contrast vehicle chevron matching heading direction, live speed and European speed limit sign indicators, upcoming co-driver voice notes, real-time warning cards (bumps, traffic lights, tunnels), and a toggleable auto-follow button.
+*   **Drive Mode (HUD)**: A high-fidelity, real-time navigation display featuring a dynamic high-contrast vehicle chevron matching heading direction, live speed and European speed limit sign indicators, upcoming co-driver voice notes, real-time warning cards (bumps, traffic lights, tunnels), visual maneuver HUD guidance, automatic off-route detection (60m/5s thresholds) with seamless async recovery, and real-time travel telemetry (ETA, remaining distance, remaining duration, progress bar).
 *   **Saved Routes**: Displays previously recorded routes in styled cards with colored icon gradients and quick metric badges (distance and notes), allowing fast loading or deletion.
-*   **Settings**: A organized settings panel with grouped cards to configure and validate OpenRouteService API keys, select which road warnings are active, and toggle map features like heading-up map rotation and the new high-contrast black map style. Features a new **Pacenote Detail Level** setting card (Calm, Balanced, Rally).
+*   **Settings**: An organized settings panel with grouped cards to configure and validate OpenRouteService API keys, select which road warnings are active, and toggle map features like heading-up map rotation and the high-contrast black map style. Features a **Pacenote Detail Level** setting card (Calm, Balanced, Rally) and an **ORS Route Profile** selection (Car, HGV, Cycling, Walking) with persistent storage.
 
 ## Features
 
@@ -143,7 +143,6 @@ Pacenotes are generated from route geometry and available road context. They are
 - Online place search depends on OpenRouteService or Photon availability and an internet connection.
 - Pacenote generation is best-effort and based on route geometry plus available context.
 - There is no backend account system or cloud sync.
-- Offline regional maps are not included yet.
 - RalRoads is not a replacement for official navigation, legal awareness, or traffic-condition monitoring.
 
 ## Roadmap Ideas
@@ -151,16 +150,16 @@ Pacenotes are generated from route geometry and available road context. They are
 - Offline route import
 - GPX import/export
 - Better roundabout and junction intelligence
-- Offline regional maps
 - Better voice profiles
 - Route sharing and backup options
+- Turn-by-turn detailed voice instructions in multiple languages
 
 ## Development Commands
 
 ```sh
 flutter pub get
 flutter analyze
-flutter build apk --debug
+flutter test
 flutter run
 ```
 

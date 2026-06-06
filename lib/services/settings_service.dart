@@ -9,9 +9,17 @@ enum PacenoteStyle {
   rally,
 }
 
+enum OrsProfile {
+  drivingCar,
+  drivingHgv,
+  cyclingRoad,
+  footWalking,
+}
+
 class SettingsService {
   static const _boxName = 'settings';
   static const _orsApiKeyKey = 'ors_api_key';
+  static const _orsProfileKey = 'ors_profile';
   static const _showSpeedLimitsKey = 'show_speed_limits';
   static const _showTrafficLightsKey = 'show_traffic_lights';
   static const _showStopGiveWayKey = 'show_stop_give_way';
@@ -143,6 +151,21 @@ class SettingsService {
       RoadWarningType.dip => showRoadFeatures,
       RoadWarningType.speedLimitChange => showSpeedLimits,
     };
+  }
+
+  OrsProfile get orsProfile {
+    final value = _box?.get(_orsProfileKey);
+    if (value is String) {
+      return OrsProfile.values.firstWhere(
+        (e) => e.name == value,
+        orElse: () => OrsProfile.drivingCar,
+      );
+    }
+    return OrsProfile.drivingCar;
+  }
+
+  Future<void> setOrsProfile(OrsProfile profile) async {
+    await _box?.put(_orsProfileKey, profile.name);
   }
 
   bool _getBool(String key, bool defaultValue) {

@@ -12,6 +12,8 @@ import '../services/pacenote_generator.dart';
 import '../services/route_storage_service.dart';
 import '../services/settings_service.dart';
 import '../services/offline_map_service.dart';
+import '../services/route_analysis_service.dart';
+import '../models/matched_route.dart';
 import '../utils/format_helpers.dart';
 import '../utils/geo_math.dart';
 import '../utils/ui_helpers.dart';
@@ -43,8 +45,7 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
   late List<PaceNote> _pacenotes;
   late List<RoadWarning> _roadWarnings;
   late List<SpeedLimitSegment> _speedLimitSegments;
-  bool _roadInfoLoading = false;
-  bool _roadInfoFailed = false;
+  RouteAnalysisService? _analysisService;
 
   maplibre.MapLibreMapController? _mapController;
   maplibre.Line? _routeLine;
@@ -83,29 +84,44 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
 
     _checkIfMapDownloaded();
 
-    final hasElevationWarnings = _roadWarnings.any(
-      (w) => w.type == RoadWarningType.crest || w.type == RoadWarningType.dip,
-    );
-    if (!hasElevationWarnings && widget.points.isNotEmpty) {
-      final elevWarnings = _pacenoteGenerator.detectElevationFeatures(
-        widget.points,
+    if (widget.points.length >= 2) {
+      _analysisService = RouteAnalysisService(
+        routeId: widget.savedRoute?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+        routeName: widget.savedRoute?.name ?? 'Route ${formatDate(DateTime.now())}',
+        routePoints: widget.points,
+        initialPacenotes: widget.pacenotes,
+        overpassService: _overpassService,
+        pacenoteGenerator: _pacenoteGenerator,
+        storageService: widget.storage,
+        createdAt: widget.savedRoute?.createdAt ?? DateTime.now(),
+        initialChunks: widget.savedRoute?.matchedRoute?.chunks,
       );
-      if (elevWarnings.isNotEmpty) {
-        _roadWarnings = [..._roadWarnings, ...elevWarnings];
+
+      _analysisService!.addListener(_onAnalysisServiceUpdate);
+      _onAnalysisServiceUpdate();
+
+      if (!_analysisService!.manifest.isComplete) {
+        _analysisService!.runAnalysis();
       }
     }
+  }
 
-    if (_roadWarnings.isNotEmpty || _speedLimitSegments.isNotEmpty) {
-      _pacenotes = _pacenoteGenerator.refinePacenotesWithRoadContext(
-        notes: _pacenotes,
-        routePoints: widget.points,
-        warnings: _roadWarnings,
-        speedLimits: _speedLimitSegments,
-      );
+  void _onAnalysisServiceUpdate() {
+    if (!mounted) return;
+    setState(() {
+      _roadWarnings = _analysisService!.allWarnings;
+      _speedLimitSegments = _analysisService!.allSpeedLimits;
+      _pacenotes = _analysisService!.allPacenotes;
+    });
+    if (_previewMapDrawn) {
+      _drawPacenoteMarkers();
     }
-    if (widget.savedRoute == null && widget.points.length >= 2) {
-      _loadRoadInformation();
-    }
+  }
+
+  @override
+  void dispose() {
+    _analysisService?.removeListener(_onAnalysisServiceUpdate);
+    super.dispose();
   }
 
   Future<void> _checkIfMapDownloaded() async {
@@ -546,48 +562,6 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     );
   }
 
-  Future<void> _loadRoadInformation() async {
-    setState(() {
-      _roadInfoLoading = true;
-      _roadInfoFailed = false;
-    });
-
-    try {
-      final enrichment = await _overpassService.enrichRoute(widget.points);
-      final elevationWarnings = _pacenoteGenerator.detectElevationFeatures(
-        widget.points,
-      );
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _roadWarnings = [...enrichment.roadWarnings, ...elevationWarnings];
-        _speedLimitSegments = enrichment.speedLimitSegments;
-        _pacenotes = _pacenoteGenerator.refinePacenotesWithRoadContext(
-          notes: widget.pacenotes,
-          routePoints: widget.points,
-          warnings: _roadWarnings,
-          speedLimits: _speedLimitSegments,
-        );
-        _roadInfoLoading = false;
-      });
-      if (_previewMapDrawn) {
-        await _drawPacenoteMarkers();
-      }
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _roadInfoLoading = false;
-        _roadInfoFailed = true;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Road warnings could not be loaded.')),
-      );
-    }
-  }
-
   Widget _buildOfflineStatus(BuildContext context) {
     final theme = Theme.of(context);
     final routeSaved = _savedRoute != null;
@@ -653,45 +627,193 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     );
   }
 
+  Widget _buildChunkStatusIcon(RouteChunkStatus status, ThemeData theme) {
+    switch (status) {
+      case RouteChunkStatus.pending:
+        return Icon(
+          Icons.radio_button_off,
+          size: 16,
+          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+        );
+      case RouteChunkStatus.processing:
+        return const SizedBox.square(
+          dimension: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        );
+      case RouteChunkStatus.ready:
+        return Icon(Icons.check_circle, size: 16, color: theme.colorScheme.primary);
+      case RouteChunkStatus.failed:
+        return Icon(Icons.error, size: 16, color: theme.colorScheme.error);
+      case RouteChunkStatus.partial:
+        return Icon(Icons.warning, size: 16, color: theme.colorScheme.secondary);
+    }
+  }
+
   Widget _buildRoadInformation(BuildContext context) {
+    final service = _analysisService;
+    if (service == null) return const SizedBox.shrink();
+
+    final manifest = service.manifest;
+    final theme = Theme.of(context);
     final visibleWarnings = _visibleRoadWarnings;
     final visibleSpeedLimits = _visibleSpeedLimitSegments;
-    final theme = Theme.of(context);
 
-    if (_roadInfoLoading) {
-      return Card(
-        elevation: 0,
-        color: theme.colorScheme.surfaceContainerLow,
-        child: const Padding(
-          padding: EdgeInsets.all(16),
-          child: Row(
-            children: [
-              SizedBox.square(
-                dimension: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              SizedBox(width: 12),
-              Text('Loading road details...'),
-            ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(
+          elevation: 0,
+          color: theme.colorScheme.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'ROUTE INTELLIGENCE ANALYSIS',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.8,
+                        ),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    if (service.isAnalyzing)
+                      const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else if (manifest.isComplete)
+                      Icon(
+                        Icons.check_circle,
+                        color: theme.colorScheme.primary,
+                        size: 18,
+                      )
+                    else
+                      Icon(
+                        Icons.pause_circle_outline,
+                        color: theme.colorScheme.onSurfaceVariant,
+                        size: 18,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Progress Bar
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: manifest.totalChunks > 0
+                        ? manifest.readyChunks / manifest.totalChunks
+                        : 0.0,
+                    backgroundColor: theme.colorScheme.surfaceContainerHigh,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      theme.colorScheme.primary,
+                    ),
+                    minHeight: 8,
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Progress Text
+                Text(
+                  '${manifest.readyChunks} of ${manifest.totalChunks} sectors analyzed '
+                  '(${manifest.failedChunks} failed, ${manifest.totalChunks - manifest.readyChunks - manifest.failedChunks} pending)',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Chunk Status List
+                ...List.generate(service.chunks.length, (idx) {
+                  final chunk = service.chunks[idx];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        _buildChunkStatusIcon(chunk.status, theme),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Sector ${idx + 1} (${(chunk.startDistance / 1000).toStringAsFixed(1)} - ${(chunk.endDistance / 1000).toStringAsFixed(1)} km)',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              if (chunk.status == RouteChunkStatus.ready)
+                                Text(
+                                  '${chunk.notes.length} pacenotes • ${chunk.warnings.length} warnings • ${chunk.speedLimits.length} speed limits',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant
+                                        .withValues(alpha: 0.7),
+                                  ),
+                                )
+                              else if (chunk.status == RouteChunkStatus.failed)
+                                Text(
+                                  chunk.error ?? 'Unknown error',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.error,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              else
+                                Text(
+                                  chunk.status.name[0].toUpperCase() +
+                                      chunk.status.name.substring(1),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant
+                                        .withValues(alpha: 0.5),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (chunk.status == RouteChunkStatus.failed)
+                          IconButton(
+                            icon: const Icon(Icons.refresh, size: 20),
+                            onPressed: () => service.analyzeChunk(idx),
+                            tooltip: 'Retry analysis for this sector',
+                          ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
           ),
         ),
-      );
-    }
+        const SizedBox(height: 16),
 
-    if (_roadInfoFailed) {
-      return Card(
-        elevation: 0,
-        color: theme.colorScheme.surfaceContainerLow,
-        child: const Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('Road information unavailable.'),
-        ),
-      );
-    }
+        if (visibleWarnings.isNotEmpty || visibleSpeedLimits.isNotEmpty) ...[
+          _buildWarningsSummaryCard(context, visibleWarnings, visibleSpeedLimits),
+          const SizedBox(height: 16),
+        ],
+      ],
+    );
+  }
 
-    if (visibleWarnings.isEmpty && visibleSpeedLimits.isEmpty) {
-      return const SizedBox.shrink();
-    }
+  Widget _buildWarningsSummaryCard(
+    BuildContext context,
+    List<RoadWarning> visibleWarnings,
+    List<SpeedLimitSegment> visibleSpeedLimits,
+  ) {
+    final theme = Theme.of(context);
 
     // Parse speed limits
     final speedLimits = <int>{};
@@ -839,10 +961,10 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                             Text(
                               '${entry.value} ${shortRoadWarningLabel(entry.key)}',
                               style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: color,
-                              ),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: color,
+                                ),
                             ),
                           ],
                         ),
@@ -1418,17 +1540,20 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
 
   Future<void> _saveRoute(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final now = DateTime.now();
-    final route = SavedRoute(
-      id: widget.savedRoute?.id ?? now.microsecondsSinceEpoch.toString(),
-      name: widget.savedRoute?.name ?? 'Route ${formatDate(now)}',
-      createdAt: widget.savedRoute?.createdAt ?? now,
-      totalDistance: _totalDistance,
-      points: widget.points,
-      pacenotes: _pacenotes,
-      roadWarnings: _roadWarnings,
-      speedLimitSegments: _speedLimitSegments,
-    );
+    final route = _analysisService != null
+        ? _analysisService!.buildSavedRoute()
+        : SavedRoute(
+            id: widget.savedRoute?.id ??
+                DateTime.now().microsecondsSinceEpoch.toString(),
+            name: widget.savedRoute?.name ??
+                'Route ${formatDate(DateTime.now())}',
+            createdAt: widget.savedRoute?.createdAt ?? DateTime.now(),
+            totalDistance: _totalDistance,
+            points: widget.points,
+            pacenotes: _pacenotes,
+            roadWarnings: _roadWarnings,
+            speedLimitSegments: _speedLimitSegments,
+          );
 
     await widget.storage.saveRoute(route);
     if (!mounted) return;

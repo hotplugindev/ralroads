@@ -2,6 +2,7 @@ import 'pace_note.dart';
 import 'road_warning.dart';
 import 'route_point.dart';
 import 'speed_limit_segment.dart';
+import 'matched_route.dart';
 
 class SavedRoute {
   const SavedRoute({
@@ -13,6 +14,7 @@ class SavedRoute {
     required this.pacenotes,
     this.roadWarnings = const [],
     this.speedLimitSegments = const [],
+    this.matchedRoute,
   });
 
   final String id;
@@ -23,6 +25,7 @@ class SavedRoute {
   final List<PaceNote> pacenotes;
   final List<RoadWarning> roadWarnings;
   final List<SpeedLimitSegment> speedLimitSegments;
+  final MatchedRoute? matchedRoute;
 
   SavedRoute copyWith({
     String? id,
@@ -33,6 +36,7 @@ class SavedRoute {
     List<PaceNote>? pacenotes,
     List<RoadWarning>? roadWarnings,
     List<SpeedLimitSegment>? speedLimitSegments,
+    MatchedRoute? matchedRoute,
   }) {
     return SavedRoute(
       id: id ?? this.id,
@@ -43,6 +47,7 @@ class SavedRoute {
       pacenotes: pacenotes ?? this.pacenotes,
       roadWarnings: roadWarnings ?? this.roadWarnings,
       speedLimitSegments: speedLimitSegments ?? this.speedLimitSegments,
+      matchedRoute: matchedRoute ?? this.matchedRoute,
     );
   }
 
@@ -58,6 +63,7 @@ class SavedRoute {
       'speedLimitSegments': speedLimitSegments
           .map((segment) => segment.toJson())
           .toList(),
+      if (matchedRoute != null) 'matchedRoute': matchedRoute!.toJson(),
     };
   }
 
@@ -67,6 +73,7 @@ class SavedRoute {
     final warningsJson = json['roadWarnings'] as List<dynamic>? ?? const [];
     final speedLimitsJson =
         json['speedLimitSegments'] as List<dynamic>? ?? const [];
+    final matchedRouteJson = json['matchedRoute'] as Map<dynamic, dynamic>?;
 
     return SavedRoute(
       id: json['id'] as String,
@@ -90,6 +97,9 @@ class SavedRoute {
                 SpeedLimitSegment.fromJson(segment as Map<dynamic, dynamic>),
           )
           .toList(),
+      matchedRoute: matchedRouteJson != null
+          ? MatchedRoute.fromJson(matchedRouteJson)
+          : null,
     );
   }
 }
