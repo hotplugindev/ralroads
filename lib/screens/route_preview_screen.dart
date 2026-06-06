@@ -26,6 +26,9 @@ class RoutePreviewScreen extends StatefulWidget {
     required this.points,
     required this.pacenotes,
     this.savedRoute,
+    this.initialRouteName,
+    this.startName,
+    this.destinationName,
     super.key,
   });
 
@@ -34,6 +37,9 @@ class RoutePreviewScreen extends StatefulWidget {
   final List<RoutePoint> points;
   final List<PaceNote> pacenotes;
   final SavedRoute? savedRoute;
+  final String? initialRouteName;
+  final String? startName;
+  final String? destinationName;
 
   @override
   State<RoutePreviewScreen> createState() => _RoutePreviewScreenState();
@@ -85,15 +91,24 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     _checkIfMapDownloaded();
 
     if (widget.points.length >= 2) {
+      final createdAt = widget.savedRoute?.createdAt ?? DateTime.now();
       _analysisService = RouteAnalysisService(
-        routeId: widget.savedRoute?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
-        routeName: widget.savedRoute?.name ?? 'Route ${formatDate(DateTime.now())}',
+        routeId:
+            widget.savedRoute?.id ??
+            DateTime.now().microsecondsSinceEpoch.toString(),
+        routeName:
+            widget.savedRoute?.name ??
+            widget.initialRouteName ??
+            _automaticRouteName(createdAt),
         routePoints: widget.points,
         initialPacenotes: widget.pacenotes,
         overpassService: _overpassService,
         pacenoteGenerator: _pacenoteGenerator,
-        storageService: widget.storage,
-        createdAt: widget.savedRoute?.createdAt ?? DateTime.now(),
+        storageService: widget.savedRoute == null ? null : widget.storage,
+        createdAt: createdAt,
+        startName: widget.savedRoute?.startName ?? widget.startName,
+        destinationName:
+            widget.savedRoute?.destinationName ?? widget.destinationName,
         initialChunks: widget.savedRoute?.matchedRoute?.chunks,
       );
 
@@ -116,6 +131,19 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
     if (_previewMapDrawn) {
       _drawPacenoteMarkers();
     }
+  }
+
+  String _automaticRouteName(DateTime createdAt) {
+    final start = widget.savedRoute?.startName ?? widget.startName;
+    final destination =
+        widget.savedRoute?.destinationName ?? widget.destinationName;
+    if (start != null &&
+        start.trim().isNotEmpty &&
+        destination != null &&
+        destination.trim().isNotEmpty) {
+      return '${start.trim()} to ${destination.trim()} - ${formatDate(createdAt)}';
+    }
+    return 'Route ${formatDate(createdAt)}';
   }
 
   @override
@@ -641,11 +669,19 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
           child: CircularProgressIndicator(strokeWidth: 2),
         );
       case RouteChunkStatus.ready:
-        return Icon(Icons.check_circle, size: 16, color: theme.colorScheme.primary);
+        return Icon(
+          Icons.check_circle,
+          size: 16,
+          color: theme.colorScheme.primary,
+        );
       case RouteChunkStatus.failed:
         return Icon(Icons.error, size: 16, color: theme.colorScheme.error);
       case RouteChunkStatus.partial:
-        return Icon(Icons.warning, size: 16, color: theme.colorScheme.secondary);
+        return Icon(
+          Icons.warning,
+          size: 16,
+          color: theme.colorScheme.secondary,
+        );
     }
   }
 
@@ -801,7 +837,11 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
         const SizedBox(height: 16),
 
         if (visibleWarnings.isNotEmpty || visibleSpeedLimits.isNotEmpty) ...[
-          _buildWarningsSummaryCard(context, visibleWarnings, visibleSpeedLimits),
+          _buildWarningsSummaryCard(
+            context,
+            visibleWarnings,
+            visibleSpeedLimits,
+          ),
           const SizedBox(height: 16),
         ],
       ],
@@ -961,10 +1001,10 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                             Text(
                               '${entry.value} ${shortRoadWarningLabel(entry.key)}',
                               style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: color,
-                                ),
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: color,
+                              ),
                             ),
                           ],
                         ),
@@ -1540,22 +1580,27 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
 
   Future<void> _saveRoute(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
+    final createdAt = widget.savedRoute?.createdAt ?? DateTime.now();
     final route = _analysisService != null
         ? _analysisService!.buildSavedRoute()
         : SavedRoute(
-            id: widget.savedRoute?.id ??
+            id:
+                widget.savedRoute?.id ??
                 DateTime.now().microsecondsSinceEpoch.toString(),
-            name: widget.savedRoute?.name ??
-                'Route ${formatDate(DateTime.now())}',
-            createdAt: widget.savedRoute?.createdAt ?? DateTime.now(),
+            name: widget.savedRoute?.name ?? _automaticRouteName(createdAt),
+            createdAt: createdAt,
             totalDistance: _totalDistance,
             points: widget.points,
             pacenotes: _pacenotes,
             roadWarnings: _roadWarnings,
             speedLimitSegments: _speedLimitSegments,
+            startName: widget.savedRoute?.startName ?? widget.startName,
+            destinationName:
+                widget.savedRoute?.destinationName ?? widget.destinationName,
           );
 
     await widget.storage.saveRoute(route);
+    _analysisService?.enableProgressSaving(widget.storage);
     if (!mounted) return;
     setState(() {
       _savedRoute = route;

@@ -945,7 +945,7 @@ class RouteSemanticEngine {
     final point = _pointNearDistance(routePoints, candidate.distanceFromStart);
     final exitNumber = candidate.topologyContext['roundaboutExit'];
     final text = exitNumber is int
-        ? 'Roundabout, ${_ordinal(exitNumber)} exit'
+        ? 'Roundabout ahead, take ${_ordinal(exitNumber)} exit'
         : 'Roundabout ahead';
     return PaceNote(
       id:

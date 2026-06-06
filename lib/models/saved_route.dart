@@ -15,6 +15,8 @@ class SavedRoute {
     this.roadWarnings = const [],
     this.speedLimitSegments = const [],
     this.matchedRoute,
+    this.startName,
+    this.destinationName,
   });
 
   final String id;
@@ -26,6 +28,8 @@ class SavedRoute {
   final List<RoadWarning> roadWarnings;
   final List<SpeedLimitSegment> speedLimitSegments;
   final MatchedRoute? matchedRoute;
+  final String? startName;
+  final String? destinationName;
 
   SavedRoute copyWith({
     String? id,
@@ -37,6 +41,8 @@ class SavedRoute {
     List<RoadWarning>? roadWarnings,
     List<SpeedLimitSegment>? speedLimitSegments,
     MatchedRoute? matchedRoute,
+    String? startName,
+    String? destinationName,
   }) {
     return SavedRoute(
       id: id ?? this.id,
@@ -48,6 +54,8 @@ class SavedRoute {
       roadWarnings: roadWarnings ?? this.roadWarnings,
       speedLimitSegments: speedLimitSegments ?? this.speedLimitSegments,
       matchedRoute: matchedRoute ?? this.matchedRoute,
+      startName: startName ?? this.startName,
+      destinationName: destinationName ?? this.destinationName,
     );
   }
 
@@ -64,6 +72,8 @@ class SavedRoute {
           .map((segment) => segment.toJson())
           .toList(),
       if (matchedRoute != null) 'matchedRoute': matchedRoute!.toJson(),
+      if (startName != null) 'startName': startName,
+      if (destinationName != null) 'destinationName': destinationName,
     };
   }
 
@@ -100,6 +110,8 @@ class SavedRoute {
       matchedRoute: matchedRouteJson != null
           ? MatchedRoute.fromJson(matchedRouteJson)
           : null,
+      startName: json['startName'] as String?,
+      destinationName: json['destinationName'] as String?,
     );
   }
 }

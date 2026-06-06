@@ -52,7 +52,7 @@ class PaceNote {
 
   String get rallyText {
     if (type == PaceNoteType.roundabout) {
-      return 'Roundabout ahead';
+      return text.trim().isNotEmpty ? text : 'Roundabout ahead';
     }
     if (type == PaceNoteType.junction) {
       final dirStr = direction.toLowerCase().startsWith('l') ? 'left' : 'right';

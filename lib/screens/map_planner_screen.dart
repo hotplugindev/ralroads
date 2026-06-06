@@ -13,6 +13,7 @@ import '../services/ors_service.dart';
 import '../services/pacenote_generator.dart';
 import '../services/route_storage_service.dart';
 import '../services/settings_service.dart';
+import '../utils/format_helpers.dart';
 import '../utils/geo_math.dart';
 import '../utils/ui_helpers.dart';
 import 'route_preview_screen.dart';
@@ -36,6 +37,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
   late final OrsService _orsService;
   late final GeocodingService _geocodingService;
   final List<RoutePoint> _selectedPoints = [];
+  final List<String?> _selectedPointNames = [];
   final List<maplibre.Circle> _pointCircles = [];
   final List<maplibre.Symbol> _pointLabels = [];
   maplibre.MapLibreMapController? _controller;
@@ -217,29 +219,37 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       return;
     }
 
+    final pointName = _nameForSearchResult(result);
     setState(() {
       switch (action) {
         case _PlaceAction.setStart:
           if (_selectedPoints.isEmpty) {
             _selectedPoints.add(routePoint);
+            _selectedPointNames.add(pointName);
           } else {
             _selectedPoints[0] = routePoint;
+            _setPointNameAt(0, pointName);
           }
           break;
         case _PlaceAction.addStop:
           if (_selectedPoints.length >= 2) {
             _selectedPoints.insert(_selectedPoints.length - 1, routePoint);
+            _insertPointNameAt(_selectedPoints.length - 2, pointName);
           } else {
             _selectedPoints.add(routePoint);
+            _selectedPointNames.add(pointName);
           }
           break;
         case _PlaceAction.setDestination:
           if (_selectedPoints.isEmpty) {
             _selectedPoints.add(routePoint);
+            _selectedPointNames.add(pointName);
           } else if (_selectedPoints.length == 1) {
             _selectedPoints.add(routePoint);
+            _selectedPointNames.add(pointName);
           } else {
             _selectedPoints[_selectedPoints.length - 1] = routePoint;
+            _setPointNameAt(_selectedPoints.length - 1, pointName);
           }
           break;
       }
@@ -807,7 +817,14 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                                       final pt = _selectedPoints.removeAt(
                                         oldIndex,
                                       );
+                                      final name =
+                                          _selectedPointNames.length > oldIndex
+                                          ? _selectedPointNames.removeAt(
+                                              oldIndex,
+                                            )
+                                          : null;
                                       _selectedPoints.insert(newIndex, pt);
+                                      _insertPointNameAt(newIndex, name);
                                       _error = null;
                                     });
                                     await _updateMapMarkers();
@@ -873,7 +890,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Text(
-                                              '${pt.lat.toStringAsFixed(5)}, ${pt.lon.toStringAsFixed(5)}',
+                                              _pointDisplayName(index),
                                               style: Theme.of(
                                                 context,
                                               ).textTheme.bodySmall,
@@ -892,6 +909,12 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
                                             onPressed: () async {
                                               setState(() {
                                                 _selectedPoints.removeAt(index);
+                                                if (_selectedPointNames.length >
+                                                    index) {
+                                                  _selectedPointNames.removeAt(
+                                                    index,
+                                                  );
+                                                }
                                                 _error = null;
                                               });
                                               await _updateMapMarkers();
@@ -1089,6 +1112,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     _searchFocusNode.unfocus();
     setState(() {
       _selectedPoints.add(routePoint);
+      _selectedPointNames.add(null);
       _error = null;
     });
 
@@ -1120,6 +1144,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
 
     setState(() {
       _selectedPoints.clear();
+      _selectedPointNames.clear();
       _pointLabels.clear();
       _pointCircles.clear();
       _searchPreviewLabel = null;
@@ -1166,6 +1191,11 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
             settings: widget.settings,
             points: routePoints,
             pacenotes: pacenotes,
+            initialRouteName: _routeNameForSelection(DateTime.now()),
+            startName: _selectedPointNameOrCoordinates(0),
+            destinationName: _selectedPointNameOrCoordinates(
+              _selectedPoints.length - 1,
+            ),
           ),
         ),
       );
@@ -1203,6 +1233,62 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
 
   List<RoutePoint> _orderedRoutePlanPoints() {
     return List<RoutePoint>.from(_selectedPoints);
+  }
+
+  String _nameForSearchResult(PlaceSearchResult result) {
+    final title = result.title.trim();
+    if (title.isNotEmpty) {
+      return title;
+    }
+    return _coordinatesLabel(result.lat, result.lon);
+  }
+
+  void _setPointNameAt(int index, String? name) {
+    while (_selectedPointNames.length <= index) {
+      _selectedPointNames.add(null);
+    }
+    _selectedPointNames[index] = name;
+  }
+
+  void _insertPointNameAt(int index, String? name) {
+    while (_selectedPointNames.length < index) {
+      _selectedPointNames.add(null);
+    }
+    final boundedIndex = index.clamp(0, _selectedPointNames.length);
+    _selectedPointNames.insert(boundedIndex, name);
+  }
+
+  String _pointDisplayName(int index) {
+    final name = index < _selectedPointNames.length
+        ? _selectedPointNames[index]?.trim()
+        : null;
+    if (name != null && name.isNotEmpty) {
+      return name;
+    }
+    final point = _selectedPoints[index];
+    return _coordinatesLabel(point.lat, point.lon);
+  }
+
+  String _selectedPointNameOrCoordinates(int index) {
+    if (index < 0 || index >= _selectedPoints.length) {
+      return '';
+    }
+    return _pointDisplayName(index);
+  }
+
+  String _routeNameForSelection(DateTime createdAt) {
+    final start = _selectedPointNameOrCoordinates(0);
+    final destination = _selectedPointNameOrCoordinates(
+      _selectedPoints.length - 1,
+    );
+    if (start.isEmpty || destination.isEmpty) {
+      return 'Route ${formatDate(createdAt)}';
+    }
+    return '$start to $destination - ${formatDate(createdAt)}';
+  }
+
+  String _coordinatesLabel(double lat, double lon) {
+    return '${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}';
   }
 
   Future<void> _showMissingKeyPrompt() async {
@@ -1393,8 +1479,10 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       setState(() {
         if (_selectedPoints.isNotEmpty) {
           _selectedPoints.insert(0, routePoint);
+          _selectedPointNames.insert(0, 'Current location');
         } else {
           _selectedPoints.add(routePoint);
+          _selectedPointNames.add('Current location');
         }
         _error = null;
       });
@@ -1418,8 +1506,11 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
     if (_selectedPoints.length < 2) return;
     setState(() {
       final reversed = _selectedPoints.reversed.toList();
+      final reversedNames = _selectedPointNames.reversed.toList();
       _selectedPoints.clear();
       _selectedPoints.addAll(reversed);
+      _selectedPointNames.clear();
+      _selectedPointNames.addAll(reversedNames);
       _error = null;
     });
     _updateMapMarkers();

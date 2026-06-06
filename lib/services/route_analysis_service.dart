@@ -19,8 +19,10 @@ class RouteAnalysisService extends ChangeNotifier {
   final List<PaceNote> initialPacenotes;
   final OverpassService overpassService;
   final PacenoteGenerator pacenoteGenerator;
-  final RouteStorageService? storageService;
+  RouteStorageService? _storageService;
   final DateTime createdAt;
+  final String? startName;
+  final String? destinationName;
 
   final List<RouteChunk> _chunks = [];
   List<RouteChunk> get chunks => _chunks;
@@ -35,15 +37,21 @@ class RouteAnalysisService extends ChangeNotifier {
     required this.initialPacenotes,
     required this.overpassService,
     required this.pacenoteGenerator,
-    this.storageService,
+    RouteStorageService? storageService,
     required this.createdAt,
+    this.startName,
+    this.destinationName,
     List<RouteChunk>? initialChunks,
-  }) {
+  }) : _storageService = storageService {
     if (initialChunks != null && initialChunks.isNotEmpty) {
       _chunks.addAll(initialChunks);
     } else {
       _partitionRoute();
     }
+  }
+
+  void enableProgressSaving(RouteStorageService storage) {
+    _storageService = storage;
   }
 
   void _partitionRoute() {
@@ -180,11 +188,13 @@ class RouteAnalysisService extends ChangeNotifier {
       roadWarnings: allWarnings,
       speedLimitSegments: allSpeedLimits,
       matchedRoute: buildMatchedRoute(),
+      startName: startName,
+      destinationName: destinationName,
     );
   }
 
   Future<void> saveCurrentProgress() async {
-    final storage = storageService;
+    final storage = _storageService;
     if (storage != null) {
       final route = buildSavedRoute();
       await storage.saveRoute(route);
