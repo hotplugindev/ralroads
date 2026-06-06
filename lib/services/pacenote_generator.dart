@@ -12,12 +12,17 @@ import 'route_semantic_engine.dart';
 class PacenoteBackgroundParams {
   final List<RoutePoint> points;
   final PacenoteStyle style;
-  const PacenoteBackgroundParams(this.points, this.style);
+  final List<RouteManeuver> maneuvers;
+  const PacenoteBackgroundParams(
+    this.points,
+    this.style, {
+    this.maneuvers = const [],
+  });
 }
 
 List<PaceNote> generatePacenotesBackground(PacenoteBackgroundParams params) {
   final generator = PacenoteGenerator(styleOverride: params.style);
-  return generator.generate(params.points);
+  return generator.generate(params.points, maneuvers: params.maneuvers);
 }
 
 class PacenoteGenerator {
@@ -109,21 +114,21 @@ class PacenoteGenerator {
     return enriched;
   }
 
-  List<PaceNote> generate(List<RoutePoint> inputPoints) {
+  List<PaceNote> generate(
+    List<RoutePoint> inputPoints, {
+    List<RouteManeuver> maneuvers = const [],
+  }) {
     final densified = densifyRoutePoints(inputPoints);
     final points = enrichRoutePoints(densified);
     if (points.length < 4) {
       return const [];
     }
 
-    final pointDirections = <String>[];
-    final pointRadii = <double>[];
-
     final smoothedHeadings = <double>[];
     for (var i = 0; i < points.length; i++) {
       var sumSin = 0.0;
       var sumCos = 0.0;
-      const window = 3;
+      const window = 2;
       for (var j = i - window; j <= i + window; j++) {
         if (j >= 0 && j < points.length) {
           final headingRad = points[j].heading * math.pi / 180.0;
@@ -135,73 +140,11 @@ class PacenoteGenerator {
       smoothedHeadings.add((avgRad * 180.0 / math.pi + 360.0) % 360.0);
     }
 
-    for (var i = 0; i < points.length; i++) {
-      final beforeIdx = _indexNearDistance(
-        points,
-        points[i].distanceFromStart - 15.0,
-      );
-      final afterIdx = _indexNearDistance(
-        points,
-        points[i].distanceFromStart + 15.0,
-      );
-
-      final delta = normalizeAngleDeltaDegrees(
-        smoothedHeadings[beforeIdx],
-        smoothedHeadings[afterIdx],
-      );
-      final distDiff =
-          points[afterIdx].distanceFromStart -
-          points[beforeIdx].distanceFromStart;
-
-      double r = 9999.0;
-      if (distDiff > 0) {
-        final thetaRad = (delta.abs() * math.pi) / 180.0;
-        r = thetaRad > 0.0001 ? distDiff / thetaRad : 9999.0;
-      }
-      pointRadii.add(r);
-
-      final curveRadiusThreshold = switch (_style) {
-        PacenoteStyle.calm => 140.0,
-        PacenoteStyle.balanced => 180.0,
-        PacenoteStyle.rally => 220.0,
-      };
-
-      if (r < curveRadiusThreshold) {
-        pointDirections.add(delta < 0 ? 'L' : 'R');
-      } else {
-        pointDirections.add('S');
-      }
-    }
-
-    var rawSegments = <_RouteSegment>[];
-    if (points.isNotEmpty) {
-      var currentType = pointDirections[0];
-      var startIdx = 0;
-      for (var i = 1; i < points.length; i++) {
-        if (pointDirections[i] != currentType) {
-          rawSegments.add(
-            _RouteSegment(
-              type: currentType,
-              startIndex: startIdx,
-              endIndex: i - 1,
-              startDistance: points[startIdx].distanceFromStart,
-              endDistance: points[i - 1].distanceFromStart,
-            ),
-          );
-          currentType = pointDirections[i];
-          startIdx = i;
-        }
-      }
-      rawSegments.add(
-        _RouteSegment(
-          type: currentType,
-          startIndex: startIdx,
-          endIndex: points.length - 1,
-          startDistance: points[startIdx].distanceFromStart,
-          endDistance: points.last.distanceFromStart,
-        ),
-      );
-    }
+    final curvatureSamples = _buildMultiScaleCurvatureSamples(
+      points,
+      smoothedHeadings,
+    );
+    var rawSegments = _buildRawSegmentsFromCurvature(points, curvatureSamples);
 
     var refinedSegments = _refineSegments(rawSegments, points);
 
@@ -408,11 +351,12 @@ class PacenoteGenerator {
       }
     }
 
+    final sequenceNotes = _splitLongCurveNotesWithValleys(notes, points);
     final linkedNotes = <PaceNote>[];
-    for (var i = 0; i < notes.length; i++) {
-      var note = notes[i];
-      if (i < notes.length - 1) {
-        final next = notes[i + 1];
+    for (var i = 0; i < sequenceNotes.length; i++) {
+      var note = sequenceNotes[i];
+      if (i < sequenceNotes.length - 1) {
+        final next = sequenceNotes[i + 1];
         final gap = next.distanceFromStart - note.distanceFromStart;
 
         final canLinkSelf =
@@ -439,7 +383,135 @@ class PacenoteGenerator {
       linkedNotes.add(note);
     }
 
-    return linkedNotes;
+    if (maneuvers.isEmpty) {
+      return linkedNotes;
+    }
+
+    return const RouteSemanticEngine()
+        .analyzePacenotes(
+          notes: linkedNotes,
+          routePoints: points,
+          warnings: const [],
+          speedLimits: const [],
+          maneuvers: maneuvers,
+          config: RouteAnalysisConfig(style: _style),
+        )
+        .pacenotes;
+  }
+
+  List<PaceNote> _splitLongCurveNotesWithValleys(
+    List<PaceNote> notes,
+    List<RoutePoint> points,
+  ) {
+    final result = <PaceNote>[];
+    for (final note in notes) {
+      if ((note.type != PaceNoteType.left && note.type != PaceNoteType.right) ||
+          (note.endDistance ?? note.distanceFromStart) -
+                  (note.startDistance ?? note.distanceFromStart) <
+              85.0) {
+        result.add(note);
+        continue;
+      }
+      final split = _findStableHeadingValley(
+        points,
+        note.startDistance ?? note.distanceFromStart,
+        note.endDistance ?? note.distanceFromStart,
+      );
+      if (split == null) {
+        result.add(note);
+        continue;
+      }
+      final (gapStart, gapEnd) = split;
+      final firstLength =
+          points[gapStart].distanceFromStart -
+          (note.startDistance ?? note.distanceFromStart);
+      final secondLength =
+          (note.endDistance ?? note.distanceFromStart) -
+          points[gapEnd].distanceFromStart;
+      if (firstLength < 15.0 || secondLength < 15.0) {
+        result.add(note);
+        continue;
+      }
+      result
+        ..add(
+          note.copyWith(
+            id: '${note.id}-a',
+            endDistance: points[gapStart].distanceFromStart,
+            tightens: false,
+            opens: false,
+            isLong: firstLength > 100.0,
+            isShort: firstLength < 35.0,
+          ),
+        )
+        ..add(
+          note.copyWith(
+            id: '${note.id}-b',
+            distanceFromStart: points[gapEnd].distanceFromStart,
+            startDistance: points[gapEnd].distanceFromStart,
+            tightens: false,
+            opens: false,
+            isLong: secondLength > 100.0,
+            isShort: secondLength < 35.0,
+          ),
+        );
+    }
+    return result;
+  }
+
+  (int, int)? _findStableHeadingValley(
+    List<RoutePoint> points,
+    double startDistance,
+    double endDistance,
+  ) {
+    final start = _indexNearDistance(points, startDistance);
+    final end = _indexNearDistance(points, endDistance);
+    int? bestStart;
+    int? bestEnd;
+    var bestLength = 0.0;
+    int? runStart;
+    for (var i = start + 2; i <= end - 2; i++) {
+      if (_stepHeadingDeltaAbs(points, i) <= 0.9) {
+        runStart ??= i;
+      } else if (runStart != null) {
+        final runEnd = i - 1;
+        final length =
+            points[runEnd].distanceFromStart -
+            points[runStart].distanceFromStart;
+        if (length > bestLength) {
+          bestLength = length;
+          bestStart = runStart;
+          bestEnd = runEnd;
+        }
+        runStart = null;
+      }
+    }
+    if (runStart != null) {
+      final runEnd = end - 2;
+      final length =
+          points[runEnd].distanceFromStart - points[runStart].distanceFromStart;
+      if (length > bestLength) {
+        bestLength = length;
+        bestStart = runStart;
+        bestEnd = runEnd;
+      }
+    }
+    if (bestStart == null || bestEnd == null || bestLength < 8.0) {
+      return null;
+    }
+    final beforeHeading = _calculateTotalHeadingChange(
+      points,
+      start,
+      bestStart,
+    ).abs();
+    final afterHeading = _calculateTotalHeadingChange(
+      points,
+      bestEnd,
+      end,
+    ).abs();
+    if (beforeHeading < 8.0 || afterHeading < 8.0) {
+      return null;
+    }
+    return (bestStart, bestEnd);
   }
 
   List<PaceNote> refinePacenotesWithRoadContext({
@@ -625,6 +697,125 @@ class PacenoteGenerator {
     return diff1 < diff2 ? low : high;
   }
 
+  List<MultiScaleCurvatureSample> _buildMultiScaleCurvatureSamples(
+    List<RoutePoint> points,
+    List<double> smoothedHeadings,
+  ) {
+    return [
+      for (var i = 0; i < points.length; i++)
+        _curvatureSampleAt(points, smoothedHeadings, i),
+    ];
+  }
+
+  MultiScaleCurvatureSample _curvatureSampleAt(
+    List<RoutePoint> points,
+    List<double> smoothedHeadings,
+    int index,
+  ) {
+    final local = _headingDeltaAndSpan(points, smoothedHeadings, index, 12.0);
+    final medium = _headingDeltaAndSpan(points, smoothedHeadings, index, 35.0);
+    final broad = _headingDeltaAndSpan(points, smoothedHeadings, index, 85.0);
+    return MultiScaleCurvatureSample(
+      distanceFromStart: points[index].distanceFromStart,
+      localCurvature: _signedCurvature(local.deltaDegrees, local.spanMeters),
+      mediumCurvature: _signedCurvature(medium.deltaDegrees, medium.spanMeters),
+      broadCurvature: _signedCurvature(broad.deltaDegrees, broad.spanMeters),
+      localHeadingDelta: local.deltaDegrees,
+      mediumHeadingDelta: medium.deltaDegrees,
+      broadHeadingDelta: broad.deltaDegrees,
+    );
+  }
+
+  _HeadingWindow _headingDeltaAndSpan(
+    List<RoutePoint> points,
+    List<double> headings,
+    int index,
+    double halfWindowMeters,
+  ) {
+    final before = _indexNearDistance(
+      points,
+      points[index].distanceFromStart - halfWindowMeters,
+    );
+    final after = _indexNearDistance(
+      points,
+      points[index].distanceFromStart + halfWindowMeters,
+    );
+    final span =
+        points[after].distanceFromStart - points[before].distanceFromStart;
+    return _HeadingWindow(
+      deltaDegrees: normalizeAngleDeltaDegrees(
+        headings[before],
+        headings[after],
+      ),
+      spanMeters: math.max(1.0, span),
+    );
+  }
+
+  double _signedCurvature(double deltaDegrees, double spanMeters) {
+    return (deltaDegrees * math.pi / 180.0) / math.max(1.0, spanMeters);
+  }
+
+  List<_RouteSegment> _buildRawSegmentsFromCurvature(
+    List<RoutePoint> points,
+    List<MultiScaleCurvatureSample> samples,
+  ) {
+    if (points.isEmpty || samples.isEmpty) {
+      return const [];
+    }
+
+    final directions = samples.map(_directionForSample).toList();
+    final segments = <_RouteSegment>[];
+    var currentType = directions.first;
+    var startIdx = 0;
+    for (var i = 1; i < directions.length; i++) {
+      if (directions[i] != currentType) {
+        segments.add(
+          _RouteSegment(
+            type: currentType,
+            startIndex: startIdx,
+            endIndex: i - 1,
+            startDistance: points[startIdx].distanceFromStart,
+            endDistance: points[i - 1].distanceFromStart,
+          ),
+        );
+        currentType = directions[i];
+        startIdx = i;
+      }
+    }
+    segments.add(
+      _RouteSegment(
+        type: currentType,
+        startIndex: startIdx,
+        endIndex: points.length - 1,
+        startDistance: points[startIdx].distanceFromStart,
+        endDistance: points.last.distanceFromStart,
+      ),
+    );
+    return segments;
+  }
+
+  String _directionForSample(MultiScaleCurvatureSample sample) {
+    final curveRadiusThreshold = switch (_style) {
+      PacenoteStyle.calm => 140.0,
+      PacenoteStyle.balanced => 180.0,
+      PacenoteStyle.rally => 220.0,
+    };
+    final minCurvature = 1.0 / curveRadiusThreshold;
+    final localSignal = sample.localCurvature.abs();
+    final dominant =
+        localSignal >= minCurvature * 0.72 &&
+            sample.localHeadingDelta.abs() >= 3.5
+        ? sample.localCurvature
+        : sample.mediumCurvature;
+
+    if (dominant.abs() < minCurvature ||
+        (sample.localHeadingDelta.abs() < 3.0 &&
+            sample.mediumHeadingDelta.abs() < 7.0)) {
+      return 'S';
+    }
+    return dominant < 0 ? 'L' : 'R';
+  }
+
   List<_RouteSegment> _refineSegments(
     List<_RouteSegment> input,
     List<RoutePoint> points,
@@ -632,6 +823,7 @@ class PacenoteGenerator {
     var list = List<_RouteSegment>.from(input);
 
     list = _mergeConsecutiveSameType(list);
+    list = _splitSegmentsAtInternalValleys(list, points);
 
     for (var i = 0; i < list.length; i++) {
       if ((list[i].type == 'L' || list[i].type == 'R') &&
@@ -640,6 +832,7 @@ class PacenoteGenerator {
       }
     }
     list = _mergeConsecutiveSameType(list);
+    list = _splitSegmentsAtInternalValleys(list, points);
 
     bool changed = true;
     while (changed) {
@@ -649,8 +842,15 @@ class PacenoteGenerator {
         if (i < list.length - 2 &&
             list[i].type != 'S' &&
             list[i + 1].type == 'S' &&
+            !list[i + 1].preserveBoundary &&
             list[i + 1].length < 35.0 &&
-            list[i + 2].type == list[i].type) {
+            list[i + 2].type == list[i].type &&
+            _shouldMergeSameDirectionAcrossGap(
+              points,
+              list[i],
+              list[i + 1],
+              list[i + 2],
+            )) {
           final newSeg = _RouteSegment(
             type: list[i].type,
             startIndex: list[i].startIndex,
@@ -735,6 +935,237 @@ class PacenoteGenerator {
     return list;
   }
 
+  List<_RouteSegment> _splitSegmentsAtInternalValleys(
+    List<_RouteSegment> input,
+    List<RoutePoint> points,
+  ) {
+    final output = <_RouteSegment>[];
+    for (final segment in input) {
+      if (segment.type == 'S' || segment.length < 65.0) {
+        output.add(segment);
+        continue;
+      }
+      final split = _findInternalValleySplit(segment, points);
+      if (split == null) {
+        output.add(segment);
+        continue;
+      }
+      final (gapStart, gapEnd) = split;
+      output
+        ..add(
+          _RouteSegment(
+            type: segment.type,
+            startIndex: segment.startIndex,
+            endIndex: gapStart,
+            startDistance: segment.startDistance,
+            endDistance: points[gapStart].distanceFromStart,
+          ),
+        )
+        ..add(
+          _RouteSegment(
+            type: 'S',
+            startIndex: gapStart,
+            endIndex: gapEnd,
+            startDistance: points[gapStart].distanceFromStart,
+            endDistance: points[gapEnd].distanceFromStart,
+            preserveBoundary: true,
+          ),
+        )
+        ..add(
+          _RouteSegment(
+            type: segment.type,
+            startIndex: gapEnd,
+            endIndex: segment.endIndex,
+            startDistance: points[gapEnd].distanceFromStart,
+            endDistance: segment.endDistance,
+          ),
+        );
+    }
+    return output;
+  }
+
+  (int, int)? _findInternalValleySplit(
+    _RouteSegment segment,
+    List<RoutePoint> points,
+  ) {
+    final peak = _segmentPeakCurvature(points, segment);
+    if (peak <= 0.0001) {
+      return null;
+    }
+    final valleyLimit = math.max(peak * 0.28, 1.0 / 520.0);
+    int? bestStart;
+    int? bestEnd;
+    var bestLength = 0.0;
+    int? runStart;
+
+    for (var i = segment.startIndex + 2; i <= segment.endIndex - 2; i++) {
+      final local = _localAbsCurvature(points, i, 5.0);
+      final stabilizedHeading = _stepHeadingDeltaAbs(points, i) <= 0.9;
+      if (local <= valleyLimit || stabilizedHeading) {
+        runStart ??= i;
+      } else if (runStart != null) {
+        final runEnd = i - 1;
+        final length =
+            points[runEnd].distanceFromStart -
+            points[runStart].distanceFromStart;
+        if (length > bestLength) {
+          bestLength = length;
+          bestStart = runStart;
+          bestEnd = runEnd;
+        }
+        runStart = null;
+      }
+    }
+    if (runStart != null) {
+      final runEnd = segment.endIndex - 2;
+      final length =
+          points[runEnd].distanceFromStart - points[runStart].distanceFromStart;
+      if (length > bestLength) {
+        bestLength = length;
+        bestStart = runStart;
+        bestEnd = runEnd;
+      }
+    }
+    if (bestStart == null || bestEnd == null || bestLength < 8.0) {
+      return null;
+    }
+
+    final beforeHeading = _calculateTotalHeadingChange(
+      points,
+      segment.startIndex,
+      bestStart,
+    ).abs();
+    final afterHeading = _calculateTotalHeadingChange(
+      points,
+      bestEnd,
+      segment.endIndex,
+    ).abs();
+    if (beforeHeading < 8.0 || afterHeading < 8.0) {
+      return null;
+    }
+    return (bestStart, bestEnd);
+  }
+
+  bool _shouldMergeSameDirectionAcrossGap(
+    List<RoutePoint> points,
+    _RouteSegment first,
+    _RouteSegment gap,
+    _RouteSegment second,
+  ) {
+    if (gap.length < 8.0) {
+      return true;
+    }
+    final firstPeak = _segmentPeakCurvature(points, first);
+    final secondPeak = _segmentPeakCurvature(points, second);
+    final gapPeak = _segmentPeakCurvature(points, gap);
+    final neighbourPeak = math.min(firstPeak, secondPeak);
+    if (neighbourPeak <= 0.0001) {
+      return true;
+    }
+    final valleyRatio = gapPeak / neighbourPeak;
+    final severityDelta =
+        (_severityForRadius(
+                  _calculateRadiusInfo(
+                    points,
+                    first.startIndex,
+                    first.endIndex,
+                  ).minRadius,
+                ) -
+                _severityForRadius(
+                  _calculateRadiusInfo(
+                    points,
+                    second.startIndex,
+                    second.endIndex,
+                  ).minRadius,
+                ))
+            .abs();
+    final decision = CurveSplitDecision(
+      shouldSplit:
+          gap.length >= 8.0 && valleyRatio <= 0.28 || severityDelta >= 2,
+      confidence: (1.0 - valleyRatio).clamp(0.0, 1.0),
+      reason:
+          'valleyRatio=${valleyRatio.toStringAsFixed(2)}, gap=${gap.length.toStringAsFixed(1)}m',
+    );
+    return !decision.shouldSplit;
+  }
+
+  double _segmentPeakCurvature(List<RoutePoint> points, _RouteSegment segment) {
+    if (segment.endIndex <= segment.startIndex) {
+      return 0.0;
+    }
+    var peak = 0.0;
+    for (var i = segment.startIndex; i <= segment.endIndex; i++) {
+      final before = _indexNearDistance(
+        points,
+        points[i].distanceFromStart - 10.0,
+      );
+      final after = _indexNearDistance(
+        points,
+        points[i].distanceFromStart + 10.0,
+      );
+      final span =
+          points[after].distanceFromStart - points[before].distanceFromStart;
+      if (span <= 0) {
+        continue;
+      }
+      final delta = normalizeAngleDeltaDegrees(
+        points[before].heading,
+        points[after].heading,
+      );
+      peak = math.max(peak, (delta * math.pi / 180.0 / span).abs());
+    }
+    return peak;
+  }
+
+  double _localAbsCurvature(
+    List<RoutePoint> points,
+    int index,
+    double halfWindowMeters,
+  ) {
+    final before = _indexNearDistance(
+      points,
+      points[index].distanceFromStart - halfWindowMeters,
+    );
+    final after = _indexNearDistance(
+      points,
+      points[index].distanceFromStart + halfWindowMeters,
+    );
+    final span =
+        points[after].distanceFromStart - points[before].distanceFromStart;
+    if (span <= 0) {
+      return 0.0;
+    }
+    final delta = normalizeAngleDeltaDegrees(
+      points[before].heading,
+      points[after].heading,
+    );
+    return (delta * math.pi / 180.0 / span).abs();
+  }
+
+  double _stepHeadingDeltaAbs(List<RoutePoint> points, int index) {
+    if (index <= 0 || index >= points.length - 1) {
+      return double.infinity;
+    }
+    final before = normalizeAngleDeltaDegrees(
+      points[index - 1].heading,
+      points[index].heading,
+    ).abs();
+    final after = normalizeAngleDeltaDegrees(
+      points[index].heading,
+      points[index + 1].heading,
+    ).abs();
+    return math.max(before, after);
+  }
+
+  int _severityForRadius(double radius) {
+    if (radius < 22.0) return 1;
+    if (radius < 38.0) return 2;
+    if (radius < 58.0) return 3;
+    if (radius < 85.0) return 4;
+    if (radius < 125.0) return 5;
+    return 6;
+  }
+
   List<_RouteSegment> _mergeConsecutiveSameType(List<_RouteSegment> input) {
     if (input.isEmpty) return const [];
     final merged = <_RouteSegment>[];
@@ -744,6 +1175,8 @@ class PacenoteGenerator {
       if (next.type == current.type) {
         current.endIndex = next.endIndex;
         current.endDistance = next.endDistance;
+        current.preserveBoundary =
+            current.preserveBoundary || next.preserveBoundary;
       } else {
         merged.add(current);
         current = next;
@@ -881,6 +1314,7 @@ class _RouteSegment {
   int endIndex;
   double startDistance;
   double endDistance;
+  bool preserveBoundary;
 
   _RouteSegment({
     required this.type,
@@ -888,6 +1322,7 @@ class _RouteSegment {
     required this.endIndex,
     required this.startDistance,
     required this.endDistance,
+    this.preserveBoundary = false,
   });
 
   double get length => endDistance - startDistance;
@@ -897,6 +1332,77 @@ class _RadiusInfo {
   final double minRadius;
   final double avgRadius;
   const _RadiusInfo({required this.minRadius, required this.avgRadius});
+}
+
+class MultiScaleCurvatureSample {
+  const MultiScaleCurvatureSample({
+    required this.distanceFromStart,
+    required this.localCurvature,
+    required this.mediumCurvature,
+    required this.broadCurvature,
+    required this.localHeadingDelta,
+    required this.mediumHeadingDelta,
+    required this.broadHeadingDelta,
+  });
+
+  final double distanceFromStart;
+  final double localCurvature;
+  final double mediumCurvature;
+  final double broadCurvature;
+  final double localHeadingDelta;
+  final double mediumHeadingDelta;
+  final double broadHeadingDelta;
+}
+
+class CurveApex {
+  const CurveApex({
+    required this.distanceFromStart,
+    required this.signedCurvature,
+    required this.prominence,
+    required this.widthMeters,
+    required this.direction,
+  });
+
+  final double distanceFromStart;
+  final double signedCurvature;
+  final double prominence;
+  final double widthMeters;
+  final int direction;
+}
+
+class CurveSplitDecision {
+  const CurveSplitDecision({
+    required this.shouldSplit,
+    required this.confidence,
+    required this.reason,
+  });
+
+  final bool shouldSplit;
+  final double confidence;
+  final String reason;
+}
+
+class CurveSequence {
+  const CurveSequence({
+    required this.sectors,
+    required this.startDistance,
+    required this.endDistance,
+    required this.isLinked,
+    required this.confidence,
+  });
+
+  final List<RoadSector> sectors;
+  final double startDistance;
+  final double endDistance;
+  final bool isLinked;
+  final double confidence;
+}
+
+class _HeadingWindow {
+  const _HeadingWindow({required this.deltaDegrees, required this.spanMeters});
+
+  final double deltaDegrees;
+  final double spanMeters;
 }
 
 // RoadSector and RoadSectorType are now imported from matched_route.dart

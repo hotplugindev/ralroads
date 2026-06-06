@@ -419,6 +419,20 @@ class RouteSemanticEngine {
             suppressedNoteIds.add(other.id);
           }
         }
+      } else if (_isJunctionClassification(candidate.classification)) {
+        final note = _nearestConvertibleNote(
+          notes,
+          candidate.distanceFromStart,
+          config.junctionWindowMeters,
+          suppressedNoteIds,
+        );
+        if (note != null) {
+          replacements[note.id] = _junctionNote(candidate, note);
+          suppressedNoteIds.add(note.id);
+          convertedNotes++;
+        } else if (candidate.confidence >= config.minimumSpecificConfidence) {
+          inserted.add(_insertedManeuverNote(candidate, routePoints));
+        }
       }
     }
 
@@ -906,6 +920,10 @@ class RouteSemanticEngine {
     PaceNote? fallback,
   }) {
     final point = _pointNearDistance(routePoints, candidate.distanceFromStart);
+    final exitNumber = candidate.topologyContext['roundaboutExit'];
+    final text = exitNumber is int
+        ? 'Roundabout, ${_ordinal(exitNumber)} exit'
+        : 'Roundabout ahead';
     return PaceNote(
       id:
           fallback?.id ??
@@ -916,7 +934,7 @@ class RouteSemanticEngine {
       direction: 'roundabout',
       severity: 4,
       type: PaceNoteType.roundabout,
-      text: 'Roundabout ahead',
+      text: text,
       recommendedSpeedKmh: fallback?.recommendedSpeedKmh ?? 30,
       isShort: false,
       isLong: false,
@@ -927,6 +945,45 @@ class RouteSemanticEngine {
     ).copyWith(
       distanceFromStart:
           point?.distanceFromStart ?? candidate.distanceFromStart,
+    );
+  }
+
+  PaceNote _insertedManeuverNote(
+    SemanticCandidate candidate,
+    List<RoutePoint> routePoints,
+  ) {
+    final point = _pointNearDistance(routePoints, candidate.distanceFromStart);
+    final direction = candidate.direction ?? 'straight';
+    final isFork =
+        candidate.classification == SemanticClassification.forkLeft ||
+        candidate.classification == SemanticClassification.forkRight;
+    final isKeepLeft =
+        candidate.classification == SemanticClassification.forkLeft;
+    final isKeepRight =
+        candidate.classification == SemanticClassification.forkRight;
+    final type = isKeepLeft
+        ? PaceNoteType.keepLeft
+        : isKeepRight
+        ? PaceNoteType.keepRight
+        : PaceNoteType.junction;
+    final text = isFork
+        ? (direction == 'left' ? 'Keep left' : 'Keep right')
+        : candidate.classification == SemanticClassification.uTurn
+        ? 'U-turn'
+        : direction == 'straight'
+        ? 'Continue through junction'
+        : 'At junction, $direction';
+    return PaceNote(
+      id: 'note-maneuver-${candidate.distanceFromStart.round()}',
+      distanceFromStart:
+          point?.distanceFromStart ?? candidate.distanceFromStart,
+      startDistance: candidate.startDistance,
+      endDistance: candidate.endDistance,
+      direction: direction,
+      severity: 3,
+      type: type,
+      text: text,
+      recommendedSpeedKmh: isFork ? 40 : 30,
     );
   }
 
@@ -1195,6 +1252,19 @@ class RouteSemanticEngine {
     };
   }
 
+  String _ordinal(int value) {
+    final mod100 = value % 100;
+    if (mod100 >= 11 && mod100 <= 13) {
+      return '${value}th';
+    }
+    return switch (value % 10) {
+      1 => '${value}st',
+      2 => '${value}nd',
+      3 => '${value}rd',
+      _ => '${value}th',
+    };
+  }
+
   double? _tagDouble(Map<String, dynamic> tags, String key) {
     final value = tags[key];
     if (value is num) return value.toDouble();
@@ -1233,7 +1303,7 @@ class RouteSemanticEngine {
         ? (0.48 + math.min(0.34, headingChange / 240.0)).clamp(0.0, 0.86)
         : 0.0;
     final hairpinScore = _hasHairpinEvidence(note, routePoints)
-        ? 0.88
+        ? 0.94
         : (_isHairpin(note) ? 0.42 : 0.0);
 
     var junctionScore = 0.0;

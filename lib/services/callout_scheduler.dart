@@ -8,13 +8,7 @@ import '../services/settings_service.dart';
 import 'callout_speech_service.dart';
 import 'route_event_scorer.dart';
 
-enum CalloutPriority {
-  critical,
-  high,
-  normal,
-  low,
-  informational,
-}
+enum CalloutPriority { critical, high, normal, low, informational }
 
 class ScheduledCallout {
   final String id;
@@ -59,7 +53,8 @@ class ScheduledCallout {
       priority: priority ?? this.priority,
       routeDistance: routeDistance ?? this.routeDistance,
       expirationDistance: expirationDistance ?? this.expirationDistance,
-      estimatedSpeakingDuration: estimatedSpeakingDuration ?? this.estimatedSpeakingDuration,
+      estimatedSpeakingDuration:
+          estimatedSpeakingDuration ?? this.estimatedSpeakingDuration,
       canMerge: canMerge ?? this.canMerge,
       canInterrupt: canInterrupt ?? this.canInterrupt,
       source: source ?? this.source,
@@ -98,7 +93,11 @@ class CalloutModeConfig {
         );
       case PacenoteStyle.balanced:
         return const CalloutModeConfig(
-          allowedPriorities: {CalloutPriority.critical, CalloutPriority.high, CalloutPriority.normal},
+          allowedPriorities: {
+            CalloutPriority.critical,
+            CalloutPriority.high,
+            CalloutPriority.normal,
+          },
           allowBridges: false,
           allowTunnels: true,
           allowSurfaces: true,
@@ -112,7 +111,7 @@ class CalloutModeConfig {
             CalloutPriority.high,
             CalloutPriority.normal,
             CalloutPriority.low,
-            CalloutPriority.informational
+            CalloutPriority.informational,
           },
           allowBridges: true,
           allowTunnels: true,
@@ -150,10 +149,7 @@ class CalloutScheduler extends ChangeNotifier {
   double _currentSpeedMps = 0.0;
   double get currentSpeedMps => _currentSpeedMps;
 
-  CalloutScheduler({
-    required this.speechService,
-    required this.settings,
-  });
+  CalloutScheduler({required this.speechService, required this.settings});
 
   void loadRouteData({
     required List<PaceNote> notes,
@@ -202,23 +198,52 @@ class CalloutScheduler extends ChangeNotifier {
 
   // Calculate dynamic lead time in seconds
   double _calculateLeadTime(ScheduledCallout callout) {
-    double baseLead = 1.5;
+    double baseLead = 4.0;
     switch (callout.priority) {
       case CalloutPriority.critical:
-        baseLead = callout.estimatedSpeakingDuration + 3.0;
+        baseLead = callout.estimatedSpeakingDuration + 7.0;
         break;
       case CalloutPriority.high:
-        baseLead = callout.estimatedSpeakingDuration + 2.0;
+        baseLead = callout.estimatedSpeakingDuration + 6.0;
         break;
       case CalloutPriority.normal:
-        baseLead = callout.estimatedSpeakingDuration + 1.5;
+        baseLead = callout.estimatedSpeakingDuration + 5.0;
         break;
       case CalloutPriority.low:
       case CalloutPriority.informational:
-        baseLead = callout.estimatedSpeakingDuration + 0.8;
+        baseLead = callout.estimatedSpeakingDuration + 3.5;
         break;
     }
     return baseLead;
+  }
+
+  double _calculateTriggerDistance(ScheduledCallout callout, double speedMps) {
+    final effectiveSpeed = math.max(speedMps, 8.0);
+    final speechAndReactionDistance =
+        effectiveSpeed * _calculateLeadTime(callout);
+    final baseDistance = switch (callout.priority) {
+      CalloutPriority.critical => 130.0,
+      CalloutPriority.high => 110.0,
+      CalloutPriority.normal => 85.0,
+      CalloutPriority.low => 65.0,
+      CalloutPriority.informational => 55.0,
+    };
+    final source = callout.source;
+    var semanticBoost = 0.0;
+    if (source is PaceNote) {
+      if (source.type == PaceNoteType.roundabout ||
+          source.type == PaceNoteType.junction ||
+          source.type == PaceNoteType.hairpinLeft ||
+          source.type == PaceNoteType.hairpinRight ||
+          source.type == PaceNoteType.hairpin) {
+        semanticBoost = 25.0;
+      } else if (source.severity <= 2) {
+        semanticBoost = 15.0;
+      }
+    }
+    return math
+        .max(baseDistance + semanticBoost, speechAndReactionDistance)
+        .clamp(45.0, 320.0);
   }
 
   double _estimateSpeechDuration(String text) {
@@ -258,7 +283,9 @@ class CalloutScheduler extends ChangeNotifier {
       if (calculatedPriority == 3 || scoreResult.finalScore < 0.4) {
         return null;
       }
-      if (note.type == PaceNoteType.left || note.type == PaceNoteType.right || note.type == PaceNoteType.corner) {
+      if (note.type == PaceNoteType.left ||
+          note.type == PaceNoteType.right ||
+          note.type == PaceNoteType.corner) {
         if (note.severity >= 5) {
           return null;
         }
@@ -292,8 +319,12 @@ class CalloutScheduler extends ChangeNotifier {
       routeDistance: note.distanceFromStart,
       expirationDistance: note.distanceFromStart + 15.0,
       estimatedSpeakingDuration: duration,
-      canMerge: note.type != PaceNoteType.roundabout && note.type != PaceNoteType.junction,
-      canInterrupt: priority == CalloutPriority.critical || priority == CalloutPriority.high,
+      canMerge:
+          note.type != PaceNoteType.roundabout &&
+          note.type != PaceNoteType.junction,
+      canInterrupt:
+          priority == CalloutPriority.critical ||
+          priority == CalloutPriority.high,
       source: note,
       compositeScore: scoreResult.finalScore,
     );
@@ -305,7 +336,9 @@ class CalloutScheduler extends ChangeNotifier {
     final modeStr = settings.pacenoteStyle.name;
 
     final speedLimit = _getSpeedLimitAt(warning.distanceFromStart);
-    final straightBefore = _calculatePrecedingStraight(warning.distanceFromStart);
+    final straightBefore = _calculatePrecedingStraight(
+      warning.distanceFromStart,
+    );
 
     final scoreResult = RouteEventScorer.scoreRoadWarning(
       warning,
@@ -342,9 +375,16 @@ class CalloutScheduler extends ChangeNotifier {
       priority = CalloutPriority.low;
     }
 
-    if (warning.type == RoadWarningType.tunnel && !config.allowTunnels) return null;
-    if (warning.type == RoadWarningType.bridge && !config.allowBridges) return null;
-    if (warning.type == RoadWarningType.surfaceChange && !config.allowSurfaces) return null;
+    if (warning.type == RoadWarningType.tunnel && !config.allowTunnels) {
+      return null;
+    }
+    if (warning.type == RoadWarningType.bridge && !config.allowBridges) {
+      return null;
+    }
+    if (warning.type == RoadWarningType.surfaceChange &&
+        !config.allowSurfaces) {
+      return null;
+    }
 
     if (!config.allowedPriorities.contains(priority)) {
       return null;
@@ -359,8 +399,12 @@ class CalloutScheduler extends ChangeNotifier {
       routeDistance: warning.distanceFromStart,
       expirationDistance: warning.distanceFromStart + 10.0,
       estimatedSpeakingDuration: duration,
-      canMerge: warning.type != RoadWarningType.stopSign && warning.type != RoadWarningType.giveWay,
-      canInterrupt: priority == CalloutPriority.critical || priority == CalloutPriority.high,
+      canMerge:
+          warning.type != RoadWarningType.stopSign &&
+          warning.type != RoadWarningType.giveWay,
+      canInterrupt:
+          priority == CalloutPriority.critical ||
+          priority == CalloutPriority.high,
       source: warning,
       compositeScore: scoreResult.finalScore,
     );
@@ -380,7 +424,8 @@ class CalloutScheduler extends ChangeNotifier {
       return expired;
     });
 
-    if (_activeCallout != null && routeDistance > _activeCallout!.expirationDistance) {
+    if (_activeCallout != null &&
+        routeDistance > _activeCallout!.expirationDistance) {
       _expiredIds.add(_activeCallout!.id);
       _activeCallout = null;
     }
@@ -390,7 +435,9 @@ class CalloutScheduler extends ChangeNotifier {
 
     // Process Pacenotes
     for (final note in allNotes) {
-      if (_spokenIds.contains(note.id) || _expiredIds.contains(note.id)) continue;
+      if (_spokenIds.contains(note.id) || _expiredIds.contains(note.id)) {
+        continue;
+      }
 
       final mapped = _mapPaceNote(note);
       if (mapped == null) {
@@ -398,8 +445,10 @@ class CalloutScheduler extends ChangeNotifier {
         continue;
       }
 
-      final leadTime = _calculateLeadTime(mapped);
-      final triggerDistance = (speedMps * leadTime).clamp(35.0, scanHorizon);
+      final triggerDistance = math.min(
+        scanHorizon,
+        _calculateTriggerDistance(mapped, speedMps),
+      );
 
       if (routeDistance >= mapped.routeDistance - triggerDistance) {
         if (routeDistance <= mapped.routeDistance) {
@@ -412,7 +461,9 @@ class CalloutScheduler extends ChangeNotifier {
 
     // Process Warnings
     for (final warning in allWarnings) {
-      if (_spokenIds.contains(warning.id) || _expiredIds.contains(warning.id)) continue;
+      if (_spokenIds.contains(warning.id) || _expiredIds.contains(warning.id)) {
+        continue;
+      }
 
       final mapped = _mapWarning(warning);
       if (mapped == null) {
@@ -420,8 +471,10 @@ class CalloutScheduler extends ChangeNotifier {
         continue;
       }
 
-      final leadTime = _calculateLeadTime(mapped);
-      final triggerDistance = (speedMps * leadTime).clamp(35.0, scanHorizon);
+      final triggerDistance = math.min(
+        scanHorizon,
+        _calculateTriggerDistance(mapped, speedMps),
+      );
 
       if (routeDistance >= mapped.routeDistance - triggerDistance) {
         if (routeDistance <= mapped.routeDistance) {
@@ -461,7 +514,10 @@ class CalloutScheduler extends ChangeNotifier {
   // Prune lower composite scores when queue is crowded
   void _pruneQueueIfDense() {
     if (_queue.length < 2) return;
-    final totalSpeechDuration = _queue.fold<double>(0.0, (sum, item) => sum + item.estimatedSpeakingDuration);
+    final totalSpeechDuration = _queue.fold<double>(
+      0.0,
+      (sum, item) => sum + item.estimatedSpeakingDuration,
+    );
     final maxDist = _queue.map((q) => q.routeDistance).reduce(math.max);
     final distRemaining = maxDist - _currentRouteDistance;
     final speed = math.max(5.0, _currentSpeedMps);
@@ -471,7 +527,8 @@ class CalloutScheduler extends ChangeNotifier {
       final density = totalSpeechDuration / availableTime;
       if (density > 0.90) {
         _queue.removeWhere((item) {
-          if (item.priority == CalloutPriority.critical || item.compositeScore >= 0.7) {
+          if (item.priority == CalloutPriority.critical ||
+              item.compositeScore >= 0.7) {
             return false;
           }
           return item.compositeScore < 0.4;
@@ -490,7 +547,9 @@ class CalloutScheduler extends ChangeNotifier {
       final second = _queue[i + 1];
 
       final distDiff = (second.routeDistance - first.routeDistance).abs();
-      final timeDiff = _currentSpeedMps > 1.0 ? distDiff / _currentSpeedMps : 999.0;
+      final timeDiff = _currentSpeedMps > 1.0
+          ? distDiff / _currentSpeedMps
+          : 999.0;
 
       final isClose = distDiff <= 85.0 || timeDiff <= 3.5;
       final bothMergeable = first.canMerge && second.canMerge;
@@ -517,7 +576,9 @@ class CalloutScheduler extends ChangeNotifier {
           mergedText = '${first.text} into ${second.text}';
         }
 
-        final mergedPriority = first.priority.index < second.priority.index ? first.priority : second.priority;
+        final mergedPriority = first.priority.index < second.priority.index
+            ? first.priority
+            : second.priority;
         final mergedCallout = ScheduledCallout(
           id: '${first.id}+${second.id}',
           text: mergedText,
@@ -551,9 +612,13 @@ class CalloutScheduler extends ChangeNotifier {
     final nextCallout = _queue.first;
 
     if (speechService.isSpeaking && _activeCallout != null) {
-      final canInterrupt = nextCallout.priority.index < _activeCallout!.priority.index && nextCallout.canInterrupt;
+      final canInterrupt =
+          nextCallout.priority.index < _activeCallout!.priority.index &&
+          nextCallout.canInterrupt;
       if (canInterrupt) {
-        debugPrint('Interrupting active speech: "${_activeCallout!.text}" (priority ${_activeCallout!.priority}) with "${nextCallout.text}" (priority ${nextCallout.priority})');
+        debugPrint(
+          'Interrupting active speech: "${_activeCallout!.text}" (priority ${_activeCallout!.priority}) with "${nextCallout.text}" (priority ${nextCallout.priority})',
+        );
         speechService.stop();
         _queue.removeAt(0);
         _activeCallout = nextCallout;

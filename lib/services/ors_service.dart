@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:dio/dio.dart';
 
+import '../models/matched_route.dart';
 import '../models/route_point.dart';
 import '../utils/geo_math.dart';
 import 'pacenote_generator.dart';
@@ -23,11 +26,17 @@ class OrsService {
 
   final SettingsService _settings;
   final Dio _dio;
-  late final PacenoteGenerator _pacenoteGenerator = PacenoteGenerator(settings: _settings);
+  late final PacenoteGenerator _pacenoteGenerator = PacenoteGenerator(
+    settings: _settings,
+  );
+  List<RouteManeuver> _lastRouteManeuvers = const [];
+  List<RouteManeuver> get lastRouteManeuvers => _lastRouteManeuvers;
 
   bool get hasApiKey => _settings.hasEffectiveOrsApiKey();
 
-  Future<Map<String, dynamic>> buildRouteGeoJson(List<RoutePoint> points) async {
+  Future<Map<String, dynamic>> buildRouteGeoJson(
+    List<RoutePoint> points,
+  ) async {
     if (points.length < 2) {
       throw const OrsRequestException('Add at least a start and destination.');
     }
@@ -96,7 +105,134 @@ class OrsService {
       routePoints = simplifyPoints(routePoints, 1.5);
     }
 
-    return _pacenoteGenerator.enrichRoutePoints(routePoints);
+    final enriched = _pacenoteGenerator.enrichRoutePoints(routePoints);
+    _lastRouteManeuvers = _parseManeuversFromGeoJson(geoJson, enriched);
+    return enriched;
+  }
+
+  List<RouteManeuver> _parseManeuversFromGeoJson(
+    Map<String, dynamic> geoJson,
+    List<RoutePoint> routePoints,
+  ) {
+    final features = geoJson['features'] as List<dynamic>?;
+    if (features == null || features.isEmpty || routePoints.isEmpty) {
+      return const [];
+    }
+    final feature = features.first as Map<String, dynamic>;
+    final properties =
+        feature['properties'] as Map<String, dynamic>? ?? const {};
+    final segments = properties['segments'] as List<dynamic>? ?? const [];
+    final maneuvers = <RouteManeuver>[];
+    var cumulativeDistance = 0.0;
+
+    for (final segment in segments.whereType<Map<String, dynamic>>()) {
+      final steps = segment['steps'] as List<dynamic>? ?? const [];
+      for (final step in steps.whereType<Map<String, dynamic>>()) {
+        final type = (step['type'] as num?)?.toInt() ?? 14;
+        final distance = (step['distance'] as num?)?.toDouble() ?? 0.0;
+        final routeDistance = cumulativeDistance;
+        cumulativeDistance += distance;
+
+        final maneuverType = _mapOrsStepType(type);
+        if (maneuverType == null) {
+          continue;
+        }
+        final waypoint = step['way_points'] as List<dynamic>? ?? const [];
+        final fromIndex = waypoint.isNotEmpty
+            ? _edgeIndexNearWaypoint(waypoint.first, routePoints)
+            : _indexNearDistance(routePoints, routeDistance);
+        final toIndex = waypoint.length > 1
+            ? _edgeIndexNearWaypoint(waypoint[1], routePoints)
+            : _indexNearDistance(routePoints, routeDistance + distance);
+        maneuvers.add(
+          RouteManeuver(
+            id: 'ors-step-${maneuvers.length}-$type-${routeDistance.round()}',
+            type: maneuverType,
+            distanceFromStart: routeDistance,
+            fromEdgeIndex: fromIndex,
+            toEdgeIndex: toIndex,
+            instruction: step['instruction'] as String?,
+            roundaboutExit: _parseRoundaboutExit(
+              step['instruction'] as String?,
+            ),
+            confidence: _confidenceForOrsStep(type),
+          ),
+        );
+      }
+    }
+    return maneuvers;
+  }
+
+  RouteManeuverType? _mapOrsStepType(int type) {
+    return switch (type) {
+      0 => RouteManeuverType.turnLeft,
+      1 => RouteManeuverType.turnRight,
+      2 => RouteManeuverType.sharpLeft,
+      3 => RouteManeuverType.sharpRight,
+      4 => RouteManeuverType.slightLeft,
+      5 => RouteManeuverType.slightRight,
+      7 => RouteManeuverType.enterRoundabout,
+      8 => RouteManeuverType.exitRoundabout,
+      9 => RouteManeuverType.uTurn,
+      12 => RouteManeuverType.keepLeft,
+      13 => RouteManeuverType.keepRight,
+      _ => null,
+    };
+  }
+
+  double _confidenceForOrsStep(int type) {
+    if (type == 7 || type == 8) return 0.98;
+    if (type == 0 || type == 1 || type == 2 || type == 3 || type == 9) {
+      return 0.92;
+    }
+    return 0.82;
+  }
+
+  int? _parseRoundaboutExit(String? instruction) {
+    if (instruction == null) return null;
+    final numeric = RegExp(
+      r'(\d+)(st|nd|rd|th)? exit',
+      caseSensitive: false,
+    ).firstMatch(instruction);
+    if (numeric != null) {
+      return int.tryParse(numeric.group(1)!);
+    }
+    final lower = instruction.toLowerCase();
+    const words = {
+      'first': 1,
+      'second': 2,
+      'third': 3,
+      'fourth': 4,
+      'fifth': 5,
+      'sixth': 6,
+    };
+    for (final entry in words.entries) {
+      if (lower.contains('${entry.key} exit')) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
+  int _edgeIndexNearWaypoint(dynamic waypoint, List<RoutePoint> routePoints) {
+    if (waypoint is num) {
+      return waypoint.toInt().clamp(0, math.max(0, routePoints.length - 2));
+    }
+    return 0;
+  }
+
+  int _indexNearDistance(List<RoutePoint> points, double distance) {
+    if (points.isEmpty) return 0;
+    var best = 0;
+    var bestDelta = double.infinity;
+    for (var i = 0; i < points.length; i++) {
+      final delta = (points[i].distanceFromStart - distance).abs();
+      if (delta < bestDelta) {
+        best = i;
+        bestDelta = delta;
+      }
+    }
+    return best.clamp(0, math.max(0, points.length - 2));
   }
 
   Future<bool> validateApiKey(String key) async {

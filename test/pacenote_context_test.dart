@@ -389,6 +389,46 @@ void main() {
     );
   });
 
+  test('matched roundabout maneuver inserts roundabout note', () {
+    final maneuver = RouteManeuver(
+      id: 'm-rab',
+      type: RouteManeuverType.enterRoundabout,
+      distanceFromStart: 100,
+      fromEdgeIndex: 1,
+      toEdgeIndex: 2,
+      roundaboutExit: 2,
+      confidence: 0.98,
+    );
+
+    final analysis = const RouteSemanticEngine().analyzePacenotes(
+      notes: const [],
+      routePoints: const [
+        RoutePoint(lat: 45, lon: 7, distanceFromStart: 0, heading: 0),
+        RoutePoint(
+          lat: 45.0005,
+          lon: 7.0005,
+          distanceFromStart: 100,
+          heading: 90,
+        ),
+        RoutePoint(
+          lat: 45.001,
+          lon: 7.001,
+          distanceFromStart: 200,
+          heading: 180,
+        ),
+      ],
+      warnings: const [],
+      speedLimits: const [],
+      maneuvers: [maneuver],
+    );
+
+    expect(analysis.pacenotes.single.type, PaceNoteType.roundabout);
+    expect(
+      displayTextForPaceNote(analysis.pacenotes.single),
+      contains('2nd exit'),
+    );
+  });
+
   test('top HUD display helper falls back to canonical rally text', () {
     const note = PaceNote(
       id: 'n1',
@@ -404,6 +444,76 @@ void main() {
     expect(displayTextForPaceNote(note), 'right 3 tightens');
     expect(secondaryTextForPaceNote(note, 120), contains('In 120 m'));
     expect(secondaryTextForPaceNote(note, 120), contains('45 km/h'));
+  });
+
+  test('right left right winding section creates three curve notes', () {
+    final generator = PacenoteGenerator();
+    final points = _PathBuilder()
+        .arc(0, 52, 45)
+        .arc(52, -28, 45)
+        .arc(-28, 36, 45)
+        .build();
+
+    final notes = generator
+        .generate(points)
+        .where(
+          (note) =>
+              note.type == PaceNoteType.left || note.type == PaceNoteType.right,
+        )
+        .toList();
+
+    expect(notes.length, greaterThanOrEqualTo(3));
+    expect(notes[0].type, PaceNoteType.right);
+    expect(notes[1].type, PaceNoteType.left);
+    expect(notes[2].type, PaceNoteType.right);
+  });
+
+  test('two same-direction corners separated by easing stay separate', () {
+    final generator = PacenoteGenerator();
+    final points = _PathBuilder()
+        .arc(0, 45, 45)
+        .straight(45, 22)
+        .arc(45, 82, 45)
+        .build();
+
+    final rightNotes = generator
+        .generate(points)
+        .where((note) => note.type == PaceNoteType.right)
+        .toList();
+
+    expect(rightNotes.length, greaterThanOrEqualTo(2));
+  });
+
+  test('one continuous right curve remains one curve note', () {
+    final generator = PacenoteGenerator();
+    final points = _PathBuilder().arc(0, 85, 120).build();
+
+    final rightNotes = generator
+        .generate(points)
+        .where((note) => note.type == PaceNoteType.right)
+        .toList();
+
+    expect(rightNotes.length, 1);
+  });
+
+  test('tiny noisy sign flips do not create fake s curve', () {
+    final generator = PacenoteGenerator();
+    final points = _PathBuilder()
+        .arc(0, 3, 20)
+        .arc(3, -2, 20)
+        .arc(-2, 4, 20)
+        .straight(4, 80)
+        .build();
+
+    final curveNotes = generator
+        .generate(points)
+        .where(
+          (note) =>
+              note.type == PaceNoteType.left || note.type == PaceNoteType.right,
+        )
+        .toList();
+
+    expect(curveNotes, isEmpty);
   });
 
   test('straight pacenote is generated for long segments', () {
@@ -657,6 +767,29 @@ void main() {
 
     expect(scheduler.queue.length, lessThan(4));
   });
+
+  test('CalloutScheduler queues severe corner with enough lead distance', () {
+    final speechService = FakeCalloutSpeechService();
+    final scheduler = CalloutScheduler(
+      speechService: speechService,
+      settings: FakeSettingsService(PacenoteStyle.rally),
+    );
+
+    const note = PaceNote(
+      id: 'n-lead',
+      distanceFromStart: 125,
+      direction: 'right',
+      severity: 1,
+      type: PaceNoteType.right,
+      text: '',
+    );
+
+    speechService.speak('busy', () {});
+    scheduler.loadRouteData(notes: const [note], warnings: const []);
+    scheduler.update(0, 10);
+
+    expect(scheduler.queue.map((item) => item.id), contains('n-lead'));
+  });
 }
 
 class FakeSettingsService extends SettingsService {
@@ -665,6 +798,44 @@ class FakeSettingsService extends SettingsService {
 
   @override
   PacenoteStyle get pacenoteStyle => _style;
+}
+
+class _PathBuilder {
+  static const double _metersPerDegree = 111139.0;
+
+  double _lat = 45.0;
+  double _lon = 7.0;
+  final List<RoutePoint> _points = [const RoutePoint(lat: 45.0, lon: 7.0)];
+
+  _PathBuilder straight(double headingDegrees, double lengthMeters) {
+    return arc(headingDegrees, headingDegrees, lengthMeters);
+  }
+
+  _PathBuilder arc(
+    double startHeadingDegrees,
+    double endHeadingDegrees,
+    double lengthMeters,
+  ) {
+    final steps = math.max(2, (lengthMeters / 5.0).ceil());
+    for (var i = 1; i <= steps; i++) {
+      final t = i / steps;
+      final heading =
+          startHeadingDegrees + (endHeadingDegrees - startHeadingDegrees) * t;
+      _advance(heading, lengthMeters / steps);
+    }
+    return this;
+  }
+
+  List<RoutePoint> build() => List.unmodifiable(_points);
+
+  void _advance(double headingDegrees, double meters) {
+    final radians = headingDegrees * math.pi / 180.0;
+    final dNorth = math.cos(radians) * meters;
+    final dEast = math.sin(radians) * meters;
+    _lat += dNorth / _metersPerDegree;
+    _lon += dEast / (_metersPerDegree * math.cos(_lat * math.pi / 180.0));
+    _points.add(RoutePoint(lat: _lat, lon: _lon));
+  }
 }
 
 class FakeCalloutSpeechService implements CalloutSpeechService {

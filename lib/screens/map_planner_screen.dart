@@ -1147,7 +1147,11 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
       final routePoints = await _orsService.buildRoute(orderedPoints);
       final pacenotes = await compute(
         generatePacenotesBackground,
-        PacenoteBackgroundParams(routePoints, widget.settings.pacenoteStyle),
+        PacenoteBackgroundParams(
+          routePoints,
+          widget.settings.pacenoteStyle,
+          maneuvers: _orsService.lastRouteManeuvers,
+        ),
       );
       await _drawRoute(routePoints);
       await _fitCameraToRoute(routePoints);
