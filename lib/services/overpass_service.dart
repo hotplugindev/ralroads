@@ -231,13 +231,26 @@ out body geom;
     }
 
     final match = nearestRouteMatchForLatLon(lat, lon, routePoints);
-    if (match.distanceToRouteMeters > _pointMatchThresholdMeters) {
+    if (match.distanceToRouteMeters > 15.0) {
       return null;
     }
 
     final mapped = _nodeWarningText(tags);
     if (mapped == null) {
       return null;
+    }
+
+    // Check direction tag if present to reject warnings facing opposite direction
+    final directionTag = tags['direction'] ?? tags['camera:direction'];
+    if (directionTag != null) {
+      final routeHeading = routePoints[match.routeIndex].heading;
+      final parsedDirection = double.tryParse(directionTag.toString());
+      if (parsedDirection != null) {
+        final headingDiff = normalizeAngleDeltaDegrees(routeHeading, parsedDirection).abs();
+        if (headingDiff > 60.0) {
+          return null;
+        }
+      }
     }
 
     return RoadWarning(
@@ -278,6 +291,110 @@ out body geom;
     return null;
   }
 
+  WayMembershipResult _calculateWayRouteMembership(
+    List<_LatLon> geometry,
+    List<RoutePoint> routePoints, {
+    required bool isRoundabout,
+  }) {
+    if (geometry.isEmpty || routePoints.isEmpty) {
+      return WayMembershipResult(
+        isMember: false,
+        confidence: 0.0,
+        startDistance: 0.0,
+        endDistance: 0.0,
+        matchLat: 0.0,
+        matchLon: 0.0,
+      );
+    }
+
+    final matches = <_GeometryMatch>[];
+    for (final pt in geometry) {
+      final match = nearestRouteMatchForLatLon(pt.lat, pt.lon, routePoints);
+      matches.add(_GeometryMatch(lat: pt.lat, lon: pt.lon, match: match));
+    }
+
+    final closeLimit = isRoundabout ? 15.0 : 20.0;
+    final closeMatches = matches.where((m) => m.match.distanceToRouteMeters <= closeLimit).toList();
+
+    if (closeMatches.isEmpty) {
+      return WayMembershipResult(
+        isMember: false,
+        confidence: 0.0,
+        startDistance: 0.0,
+        endDistance: 0.0,
+        matchLat: 0.0,
+        matchLon: 0.0,
+      );
+    }
+
+    double minStart = double.infinity;
+    double maxEnd = -double.infinity;
+    double sumLat = 0.0;
+    double sumLon = 0.0;
+
+    for (final m in closeMatches) {
+      final dist = m.match.distanceFromStart;
+      if (dist < minStart) minStart = dist;
+      if (dist > maxEnd) maxEnd = dist;
+      sumLat += m.lat;
+      sumLon += m.lon;
+    }
+
+    final avgLat = sumLat / closeMatches.length;
+    final avgLon = sumLon / closeMatches.length;
+    final overlapLength = maxEnd - minStart;
+
+    if (isRoundabout) {
+      final isTraversed = closeMatches.length >= 2 && overlapLength >= 8.0;
+      return WayMembershipResult(
+        isMember: isTraversed,
+        confidence: isTraversed ? 1.0 : 0.0,
+        startDistance: minStart,
+        endDistance: maxEnd,
+        matchLat: avgLat,
+        matchLon: avgLon,
+      );
+    }
+
+    var alignedPointsCount = 0;
+    var totalPointsCheck = 0;
+
+    for (var i = 0; i < geometry.length - 1; i++) {
+      final p1 = geometry[i];
+      final p2 = geometry[i + 1];
+      final m1 = matches[i];
+      final m2 = matches[i + 1];
+
+      if (m1.match.distanceToRouteMeters > closeLimit || m2.match.distanceToRouteMeters > closeLimit) {
+        continue;
+      }
+
+      final wayBearing = bearingDegrees(p1.lat, p1.lon, p2.lat, p2.lon);
+      final routeBearing = routePoints[m1.match.routeIndex].heading;
+
+      final diff = normalizeAngleDeltaDegrees(wayBearing, routeBearing).abs();
+      final aligned = diff < 45.0 || (180.0 - diff).abs() < 45.0;
+
+      totalPointsCheck++;
+      if (aligned) {
+        alignedPointsCount++;
+      }
+    }
+
+    final alignmentRatio = totalPointsCheck > 0 ? alignedPointsCount / totalPointsCheck : 1.0;
+    final isMember = overlapLength >= 15.0 && alignmentRatio >= 0.6;
+    final confidence = isMember ? alignmentRatio : 0.0;
+
+    return WayMembershipResult(
+      isMember: isMember,
+      confidence: confidence,
+      startDistance: minStart,
+      endDistance: maxEnd,
+      matchLat: avgLat,
+      matchLon: avgLon,
+    );
+  }
+
   RoadWarning? _warningFromWay(
     Map<String, dynamic> element,
     Map<String, dynamic> tags,
@@ -290,20 +407,17 @@ out body geom;
     }
 
     final isRoundabout = mapped.$1 == RoadWarningType.roundabout;
-    final threshold = isRoundabout ? 12.0 : _wayMatchThresholdMeters;
-
-    final best = _bestGeometryMatch(geometry, routePoints);
-    if (best == null ||
-        best.match.distanceToRouteMeters > threshold) {
+    final membership = _calculateWayRouteMembership(geometry, routePoints, isRoundabout: isRoundabout);
+    if (!membership.isMember) {
       return null;
     }
 
     return RoadWarning(
       id: 'osm-way-${element['id']}-${mapped.$1.name}',
       type: mapped.$1,
-      lat: best.lat,
-      lon: best.lon,
-      distanceFromStart: best.match.distanceFromStart,
+      lat: membership.matchLat,
+      lon: membership.matchLon,
+      distanceFromStart: membership.startDistance,
       text: mapped.$2,
       tags: tags,
     );
@@ -336,32 +450,16 @@ out body geom;
       return null;
     }
 
-    final first = _bestGeometryMatch([geometry.first], routePoints);
-    final last = _bestGeometryMatch([geometry.last], routePoints);
-    if (first == null ||
-        last == null ||
-        first.match.distanceToRouteMeters > _wayMatchThresholdMeters ||
-        last.match.distanceToRouteMeters > _wayMatchThresholdMeters) {
-      return null;
-    }
-
-    final start = math.min(
-      first.match.distanceFromStart,
-      last.match.distanceFromStart,
-    );
-    final end = math.max(
-      first.match.distanceFromStart,
-      last.match.distanceFromStart,
-    );
-    if ((end - start).abs() < 15) {
+    final membership = _calculateWayRouteMembership(geometry, routePoints, isRoundabout: false);
+    if (!membership.isMember) {
       return null;
     }
 
     final rawMaxspeed = tags['maxspeed'].toString();
     return SpeedLimitSegment(
       id: 'osm-speed-${element['id']}',
-      startDistance: start,
-      endDistance: end,
+      startDistance: membership.startDistance,
+      endDistance: membership.endDistance,
       rawMaxspeed: rawMaxspeed,
       parsedKmh: parseMaxspeedKmh(rawMaxspeed),
       tags: tags,
@@ -495,4 +593,22 @@ class _GeometryMatch {
   final double lat;
   final double lon;
   final RouteWarningMatch match;
+}
+
+class WayMembershipResult {
+  final bool isMember;
+  final double confidence;
+  final double startDistance;
+  final double endDistance;
+  final double matchLat;
+  final double matchLon;
+
+  WayMembershipResult({
+    required this.isMember,
+    required this.confidence,
+    required this.startDistance,
+    required this.endDistance,
+    required this.matchLat,
+    required this.matchLon,
+  });
 }

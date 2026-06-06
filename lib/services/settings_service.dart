@@ -101,6 +101,16 @@ class SettingsService {
   Future<void> setUseCleanMap(bool value) =>
       _setBool('use_clean_map', value);
 
+  bool get sensorAssistedHeading => _getBool('sensor_assisted_heading', true);
+
+  Future<void> setSensorAssistedHeading(bool value) =>
+      _setBool('sensor_assisted_heading', value);
+
+  bool get smoothMarkerMovement => _getBool('smooth_marker_movement', true);
+
+  Future<void> setSmoothMarkerMovement(bool value) =>
+      _setBool('smooth_marker_movement', value);
+
   Future<void> setShowSpeedLimits(bool value) =>
       _setBool(_showSpeedLimitsKey, value);
 

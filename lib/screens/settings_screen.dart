@@ -476,6 +476,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     () => widget.settings.setUseCleanMap(value),
                   ),
                 ),
+                _buildDivider(theme),
+                _buildSwitchRow(
+                  context,
+                  icon: Icons.sensors,
+                  title: 'Sensor-assisted heading',
+                  subtitle: 'Use gyro and compass to stabilize heading',
+                  value: widget.settings.sensorAssistedHeading,
+                  onChanged: (value) => _setWarningSetting(
+                    () => widget.settings.setSensorAssistedHeading(value),
+                  ),
+                ),
+                _buildDivider(theme),
+                _buildSwitchRow(
+                  context,
+                  icon: Icons.blur_on, // Or standard icon like Icons.blur_on
+                  title: 'Smooth marker movement',
+                  subtitle: 'Interpolate marker position between GPS updates',
+                  value: widget.settings.smoothMarkerMovement,
+                  onChanged: (value) => _setWarningSetting(
+                    () => widget.settings.setSmoothMarkerMovement(value),
+                  ),
+                ),
               ],
             ),
           ),

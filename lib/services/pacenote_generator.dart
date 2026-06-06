@@ -106,18 +106,38 @@ class PacenoteGenerator {
       return const [];
     }
 
-    final pointTypes = <String>[];
+    final pointDirections = <String>[];
+    final pointRadii = <double>[];
+
+    final smoothedHeadings = <double>[];
+    for (var i = 0; i < points.length; i++) {
+      var sumSin = 0.0;
+      var sumCos = 0.0;
+      const window = 3;
+      for (var j = i - window; j <= i + window; j++) {
+        if (j >= 0 && j < points.length) {
+          final headingRad = points[j].heading * math.pi / 180.0;
+          sumSin += math.sin(headingRad);
+          sumCos += math.cos(headingRad);
+        }
+      }
+      final avgRad = math.atan2(sumSin, sumCos);
+      smoothedHeadings.add((avgRad * 180.0 / math.pi + 360.0) % 360.0);
+    }
+
     for (var i = 0; i < points.length; i++) {
       final beforeIdx = _indexNearDistance(points, points[i].distanceFromStart - 15.0);
       final afterIdx = _indexNearDistance(points, points[i].distanceFromStart + 15.0);
-      final delta = normalizeAngleDeltaDegrees(points[beforeIdx].heading, points[afterIdx].heading);
+
+      final delta = normalizeAngleDeltaDegrees(smoothedHeadings[beforeIdx], smoothedHeadings[afterIdx]);
       final distDiff = points[afterIdx].distanceFromStart - points[beforeIdx].distanceFromStart;
-      
+
       double r = 9999.0;
       if (distDiff > 0) {
         final thetaRad = (delta.abs() * math.pi) / 180.0;
         r = thetaRad > 0.0001 ? distDiff / thetaRad : 9999.0;
       }
+      pointRadii.add(r);
 
       final curveRadiusThreshold = switch (_style) {
         PacenoteStyle.calm => 140.0,
@@ -126,18 +146,18 @@ class PacenoteGenerator {
       };
 
       if (r < curveRadiusThreshold) {
-        pointTypes.add(delta < 0 ? 'L' : 'R');
+        pointDirections.add(delta < 0 ? 'L' : 'R');
       } else {
-        pointTypes.add('S');
+        pointDirections.add('S');
       }
     }
 
-    final rawSegments = <_RouteSegment>[];
+    var rawSegments = <_RouteSegment>[];
     if (points.isNotEmpty) {
-      var currentType = pointTypes[0];
+      var currentType = pointDirections[0];
       var startIdx = 0;
       for (var i = 1; i < points.length; i++) {
-        if (pointTypes[i] != currentType) {
+        if (pointDirections[i] != currentType) {
           rawSegments.add(_RouteSegment(
             type: currentType,
             startIndex: startIdx,
@@ -145,7 +165,7 @@ class PacenoteGenerator {
             startDistance: points[startIdx].distanceFromStart,
             endDistance: points[i - 1].distanceFromStart,
           ));
-          currentType = pointTypes[i];
+          currentType = pointDirections[i];
           startIdx = i;
         }
       }
@@ -158,20 +178,42 @@ class PacenoteGenerator {
       ));
     }
 
-    final segments = _refineSegments(rawSegments, points);
+    var refinedSegments = _refineSegments(rawSegments, points);
+
+    final sectors = <RoadSector>[];
+    for (final seg in refinedSegments) {
+      final isStraight = seg.type == 'S';
+      final radiusInfo = _calculateRadiusInfo(points, seg.startIndex, seg.endIndex);
+      final totalHeadingChange = _calculateTotalHeadingChange(points, seg.startIndex, seg.endIndex);
+
+      final type = isStraight
+          ? RoadSectorType.straight
+          : (seg.type == 'L' ? RoadSectorType.leftCurve : RoadSectorType.rightCurve);
+
+      sectors.add(RoadSector(
+        startDistance: seg.startDistance,
+        endDistance: seg.endDistance,
+        type: type,
+        averageCurvature: totalHeadingChange.abs() / math.max(1.0, seg.length),
+        peakCurvature: radiusInfo.minRadius < 9999.0 ? 1.0 / radiusInfo.minRadius : 0.0,
+        approximateRadius: radiusInfo.minRadius,
+        confidence: 1.0,
+      ));
+    }
+
     final notes = <PaceNote>[];
     var noteCount = 0;
 
-    for (final seg in segments) {
-      if (seg.type == 'S') {
-        if (seg.length >= 100.0) {
-          final roundedDist = (seg.length / 50.0).round() * 50;
-          final distToShow = roundedDist < 100 ? (seg.length / 10.0).round() * 10 : roundedDist;
+    for (final sector in sectors) {
+      if (sector.type == RoadSectorType.straight) {
+        if (sector.length >= 100.0) {
+          final roundedDist = (sector.length / 50.0).round() * 50;
+          final distToShow = roundedDist < 100 ? (sector.length / 10.0).round() * 10 : roundedDist;
           notes.add(PaceNote(
-            id: 'note-straight-$noteCount-${seg.startDistance.round()}',
-            distanceFromStart: seg.startDistance,
-            startDistance: seg.startDistance,
-            endDistance: seg.endDistance,
+            id: 'note-straight-$noteCount-${sector.startDistance.round()}',
+            distanceFromStart: sector.startDistance,
+            startDistance: sector.startDistance,
+            endDistance: sector.endDistance,
             direction: 'straight',
             severity: 0,
             type: PaceNoteType.straight,
@@ -181,12 +223,11 @@ class PacenoteGenerator {
           noteCount++;
         }
       } else {
-        final direction = seg.type == 'L' ? 'left' : 'right';
-        final radiusInfo = _calculateRadiusInfo(points, seg.startIndex, seg.endIndex);
-        final totalHeadingChange = _calculateTotalHeadingChange(points, seg.startIndex, seg.endIndex);
+        final direction = sector.type == RoadSectorType.leftCurve ? 'left' : 'right';
+        final radius = sector.approximateRadius;
+        final totalHeadingChange = sector.averageCurvature * sector.length;
 
         int severity = 6;
-        final r = radiusInfo.minRadius;
         bool isHairpin = false;
 
         final h1 = _style == PacenoteStyle.calm ? 18.0 : (_style == PacenoteStyle.rally ? 26.0 : 22.0);
@@ -195,21 +236,21 @@ class PacenoteGenerator {
         final h4 = _style == PacenoteStyle.calm ? 70.0 : (_style == PacenoteStyle.rally ? 95.0 : 85.0);
         final h5 = _style == PacenoteStyle.calm ? 100.0 : (_style == PacenoteStyle.rally ? 140.0 : 125.0);
 
-        if (r < 24.0 && totalHeadingChange.abs() >= 65.0) {
+        if (radius < 24.0 && totalHeadingChange >= 65.0) {
           isHairpin = true;
           severity = 1;
-        } else if (r < 30.0 && totalHeadingChange.abs() >= 85.0) {
+        } else if (radius < 30.0 && totalHeadingChange >= 85.0) {
           isHairpin = true;
           severity = 1;
-        } else if (r < h1) {
+        } else if (radius < h1) {
           severity = 1;
-        } else if (r < h2) {
+        } else if (radius < h2) {
           severity = 2;
-        } else if (r < h3) {
+        } else if (radius < h3) {
           severity = 3;
-        } else if (r < h4) {
+        } else if (radius < h4) {
           severity = 4;
-        } else if (r < h5) {
+        } else if (radius < h5) {
           severity = 5;
         } else {
           severity = 6;
@@ -219,10 +260,10 @@ class PacenoteGenerator {
           continue;
         }
 
-        final mid = seg.startIndex + (seg.endIndex - seg.startIndex) ~/ 2;
-        final firstHalfRadius = _calculateRadiusInfo(points, seg.startIndex, mid).avgRadius;
-        final secondHalfRadius = _calculateRadiusInfo(points, mid, seg.endIndex).avgRadius;
-        
+        final midIdx = _indexNearDistance(points, sector.startDistance + sector.length / 2.0);
+        final firstHalfRadius = _calculateRadiusInfo(points, _indexNearDistance(points, sector.startDistance), midIdx).avgRadius;
+        final secondHalfRadius = _calculateRadiusInfo(points, midIdx, _indexNearDistance(points, sector.endDistance)).avgRadius;
+
         bool tightens = false;
         bool opens = false;
         if (secondHalfRadius < firstHalfRadius * 0.75) {
@@ -231,8 +272,8 @@ class PacenoteGenerator {
           opens = true;
         }
 
-        final isShort = seg.length < 35.0;
-        final isLong = seg.length > 100.0;
+        final isShort = sector.length < 35.0;
+        final isLong = sector.length > 100.0;
 
         int baseSpeed = 90;
         switch (severity) {
@@ -256,10 +297,10 @@ class PacenoteGenerator {
             : (direction == 'left' ? PaceNoteType.left : PaceNoteType.right);
 
         notes.add(PaceNote(
-          id: 'note-curve-$noteCount-${seg.startDistance.round()}',
-          distanceFromStart: seg.startDistance,
-          startDistance: seg.startDistance,
-          endDistance: seg.endDistance,
+          id: 'note-curve-$noteCount-${sector.startDistance.round()}',
+          distanceFromStart: sector.startDistance,
+          startDistance: sector.startDistance,
+          endDistance: sector.endDistance,
           direction: direction,
           severity: severity,
           type: noteType,
@@ -280,7 +321,7 @@ class PacenoteGenerator {
       if (i < notes.length - 1) {
         final next = notes[i + 1];
         final gap = next.distanceFromStart - note.distanceFromStart;
-        
+
         final canLinkSelf = note.type == PaceNoteType.left ||
                             note.type == PaceNoteType.right ||
                             note.type == PaceNoteType.hairpinLeft ||
@@ -288,14 +329,14 @@ class PacenoteGenerator {
                             note.type == PaceNoteType.keepLeft ||
                             note.type == PaceNoteType.keepRight ||
                             note.type == PaceNoteType.straight;
-        
+
         final canLinkNext = next.type == PaceNoteType.left ||
                             next.type == PaceNoteType.right ||
                             next.type == PaceNoteType.hairpinLeft ||
                             next.type == PaceNoteType.hairpinRight ||
                             next.type == PaceNoteType.keepLeft ||
                             next.type == PaceNoteType.keepRight;
-                            
+
         if (gap <= 85.0 && canLinkSelf && canLinkNext) {
           note = note.copyWith(intoNoteId: next.id);
         }
@@ -803,4 +844,36 @@ class _RadiusInfo {
   final double minRadius;
   final double avgRadius;
   const _RadiusInfo({required this.minRadius, required this.avgRadius});
+}
+
+enum RoadSectorType {
+  straight,
+  leftCurve,
+  rightCurve,
+  hairpinLeft,
+  hairpinRight,
+}
+
+class RoadSector {
+  final double startDistance;
+  final double endDistance;
+  final RoadSectorType type;
+  final double averageCurvature;
+  final double peakCurvature;
+  final double approximateRadius;
+  final double confidence;
+  final List<String> modifiers;
+
+  RoadSector({
+    required this.startDistance,
+    required this.endDistance,
+    required this.type,
+    required this.averageCurvature,
+    required this.peakCurvature,
+    required this.approximateRadius,
+    required this.confidence,
+    this.modifiers = const [],
+  });
+
+  double get length => endDistance - startDistance;
 }

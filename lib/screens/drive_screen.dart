@@ -14,7 +14,9 @@ import '../models/route_point.dart';
 import '../models/speed_limit_segment.dart';
 import '../services/gps_route_matcher.dart';
 import '../services/settings_service.dart';
-import '../services/voice_service.dart';
+import '../services/navigation_fusion_service.dart';
+import '../services/callout_speech_service.dart';
+import '../services/callout_scheduler.dart';
 import '../utils/geo_math.dart';
 import '../utils/format_helpers.dart';
 import '../utils/ui_helpers.dart';
@@ -67,11 +69,13 @@ class DriveScreen extends StatefulWidget {
 
 class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   final _matcher = GpsRouteMatcher();
-  final _voice = VoiceService();
+  late final CalloutSpeechService _speechService;
+  late final CalloutScheduler _scheduler;
+  late final NavigationFusionService _fusionService;
+  bool _showDebugOverlay = false;
   late List<PaceNote> _notes;
   late final List<RoadWarning> _visibleRoadWarnings;
   late final List<SpeedLimitSegment> _visibleSpeedLimitSegments;
-  StreamSubscription<Position>? _positionSubscription;
   maplibre.MapLibreMapController? _controller;
   maplibre.Line? _baseRouteLine;
   final List<maplibre.Line> _dangerLines = [];
@@ -169,8 +173,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     final idx = _findNextNoteIndex(_distanceAlongRoute);
     if (idx == -1) return null;
     for (var i = idx; i < _notes.length; i++) {
-      if (!_notes[i].spoken) {
-        return _notes[i];
+      final note = _notes[i];
+      if (!_scheduler.spokenIds.contains(note.id) && !_scheduler.expiredIds.contains(note.id)) {
+        return note;
       }
     }
     return null;
@@ -179,7 +184,13 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   RoadWarning? get _nextRoadWarning {
     final idx = _findNextWarningIndex(_distanceAlongRoute);
     if (idx == -1) return null;
-    return _visibleRoadWarnings[idx];
+    for (var i = idx; i < _visibleRoadWarnings.length; i++) {
+      final warning = _visibleRoadWarnings[i];
+      if (!_scheduler.spokenIds.contains(warning.id) && !_scheduler.expiredIds.contains(warning.id)) {
+        return warning;
+      }
+    }
+    return null;
   }
 
   SpeedLimitSegment? get _currentSpeedLimit {
@@ -218,7 +229,27 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     _visibleSpeedLimitSegments = widget.settings.showSpeedLimits
         ? widget.speedLimitSegments
         : const [];
-    _voice.init();
+
+    _speechService = CalloutSpeechService();
+    _speechService.init().then((_) {
+      _speechService.setEnabled(_voiceEnabledNotifier.value);
+    });
+
+    _scheduler = CalloutScheduler(
+      speechService: _speechService,
+      settings: widget.settings,
+    );
+    _scheduler.loadRouteData(
+      notes: _notes,
+      warnings: _visibleRoadWarnings,
+    );
+
+    _fusionService = NavigationFusionService(
+      routePoints: widget.routePoints,
+      settings: widget.settings,
+    );
+    _fusionService.addListener(_onFusionUpdate);
+
     _startLocationTracking();
   }
 
@@ -230,9 +261,11 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Wakelock disable failed: $e');
     }
-    _positionSubscription?.cancel();
+    _fusionService.removeListener(_onFusionUpdate);
+    _fusionService.stop();
+    _speechService.stop();
+    _scheduler.reset();
     _simulationTimer?.cancel();
-    _voice.stop();
     _driveStateNotifier.dispose();
     _followLocationNotifier.dispose();
     _voiceEnabledNotifier.dispose();
@@ -278,6 +311,83 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
               onStyleLoadedCallback: _drawStaticMapLayers,
             ),
           ),
+          if (_showDebugOverlay)
+            Positioned(
+              top: 140,
+              left: 12,
+              child: SafeArea(
+                child: Container(
+                  width: 260,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface.withAlpha(235),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 6,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'TELEMETRY & SCHEDULER',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () => setState(() => _showDebugOverlay = false),
+                            child: const Icon(Icons.close, size: 16),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 12),
+                      _buildDebugOverlayRow('Fused Speed', '${(_speedMps * 3.6).toStringAsFixed(1)} km/h'),
+                      _buildDebugOverlayRow('Fused Heading', '${_gpsHeading.toStringAsFixed(1)}°'),
+                      _buildDebugOverlayRow('GPS Accuracy', '${_gpsAccuracy.toStringAsFixed(1)} m'),
+                      _buildDebugOverlayRow('Match Index', '$_lastMatchedIndex/${widget.routePoints.length}'),
+                      _buildDebugOverlayRow('Queue Size', '${_scheduler.queue.length}'),
+                      _buildDebugOverlayRow('Spoken Notes', '${_scheduler.spokenIds.length}'),
+                      _buildDebugOverlayRow('Expired Notes', '${_scheduler.expiredIds.length}'),
+                      if (_scheduler.queue.isNotEmpty) ...[
+                        const Divider(height: 12),
+                        Text(
+                          'Next Up:',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _scheduler.queue.first.text,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
           if (widget.routePoints.isEmpty)
             Positioned(
               top: 96,
@@ -446,6 +556,18 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                     active: false,
                     onPressed: _resetNotes,
                   ),
+                  const SizedBox(height: 10),
+                  _DriveRoundButton(
+                    heroTag: 'drive-debug',
+                    tooltip: 'Toggle debug overlay',
+                    icon: Icons.bug_report_outlined,
+                    active: _showDebugOverlay,
+                    onPressed: () {
+                      setState(() {
+                        _showDebugOverlay = !_showDebugOverlay;
+                      });
+                    },
+                  ),
                 ],
               ),
             ),
@@ -563,115 +685,43 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       return;
     }
 
-    final LocationSettings locationSettings;
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      locationSettings = AndroidSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 1,
-        intervalDuration: const Duration(milliseconds: 500),
-        forceLocationManager: false,
-      );
-    } else {
-      locationSettings = const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 1,
-      );
-    }
-
-    _positionSubscription = Geolocator.getPositionStream(
-      locationSettings: locationSettings,
-    ).listen(_handlePosition);
+    _fusionService.start();
   }
 
-  void _handlePosition(Position position) {
-    final match = _matcher.match(
-      lat: position.latitude,
-      lon: position.longitude,
-      routePoints: widget.routePoints,
-      lastMatchedIndex: _lastMatchedIndex,
+  void _onFusionUpdate() {
+    final state = _fusionService.currentState;
+    if (state == null) return;
+
+    _lastPosition = Position(
+      latitude: state.rawLat,
+      longitude: state.rawLon,
+      timestamp: state.timestamp,
+      accuracy: state.gpsAccuracyMeters,
+      altitude: 0.0,
+      altitudeAccuracy: 0.0,
+      heading: state.headingDegrees,
+      headingAccuracy: state.headingAccuracy,
+      speed: state.rawSpeedMps,
+      speedAccuracy: 0.0,
+      floor: null,
     );
 
-    double calculatedSpeed = position.speed;
-    final prevPos = _lastPosition;
-    if (calculatedSpeed < 0 ||
-        calculatedSpeed.isNaN ||
-        !calculatedSpeed.isFinite) {
-      if (prevPos != null) {
-        final timeDiffSec =
-            position.timestamp.difference(prevPos.timestamp).inMilliseconds /
-            1000.0;
-        if (timeDiffSec > 0.05) {
-          final dist = haversineDistanceMeters(
-            prevPos.latitude,
-            prevPos.longitude,
-            position.latitude,
-            position.longitude,
-          );
-          calculatedSpeed = dist / timeDiffSec;
-        } else {
-          calculatedSpeed = _speedMps;
-        }
-      } else {
-        calculatedSpeed = 0.0;
-      }
-    }
+    _lastMatchedIndex = _fusionService.lastMatchedIndex;
+    _distanceAlongRoute = _fusionService.distanceAlongRoute;
+    _distanceFromRoute = _fusionService.distanceFromRoute;
+    _speedMps = state.displaySpeedMps;
+    _rawSpeedMps = state.rawSpeedMps;
+    _gpsAccuracy = state.gpsAccuracyMeters;
+    _gpsHeading = state.headingDegrees;
+    _gpsWeak = state.gpsAccuracyMeters > 20.0;
 
-    if (prevPos != null) {
-      final timeDiffSec =
-          position.timestamp.difference(prevPos.timestamp).inMilliseconds /
-          1000.0;
-      if (timeDiffSec > 0.05) {
-        final acceleration = (calculatedSpeed - _speedMps).abs() / timeDiffSec;
-        if (acceleration > 15.0) {
-          calculatedSpeed =
-              _speedMps +
-              (calculatedSpeed > _speedMps ? 15.0 : -15.0) * timeDiffSec;
-          if (calculatedSpeed < 0) calculatedSpeed = 0;
-        }
-      }
-    }
+    _updateCurrentLocationMarker(state);
 
-    final newSpeed = _speedMps * 0.65 + calculatedSpeed * 0.35;
-
-    double visualLat = position.latitude;
-    double visualLon = position.longitude;
-    if (_lastVisualLat != null && _lastVisualLon != null) {
-      final dist = haversineDistanceMeters(
-        _lastVisualLat!,
-        _lastVisualLon!,
-        position.latitude,
-        position.longitude,
-      );
-      if (dist > 150.0) {
-        final fraction = 150.0 / dist;
-        visualLat =
-            _lastVisualLat! + (position.latitude - _lastVisualLat!) * fraction;
-        visualLon =
-            _lastVisualLon! + (position.longitude - _lastVisualLon!) * fraction;
-      }
-      visualLat = _lastVisualLat! * 0.25 + visualLat * 0.75;
-      visualLon = _lastVisualLon! * 0.25 + visualLon * 0.75;
-    }
-    _lastVisualLat = visualLat;
-    _lastVisualLon = visualLon;
-
-    _previousPosition = _lastPosition;
-    _lastPosition = position;
-    _lastMatchedIndex = match.nearestIndex;
-    _distanceAlongRoute = match.distanceAlongRoute;
-    _distanceFromRoute = match.distanceFromRoute;
-    _speedMps = newSpeed;
-    _rawSpeedMps = calculatedSpeed;
-    _gpsAccuracy = position.accuracy;
-    _gpsHeading = position.heading.isFinite ? position.heading : 0.0;
-    _gpsWeak = position.accuracy > 20.0;
-
-    _updateCurrentLocationMarker(position, visualLat, visualLon);
     if (_followLocationNotifier.value) {
-      _followPosition(visualLat, visualLon);
+      _followPosition(state.displayLat, state.displayLon, state.headingDegrees);
     }
-    _maybeSpeakNextNote();
-    _maybeSpeakNextWarning();
+
+    _scheduler.update(_distanceAlongRoute, _speedMps);
 
     final nextNote = _nextNote;
     final nextWarning = _nextRoadWarning;
@@ -697,111 +747,12 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     );
   }
 
-  void _maybeSpeakNextNote() {
-    final note = _nextNote;
-    if (note == null) {
-      return;
-    }
-
-    final distanceToNote = note.distanceFromStart - _distanceAlongRoute;
-    final triggerDistance = _speedMps > 1
-        ? math.max(50.0, _speedMps * 4.5)
-        : 50.0;
-
-    if (distanceToNote > triggerDistance) {
-      return;
-    }
-
-    final noteIndex = _notes.indexWhere((candidate) => candidate.id == note.id);
-    if (noteIndex == -1) {
-      return;
-    }
-
-    String speakText = note.rallyText;
-
-    final List<int> spokenIndices = [noteIndex];
-    var currentIdx = noteIndex;
-    var linkCount = 0;
-
-    while (linkCount < 2) {
-      final currentNote = _notes[currentIdx];
-      if (currentNote.intoNoteId == null) {
-        break;
-      }
-
-      final nextIdx = _notes.indexWhere((n) => n.id == currentNote.intoNoteId);
-      if (nextIdx == -1 || nextIdx <= currentIdx || _notes[nextIdx].spoken) {
-        break;
-      }
-
-      final nextNote = _notes[nextIdx];
-      speakText = '$speakText into ${nextNote.rallyText}';
-      currentIdx = nextIdx;
-      spokenIndices.add(nextIdx);
-      linkCount++;
-    }
-
-    _voice.speak(speakText);
-
-    for (final idx in spokenIndices) {
-      _notes[idx] = _notes[idx].copyWith(spoken: true);
-    }
-  }
-
-  void _maybeSpeakNextWarning() {
-    if (!_voiceEnabledNotifier.value) {
-      return;
-    }
-    final warning = _nextRoadWarning;
-    if (warning == null || _spokenWarningIds.contains(warning.id)) {
-      return;
-    }
-
-    final distanceToWarning = warning.distanceFromStart - _distanceAlongRoute;
-
-    double triggerDistance = 70.0;
-    if (warning.type == RoadWarningType.speedCamera) {
-      triggerDistance = 180.0;
-    } else if (warning.type == RoadWarningType.stopSign ||
-        warning.type == RoadWarningType.speedBump) {
-      triggerDistance = 80.0;
-    } else if (warning.type == RoadWarningType.surfaceChange) {
-      triggerDistance = 60.0;
-    } else if (warning.type == RoadWarningType.crest ||
-        warning.type == RoadWarningType.dip) {
-      triggerDistance = 60.0;
-    }
-
-    final dynamicTrigger = _speedMps > 1
-        ? math.max(triggerDistance, _speedMps * 5.0)
-        : triggerDistance;
-
-    if (distanceToWarning > dynamicTrigger) {
-      return;
-    }
-
-    String speakText = warning.text;
-    if (warning.type == RoadWarningType.stopSign) {
-      speakText = 'Stop sign ahead';
-    } else if (warning.type == RoadWarningType.speedBump) {
-      speakText = 'Speed bump ahead';
-    } else if (warning.type == RoadWarningType.giveWay) {
-      speakText = 'Yield ahead';
-    } else if (warning.type == RoadWarningType.trafficLight) {
-      speakText = 'Traffic light ahead';
-    } else if (warning.type == RoadWarningType.crest) {
-      speakText = 'Crest';
-    } else if (warning.type == RoadWarningType.dip) {
-      speakText = 'Dip';
-    }
-
-    _voice.speak(speakText);
-    _spokenWarningIds.add(warning.id);
-  }
-
   void _resetNotes() {
-    _notes = _notes.map((note) => note.copyWith(spoken: false)).toList();
-    _spokenWarningIds.clear();
+    _scheduler.reset();
+    _scheduler.loadRouteData(
+      notes: _notes,
+      warnings: _visibleRoadWarnings,
+    );
     _lastMatchedIndex = 0;
     if (widget.isSimulation) {
       _simulatedDistance = 0.0;
@@ -833,7 +784,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
   void _toggleVoice() {
     _voiceEnabledNotifier.value = !_voiceEnabledNotifier.value;
-    _voice.setEnabled(_voiceEnabledNotifier.value);
+    _speechService.setEnabled(_voiceEnabledNotifier.value);
   }
 
   Future<void> _drawNavigationRoute() async {
@@ -980,7 +931,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     _carImageLoaded = false;
 
     try {
-      final bytes = await generateChevronImageBytes();
+      final primaryColor = Theme.of(context).colorScheme.primary;
+      final bytes = await generateChevronImageBytes(primaryColor);
       await _controller?.addImage('car_chevron', bytes);
       if (mounted) {
         setState(() {
@@ -989,26 +941,26 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       }
 
       await _drawNavigationRoute();
-      final position = _lastPosition;
-      if (position != null) {
-        final lat = _lastVisualLat ?? position.latitude;
-        final lon = _lastVisualLon ?? position.longitude;
-        await _updateCurrentLocationMarker(position, lat, lon);
+      final state = _fusionService.currentState;
+      if (state != null) {
+        await _updateCurrentLocationMarker(state);
       } else if (widget.routePoints.isNotEmpty) {
         final first = widget.routePoints.first;
-        final mockPosition = Position(
-          latitude: first.lat,
-          longitude: first.lon,
-          timestamp: DateTime.now(),
-          accuracy: 0.0,
-          altitude: 0.0,
-          heading: first.heading,
-          speed: 0.0,
-          speedAccuracy: 0.0,
-          altitudeAccuracy: 0.0,
+        final mockState = FusedNavigationState(
+          rawLat: first.lat,
+          rawLon: first.lon,
+          displayLat: first.lat,
+          displayLon: first.lon,
+          rawSpeedMps: 0.0,
+          displaySpeedMps: 0.0,
+          headingDegrees: first.heading,
           headingAccuracy: 0.0,
+          gpsAccuracyMeters: 3.0,
+          isMoving: false,
+          headingReliable: true,
+          timestamp: DateTime.now(),
         );
-        await _updateCurrentLocationMarker(mockPosition, first.lat, first.lon);
+        await _updateCurrentLocationMarker(mockState);
       }
     } catch (error) {
       if (!mounted) {
@@ -1038,67 +990,30 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _updateCurrentLocationMarker(
-    Position position,
-    double visualLat,
-    double visualLon,
+    FusedNavigationState state,
   ) async {
     final controller = _controller;
     if (!_carImageLoaded || controller == null) {
       return;
     }
 
-    final coordinates = maplibre.LatLng(visualLat, visualLon);
-    final heading = _headingForPosition(position);
+    final coordinates = maplibre.LatLng(state.displayLat, state.displayLon);
+    final heading = state.headingDegrees;
 
     final existingArrow = _currentArrow;
-    final existingCircle = _currentInnerCircle;
-    if (existingArrow != null && existingCircle != null) {
-      await controller.updateCircle(
-        existingCircle,
-        maplibre.CircleOptions(geometry: coordinates),
-      );
+    if (existingArrow != null) {
       await controller.updateSymbol(
         existingArrow,
         OverlapSymbolOptions(geometry: coordinates, iconRotate: heading),
       );
-
-      final existingOuter = _currentOuterCircle;
-      if (existingOuter != null) {
-        try {
-          await controller.removeCircle(existingOuter);
-        } catch (_) {}
-        _currentOuterCircle = null;
-      }
       return;
     }
-
-    if (existingCircle != null) {
-      try {
-        await controller.removeCircle(existingCircle);
-      } catch (_) {}
-    }
-    if (existingArrow != null) {
-      try {
-        await controller.removeSymbol(existingArrow);
-      } catch (_) {}
-    }
-
-    final circle = await controller.addCircle(
-      maplibre.CircleOptions(
-        geometry: coordinates,
-        circleRadius: 10,
-        circleColor: '#1E88E5',
-        circleStrokeColor: '#FFFFFF',
-        circleStrokeWidth: 2,
-        circleOpacity: 0.9,
-      ),
-    );
 
     final arrow = await controller.addSymbol(
       OverlapSymbolOptions(
         geometry: coordinates,
         iconImage: 'car_chevron',
-        iconSize: 0.8,
+        iconSize: 1.0,
         iconRotate: heading,
         zIndex: 100,
       ),
@@ -1109,14 +1024,13 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     }
     setState(() {
       _currentArrow = arrow;
-      _currentInnerCircle = circle;
-      _currentOuterCircle = null;
     });
   }
 
   Future<void> _followPosition(
     double lat,
-    double lon, {
+    double lon,
+    double heading, {
     bool force = false,
   }) async {
     final controller = _controller;
@@ -1137,9 +1051,16 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     _lastCameraUpdateTime = now;
 
     final double targetBearing = widget.settings.mapHeadingUp
-        ? _lastGoodHeading
+        ? heading
         : 0.0;
-    final double targetTilt = widget.settings.mapHeadingUp ? 30.0 : 0.0;
+    final double targetTilt = widget.settings.mapHeadingUp ? 40.0 : 0.0;
+
+    final speedKmh = _speedMps * 3.6;
+    double targetZoom = 17.2;
+    if (speedKmh > 25.0) {
+      final fraction = ((speedKmh - 25.0) / 75.0).clamp(0.0, 1.0);
+      targetZoom = 17.2 - fraction * 2.7;
+    }
 
     _cameraUpdateInFlight = true;
     try {
@@ -1147,31 +1068,52 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         maplibre.CameraUpdate.newCameraPosition(
           maplibre.CameraPosition(
             target: maplibre.LatLng(lat, lon),
-            zoom: 16.5,
+            zoom: targetZoom,
             bearing: targetBearing,
             tilt: targetTilt,
           ),
         ),
-        duration: const Duration(milliseconds: 70),
+        duration: const Duration(milliseconds: 100),
       );
     } finally {
       _cameraUpdateInFlight = false;
     }
   }
 
-  Future<Uint8List> generateChevronImageBytes() async {
+  Future<Uint8List> generateChevronImageBytes(Color primaryColor) async {
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder, const ui.Rect.fromLTWH(0, 0, 64, 64));
 
-    // White chevron arrow pointing UP
+    final haloPaint = ui.Paint()
+      ..color = primaryColor.withValues(alpha: 0.15)
+      ..style = ui.PaintingStyle.fill;
+    canvas.drawCircle(const ui.Offset(32, 32), 26, haloPaint);
+
+    final shadowPaint = ui.Paint()
+      ..color = const ui.Color(0x55000000)
+      ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 4.0)
+      ..style = ui.PaintingStyle.fill;
+    canvas.drawCircle(const ui.Offset(32, 34), 16, shadowPaint);
+
+    final innerPaint = ui.Paint()
+      ..color = primaryColor
+      ..style = ui.PaintingStyle.fill;
+    canvas.drawCircle(const ui.Offset(32, 32), 16, innerPaint);
+
+    final borderPaint = ui.Paint()
+      ..color = const ui.Color(0xFFFFFFFF)
+      ..strokeWidth = 2.5
+      ..style = ui.PaintingStyle.stroke;
+    canvas.drawCircle(const ui.Offset(32, 32), 16, borderPaint);
+
     final chevronPaint = ui.Paint()
       ..color = const ui.Color(0xFFFFFFFF)
       ..style = ui.PaintingStyle.fill;
     final chevronPath = ui.Path()
-      ..moveTo(32, 16)
-      ..lineTo(44, 40)
+      ..moveTo(32, 21)
+      ..lineTo(41, 38)
       ..lineTo(32, 33)
-      ..lineTo(20, 40)
+      ..lineTo(23, 38)
       ..close();
     canvas.drawPath(chevronPath, chevronPaint);
 
@@ -1189,60 +1131,12 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
     _followLocationNotifier.value = true;
 
-    if (_lastVisualLat != null && _lastVisualLon != null) {
-      _followPosition(_lastVisualLat!, _lastVisualLon!, force: true);
+    final state = _fusionService.currentState;
+    if (state != null) {
+      _followPosition(state.displayLat, state.displayLon, state.headingDegrees, force: true);
     } else {
       _fitNavigationCameraToRoute();
     }
-  }
-
-  double _headingForPosition(Position position) {
-    double? candidate;
-    // 1. GPS heading if available and valid
-    if (_speedMps > 0.8 &&
-        position.heading.isFinite &&
-        position.heading >= 0 &&
-        position.heading <= 360) {
-      candidate = position.heading;
-    }
-
-    // 2. Movement bearing between previous and current if distance > 3m
-    final previous = _previousPosition;
-    if (candidate == null && previous != null) {
-      final movementMeters = haversineDistanceMeters(
-        previous.latitude,
-        previous.longitude,
-        position.latitude,
-        position.longitude,
-      );
-      if (movementMeters >= 3.0) {
-        candidate = bearingDegrees(
-          previous.latitude,
-          previous.longitude,
-          position.latitude,
-          position.longitude,
-        );
-      }
-    }
-
-    // 3. Nearest route segment bearing
-    if (candidate == null &&
-        _lastMatchedIndex >= 0 &&
-        _lastMatchedIndex < widget.routePoints.length) {
-      final routeHeading = widget.routePoints[_lastMatchedIndex].heading;
-      if (routeHeading.isFinite) {
-        candidate = routeHeading;
-      }
-    }
-
-    // 4. Last good heading is candidate ?? _lastGoodHeading
-    if (candidate != null) {
-      // if stopped/very slow, keep last good heading
-      if (_speedMps > 0.3) {
-        _lastGoodHeading = smoothHeading(_lastGoodHeading, candidate, 0.4);
-      }
-    }
-    return _lastGoodHeading;
   }
 
   void _startSimulation() {
@@ -1260,6 +1154,11 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       if (_simulatedDistance >= widget.routePoints.last.distanceFromStart) {
         _simulatedDistance = 0.0;
         _lastMatchedIndex = 0;
+        _scheduler.reset();
+        _scheduler.loadRouteData(
+          notes: _notes,
+          warnings: _visibleRoadWarnings,
+        );
       }
 
       final interpolated = interpolateRoutePositionAtDistance(
@@ -1282,7 +1181,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         isMocked: true,
       );
 
-      _handlePosition(mockPosition);
+      _fusionService.updateMockPosition(mockPosition);
     });
   }
 
@@ -1301,9 +1200,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: ListView(
+              shrinkWrap: true,
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1335,11 +1233,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                   '${speedKmh.toStringAsFixed(1)} km/h',
                 ),
                 _buildDebugRow(
-                  'Smoothed Heading',
-                  '${_lastGoodHeading.toStringAsFixed(1)}°',
-                ),
-                _buildDebugRow(
-                  'GPS Heading (Course)',
+                  'Fused Heading',
                   '${_gpsHeading.toStringAsFixed(1)}°',
                 ),
                 _buildDebugRow(
@@ -1355,14 +1249,32 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                   '${_distanceFromRoute.toStringAsFixed(1)} m',
                 ),
                 _buildDebugRow(
-                  'Route Points Count',
-                  '${widget.routePoints.length}',
+                  'Priority Queue Length',
+                  '${_scheduler.queue.length}',
                 ),
-                _buildDebugRow('Pacenotes Count', '${widget.pacenotes.length}'),
                 _buildDebugRow(
-                  'Warnings Count',
-                  '${widget.roadWarnings.length}',
+                  'Spoken Note IDs Count',
+                  '${_scheduler.spokenIds.length}',
                 ),
+                _buildDebugRow(
+                  'Expired Note IDs Count',
+                  '${_scheduler.expiredIds.length}',
+                ),
+                if (_scheduler.queue.isNotEmpty) ...[
+                  const Divider(),
+                  Text(
+                    'Queue Elements:',
+                    style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  ..._scheduler.queue.map((item) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                          '- [Priority ${item.priority}] ${item.text} (Dist: ${(item.routeDistance - _distanceAlongRoute).toStringAsFixed(1)}m)',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      )),
+                ],
               ],
             ),
           ),
@@ -1381,6 +1293,29 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
           Text(
             value,
             style: const TextStyle(
+              fontFamily: 'monospace',
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDebugOverlayRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 11,
               fontFamily: 'monospace',
               fontWeight: FontWeight.bold,
             ),
