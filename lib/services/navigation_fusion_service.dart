@@ -107,15 +107,12 @@ class NavigationFusionService extends ChangeNotifier {
   DateTime? _lastGpsTime;
   double _expectedIntervalMs = 500.0;
 
-  bool _isMocked = false;
-
   NavigationFusionService({
     required this.routePoints,
     required this.settings,
   });
 
   void start() {
-    _isMocked = false;
     _startSensors();
   }
 
@@ -189,11 +186,6 @@ class NavigationFusionService extends ChangeNotifier {
     );
   }
 
-  void updateMockPosition(Position position) {
-    _isMocked = true;
-    _handleGpsUpdate(position);
-  }
-
   void _handleGpsUpdate(Position position) {
     if (position.accuracy > 35.0) {
       debugPrint('Skipping inaccurate GPS point: ${position.accuracy}m');
@@ -242,7 +234,7 @@ class NavigationFusionService extends ChangeNotifier {
     final gpsSpeed = position.speed;
     final hasGpsHeading = position.heading.isFinite && (position.heading > 0.001 || position.heading < -0.001 || position.heading != 0.0);
 
-    if (!_isMocked && settings.sensorAssistedHeading) {
+    if (settings.sensorAssistedHeading) {
       if (gpsSpeed >= 4.5 && hasGpsHeading) {
         final routeBearing = routePoints[_lastMatchedIndex].heading;
         final gpsHeading = position.heading;
@@ -286,7 +278,7 @@ class NavigationFusionService extends ChangeNotifier {
   }
 
   void _handleGyroUpdate(GyroscopeEvent event) {
-    if (_isMocked || !settings.sensorAssistedHeading) return;
+    if (!settings.sensorAssistedHeading) return;
 
     final now = DateTime.now();
     if (_lastGyroTime == null) {
@@ -311,7 +303,7 @@ class NavigationFusionService extends ChangeNotifier {
   }
 
   void _handleAccelUpdate(AccelerometerEvent event) {
-    if (_isMocked || !settings.sensorAssistedHeading) return;
+    if (!settings.sensorAssistedHeading) return;
 
     const alpha = 0.1;
     _accelX = alpha * event.x + (1.0 - alpha) * _accelX;
@@ -320,7 +312,7 @@ class NavigationFusionService extends ChangeNotifier {
   }
 
   void _handleCompassUpdate(CompassEvent event) {
-    if (_isMocked || !settings.sensorAssistedHeading) return;
+    if (!settings.sensorAssistedHeading) return;
 
     final rawHeading = event.heading;
     if (rawHeading == null) return;

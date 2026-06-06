@@ -452,35 +452,6 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
           const SizedBox(height: 12),
           _buildOfflineStatus(context),
           const SizedBox(height: 24),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              minimumSize: const Size.fromHeight(48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => DriveScreen(
-                    routePoints: widget.points,
-                    pacenotes: _pacenotes,
-                    roadWarnings: _visibleRoadWarnings,
-                    speedLimitSegments: _visibleSpeedLimitSegments,
-                    settings: widget.settings,
-                    isSimulation: true,
-                  ),
-                ),
-              );
-            },
-            icon: const Icon(Icons.play_circle_outline),
-            label: const Text(
-              'Simulate Drive',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          const SizedBox(height: 24),
           _buildRoadInformation(context),
           const SizedBox(height: 24),
           Text(

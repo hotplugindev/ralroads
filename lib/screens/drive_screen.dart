@@ -52,7 +52,6 @@ class DriveScreen extends StatefulWidget {
     required this.roadWarnings,
     required this.speedLimitSegments,
     required this.settings,
-    this.isSimulation = false,
     super.key,
   });
 
@@ -61,7 +60,6 @@ class DriveScreen extends StatefulWidget {
   final List<RoadWarning> roadWarnings;
   final List<SpeedLimitSegment> speedLimitSegments;
   final SettingsService settings;
-  final bool isSimulation;
 
   @override
   State<DriveScreen> createState() => _DriveScreenState();
@@ -85,7 +83,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   final List<maplibre.Symbol> _warningLabels = [];
   maplibre.Circle? _currentOuterCircle;
   maplibre.Circle? _currentInnerCircle;
-  maplibre.Symbol? _currentArrow;
+  bool _driverLayerAdded = false;
   Position? _lastPosition;
   Position? _previousPosition;
   int _lastMatchedIndex = 0;
@@ -98,11 +96,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   late final ValueNotifier<DriveState> _driveStateNotifier;
   late final ValueNotifier<bool> _followLocationNotifier;
   late final ValueNotifier<bool> _voiceEnabledNotifier;
-  late final ValueNotifier<bool> _simulationPausedNotifier;
-  late final ValueNotifier<double> _simulationSpeedKmhNotifier;
 
   String? _lastLoadedStyle;
   bool _carImageLoaded = false;
+  bool _mapStyleReady = false;
   double _lastGoodHeading = 0;
   double? _lastVisualLat;
   double? _lastVisualLon;
@@ -111,8 +108,6 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   double _rawSpeedMps = 0;
   double _gpsAccuracy = 0;
   double _gpsHeading = 0;
-  Timer? _simulationTimer;
-  double _simulatedDistance = 0.0;
   DateTime? _lastCameraUpdateTime;
   bool _cameraUpdateInFlight = false;
 
@@ -210,8 +205,6 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     _driveStateNotifier = ValueNotifier<DriveState>(const DriveState());
     _followLocationNotifier = ValueNotifier<bool>(true);
     _voiceEnabledNotifier = ValueNotifier<bool>(true);
-    _simulationPausedNotifier = ValueNotifier<bool>(false);
-    _simulationSpeedKmhNotifier = ValueNotifier<double>(50.0);
 
     WidgetsBinding.instance.addObserver(this);
     try {
@@ -265,12 +258,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     _fusionService.stop();
     _speechService.stop();
     _scheduler.reset();
-    _simulationTimer?.cancel();
     _driveStateNotifier.dispose();
     _followLocationNotifier.dispose();
     _voiceEnabledNotifier.dispose();
-    _simulationPausedNotifier.dispose();
-    _simulationSpeedKmhNotifier.dispose();
     super.dispose();
   }
 
@@ -418,86 +408,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
-          if (widget.isSimulation)
-            Positioned(
-              top: 72,
-              left: 12,
-              right: 12,
-              child: SafeArea(
-                child: Card(
-                  color: Theme.of(context).colorScheme.surface.withAlpha(230),
-                  elevation: 6,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      children: [
-                        ValueListenableBuilder<bool>(
-                          valueListenable: _simulationPausedNotifier,
-                          builder: (context, paused, _) {
-                            return IconButton(
-                              icon: Icon(
-                                paused ? Icons.play_arrow : Icons.pause,
-                              ),
-                              tooltip: paused ? 'Play' : 'Pause',
-                              onPressed: () {
-                                _simulationPausedNotifier.value = !paused;
-                              },
-                            );
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.replay),
-                          tooltip: 'Restart',
-                          onPressed: () {
-                            _simulatedDistance = 0.0;
-                            _lastMatchedIndex = 0;
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: DropdownButtonHideUnderline(
-                            child: ValueListenableBuilder<double>(
-                              valueListenable: _simulationSpeedKmhNotifier,
-                              builder: (context, speedKmh, _) {
-                                return DropdownButton<double>(
-                                  value: speedKmh,
-                                  isExpanded: true,
-                                  items: [30.0, 50.0, 70.0, 90.0, 120.0].map((
-                                    speed,
-                                  ) {
-                                    return DropdownMenuItem<double>(
-                                      value: speed,
-                                      child: Text('${speed.round()} km/h'),
-                                    );
-                                  }).toList(),
-                                  onChanged: (val) {
-                                    if (val != null) {
-                                      _simulationSpeedKmhNotifier.value = val;
-                                    }
-                                  },
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.red),
-                          tooltip: 'Exit Simulation',
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+
           Positioned(
             top: 12,
             left: 72,
@@ -547,6 +458,14 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                         onPressed: _toggleVoice,
                       );
                     },
+                  ),
+                  const SizedBox(height: 10),
+                  _DriveRoundButton(
+                    heroTag: 'drive-style',
+                    tooltip: _labelForStyle(widget.settings.pacenoteStyle),
+                    icon: _iconForStyle(widget.settings.pacenoteStyle),
+                    active: widget.settings.pacenoteStyle != PacenoteStyle.balanced,
+                    onPressed: _cyclePacenoteStyle,
                   ),
                   const SizedBox(height: 10),
                   _DriveRoundButton(
@@ -660,10 +579,6 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _startLocationTracking() async {
-    if (widget.isSimulation) {
-      _startSimulation();
-      return;
-    }
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       setState(() {
@@ -715,10 +630,12 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     _gpsHeading = state.headingDegrees;
     _gpsWeak = state.gpsAccuracyMeters > 20.0;
 
-    _updateCurrentLocationMarker(state);
+    if (_mapStyleReady) {
+      _updateCurrentLocationMarker(state);
 
-    if (_followLocationNotifier.value) {
-      _followPosition(state.displayLat, state.displayLon, state.headingDegrees);
+      if (_followLocationNotifier.value) {
+        _followPosition(state.displayLat, state.displayLon, state.headingDegrees);
+      }
     }
 
     _scheduler.update(_distanceAlongRoute, _speedMps);
@@ -754,9 +671,6 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       warnings: _visibleRoadWarnings,
     );
     _lastMatchedIndex = 0;
-    if (widget.isSimulation) {
-      _simulatedDistance = 0.0;
-    }
 
     final nextNote = _nextNote;
     final nextWarning = _nextRoadWarning;
@@ -785,6 +699,37 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   void _toggleVoice() {
     _voiceEnabledNotifier.value = !_voiceEnabledNotifier.value;
     _speechService.setEnabled(_voiceEnabledNotifier.value);
+  }
+
+  void _cyclePacenoteStyle() async {
+    final current = widget.settings.pacenoteStyle;
+    final next = switch (current) {
+      PacenoteStyle.calm => PacenoteStyle.balanced,
+      PacenoteStyle.balanced => PacenoteStyle.rally,
+      PacenoteStyle.rally => PacenoteStyle.calm,
+    };
+    await widget.settings.setPacenoteStyle(next);
+    _resetNotes();
+    if (mounted) {
+      setState(() {});
+    }
+    _speechService.speak('Co driver mode set to ${next.name}', () {});
+  }
+
+  IconData _iconForStyle(PacenoteStyle style) {
+    return switch (style) {
+      PacenoteStyle.calm => Icons.spa,
+      PacenoteStyle.balanced => Icons.balance,
+      PacenoteStyle.rally => Icons.bolt,
+    };
+  }
+
+  String _labelForStyle(PacenoteStyle style) {
+    return switch (style) {
+      PacenoteStyle.calm => 'Calm Mode',
+      PacenoteStyle.balanced => 'Balanced Mode',
+      PacenoteStyle.rally => 'Rally Mode',
+    };
   }
 
   Future<void> _drawNavigationRoute() async {
@@ -919,28 +864,61 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _drawStaticMapLayers() async {
+    _mapStyleReady = false;
+    _driverLayerAdded = false;
     final currentStyle = getMapStyle(context, widget.settings);
-    if (_lastLoadedStyle == currentStyle) {
-      return;
-    }
     _lastLoadedStyle = currentStyle;
 
-    _currentArrow = null;
     _currentInnerCircle = null;
     _currentOuterCircle = null;
     _carImageLoaded = false;
 
     try {
-      final primaryColor = Theme.of(context).colorScheme.primary;
-      final bytes = await generateChevronImageBytes(primaryColor);
-      await _controller?.addImage('car_chevron', bytes);
-      if (mounted) {
-        setState(() {
-          _carImageLoaded = true;
-        });
+      final controller = _controller;
+      if (controller != null) {
+        final primaryColor = Theme.of(context).colorScheme.primary;
+        final bytes = await generateChevronImageBytes(primaryColor);
+        try {
+          await controller.addImage('car_chevron', bytes);
+        } catch (e) {
+          debugPrint('Error adding car_chevron image: $e');
+        }
+        if (mounted) {
+          setState(() {
+            _carImageLoaded = true;
+          });
+        }
+
+        // Create a dedicated GeoJSON source and symbol layer for the driver
+        // marker. This bypasses the SymbolManager entirely, setting
+        // iconAllowOverlap at the LAYER level where MapLibre reads it.
+        try {
+          await controller.addGeoJsonSource('driver-source', {
+            'type': 'FeatureCollection',
+            'features': [],
+          });
+          await controller.addSymbolLayer(
+            'driver-source',
+            'driver-layer',
+            maplibre.SymbolLayerProperties(
+              iconAllowOverlap: true,
+              iconIgnorePlacement: true,
+              iconImage: [maplibre.Expressions.get, 'iconImage'],
+              iconSize: [maplibre.Expressions.get, 'iconSize'],
+              iconRotate: [maplibre.Expressions.get, 'iconRotate'],
+            ),
+            enableInteraction: false,
+          );
+          _driverLayerAdded = true;
+          debugPrint('Driver layer created successfully');
+        } catch (e) {
+          debugPrint('Error creating driver layer: $e');
+        }
       }
 
       await _drawNavigationRoute();
+      _mapStyleReady = true;
+
       final state = _fusionService.currentState;
       if (state != null) {
         await _updateCurrentLocationMarker(state);
@@ -962,12 +940,13 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         );
         await _updateCurrentLocationMarker(mockState);
       }
-    } catch (error) {
+    } catch (error, stack) {
+      debugPrint('Error in _drawStaticMapLayers: $error\n$stack');
       if (!mounted) {
         return;
       }
       setState(() {
-        _permissionMessage = 'Map route drawing failed.';
+        _permissionMessage = 'Map route drawing failed: $error';
       });
     }
   }
@@ -993,38 +972,46 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     FusedNavigationState state,
   ) async {
     final controller = _controller;
-    if (!_carImageLoaded || controller == null) {
+    if (controller == null || !_mapStyleReady || !_driverLayerAdded) {
       return;
     }
 
-    final coordinates = maplibre.LatLng(state.displayLat, state.displayLon);
-    final heading = state.headingDegrees;
-
-    final existingArrow = _currentArrow;
-    if (existingArrow != null) {
-      await controller.updateSymbol(
-        existingArrow,
-        OverlapSymbolOptions(geometry: coordinates, iconRotate: heading),
-      );
-      return;
+    if (!_carImageLoaded) {
+      try {
+        final primaryColor = Theme.of(context).colorScheme.primary;
+        final bytes = await generateChevronImageBytes(primaryColor);
+        await controller.addImage('car_chevron', bytes);
+        _carImageLoaded = true;
+      } catch (e) {
+        debugPrint('Error adding car_chevron in updateCurrentLocationMarker: $e');
+        _carImageLoaded = true;
+      }
     }
 
-    final arrow = await controller.addSymbol(
-      OverlapSymbolOptions(
-        geometry: coordinates,
-        iconImage: 'car_chevron',
-        iconSize: 1.0,
-        iconRotate: heading,
-        zIndex: 100,
-      ),
-    );
-
-    if (!mounted) {
-      return;
+    // Update the dedicated GeoJSON source with the driver's current position.
+    // The symbol layer reads iconImage/iconSize/iconRotate from feature properties.
+    try {
+      await controller.setGeoJsonSource('driver-source', {
+        'type': 'FeatureCollection',
+        'features': [
+          {
+            'type': 'Feature',
+            'id': 'driver',
+            'geometry': {
+              'type': 'Point',
+              'coordinates': [state.displayLon, state.displayLat],
+            },
+            'properties': {
+              'iconImage': 'car_chevron',
+              'iconSize': 1.0,
+              'iconRotate': state.headingDegrees,
+            },
+          }
+        ],
+      });
+    } catch (e) {
+      debugPrint('Error updating driver location source: $e');
     }
-    setState(() {
-      _currentArrow = arrow;
-    });
   }
 
   Future<void> _followPosition(
@@ -1034,7 +1021,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     bool force = false,
   }) async {
     final controller = _controller;
-    if (controller == null) {
+    if (controller == null || !_mapStyleReady) {
       return;
     }
     if (!force && _cameraUpdateInFlight) {
@@ -1084,28 +1071,20 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder, const ui.Rect.fromLTWH(0, 0, 64, 64));
 
-    final haloPaint = ui.Paint()
-      ..color = primaryColor.withValues(alpha: 0.15)
-      ..style = ui.PaintingStyle.fill;
-    canvas.drawCircle(const ui.Offset(32, 32), 26, haloPaint);
-
-    final shadowPaint = ui.Paint()
-      ..color = const ui.Color(0x55000000)
-      ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 4.0)
-      ..style = ui.PaintingStyle.fill;
-    canvas.drawCircle(const ui.Offset(32, 34), 16, shadowPaint);
-
-    final innerPaint = ui.Paint()
+    // 1. Draw background circle in primary color
+    final bgPaint = ui.Paint()
       ..color = primaryColor
       ..style = ui.PaintingStyle.fill;
-    canvas.drawCircle(const ui.Offset(32, 32), 16, innerPaint);
+    canvas.drawCircle(const ui.Offset(32, 32), 18, bgPaint);
 
+    // 2. Draw white border
     final borderPaint = ui.Paint()
       ..color = const ui.Color(0xFFFFFFFF)
-      ..strokeWidth = 2.5
+      ..strokeWidth = 3.0
       ..style = ui.PaintingStyle.stroke;
-    canvas.drawCircle(const ui.Offset(32, 32), 16, borderPaint);
+    canvas.drawCircle(const ui.Offset(32, 32), 18, borderPaint);
 
+    // 3. Draw white chevron pointing UP
     final chevronPaint = ui.Paint()
       ..color = const ui.Color(0xFFFFFFFF)
       ..style = ui.PaintingStyle.fill;
@@ -1139,51 +1118,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _startSimulation() {
-    _simulationTimer?.cancel();
-    _simulationTimer = Timer.periodic(const Duration(milliseconds: 50), (
-      timer,
-    ) {
-      if (_simulationPausedNotifier.value || !mounted) return;
 
-      final double speedMps = _simulationSpeedKmhNotifier.value / 3.6;
-      _simulatedDistance += speedMps * 0.05; // 0.05 seconds
-
-      if (widget.routePoints.isEmpty) return;
-
-      if (_simulatedDistance >= widget.routePoints.last.distanceFromStart) {
-        _simulatedDistance = 0.0;
-        _lastMatchedIndex = 0;
-        _scheduler.reset();
-        _scheduler.loadRouteData(
-          notes: _notes,
-          warnings: _visibleRoadWarnings,
-        );
-      }
-
-      final interpolated = interpolateRoutePositionAtDistance(
-        widget.routePoints,
-        _simulatedDistance,
-      );
-
-      final mockPosition = Position(
-        latitude: interpolated.lat,
-        longitude: interpolated.lon,
-        timestamp: DateTime.now(),
-        accuracy: 3.0,
-        altitude: interpolated.elevation,
-        altitudeAccuracy: 0.0,
-        heading: interpolated.heading,
-        headingAccuracy: 0.0,
-        speed: speedMps,
-        speedAccuracy: 0.0,
-        floor: null,
-        isMocked: true,
-      );
-
-      _fusionService.updateMockPosition(mockPosition);
-    });
-  }
 
   void _showDebugBottomSheet() {
     showModalBottomSheet<void>(
