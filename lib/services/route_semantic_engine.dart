@@ -609,6 +609,8 @@ class RouteSemanticEngine {
     final overlap =
         _tagDouble(tags, 'route_membership_overlap') ??
         _tagDouble(tags, 'overlapMeters');
+    final headingChange = _tagDouble(tags, 'route_membership_heading_change');
+    final closePointCount = _tagInt(tags, 'route_membership_close_points');
     final start =
         _tagDouble(tags, 'route_membership_start') ??
         warning.distanceFromStart - 25.0;
@@ -651,9 +653,9 @@ class RouteSemanticEngine {
       contradictions.add('No explicit route-membership evidence on warning');
     }
     if (overlap != null) {
-      confidence = math.min(1.0, confidence + (overlap >= 8.0 ? 0.12 : -0.35));
+      confidence = math.min(1.0, confidence + (overlap >= 12.0 ? 0.12 : -0.35));
       evidence.add('Roundabout overlap ${overlap.toStringAsFixed(1)} m');
-      if (overlap < 8.0) {
+      if (overlap < 12.0) {
         contradictions.add('Roundabout overlap below traversed threshold');
       }
     } else {
@@ -669,6 +671,23 @@ class RouteSemanticEngine {
     }
     if (!hasRouteEdge && !hasManeuver && explicitConfidence == null) {
       confidence = math.min(confidence, 0.58);
+    }
+    if (!hasRouteEdge && !hasManeuver) {
+      if (headingChange != null) {
+        evidence.add(
+          'Route heading changes ${headingChange.toStringAsFixed(1)} deg through warning',
+        );
+        if (headingChange < 30.0) {
+          confidence = math.min(confidence, 0.42);
+          contradictions.add(
+            'Roundabout route interval has too little internal heading change',
+          );
+        }
+      }
+      if (closePointCount != null && closePointCount < 3) {
+        confidence = math.min(confidence, 0.42);
+        contradictions.add('Too few close route points on tagged roundabout');
+      }
     }
 
     return SemanticCandidate(
@@ -688,7 +707,11 @@ class RouteSemanticEngine {
         'startDistance': start,
         'endDistance': end,
       },
-      geometryContext: {if (overlap != null) 'overlapMeters': overlap},
+      geometryContext: {
+        if (overlap != null) 'overlapMeters': overlap,
+        if (headingChange != null) 'headingChangeDegrees': headingChange,
+        if (closePointCount != null) 'closePointCount': closePointCount,
+      },
       scores: SemanticScorecard(roundaboutScore: confidence.clamp(0.0, 1.0)),
     );
   }

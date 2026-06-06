@@ -57,6 +57,8 @@ void main() {
             'route_membership_start': 90.0,
             'route_membership_end': 125.0,
             'route_membership_overlap': 35.0,
+            'route_membership_heading_change': 90.0,
+            'route_membership_close_points': 4,
           },
         ),
       ],
@@ -228,6 +230,8 @@ void main() {
               'route_membership_start': 90.0,
               'route_membership_end': 130.0,
               'route_membership_overlap': 40.0,
+              'route_membership_heading_change': 110.0,
+              'route_membership_close_points': 5,
             },
           ),
         ],
@@ -283,6 +287,56 @@ void main() {
     );
 
     expect(refined.single.type, PaceNoteType.right);
+  });
+
+  test('low-curvature roundabout warning is rejected as side-road anomaly', () {
+    final generator = PacenoteGenerator();
+    final notes = [
+      const PaceNote(
+        id: 'n1',
+        distanceFromStart: 100,
+        direction: 'straight',
+        severity: 0,
+        type: PaceNoteType.straight,
+        text: 'straight 100',
+      ),
+    ];
+
+    final refined = generator.refinePacenotesWithRoadContext(
+      notes: notes,
+      routePoints: const [
+        RoutePoint(lat: 45, lon: 7, distanceFromStart: 0, heading: 0),
+        RoutePoint(lat: 45.0005, lon: 7, distanceFromStart: 100, heading: 8),
+        RoutePoint(
+          lat: 45.001,
+          lon: 7.0001,
+          distanceFromStart: 200,
+          heading: 12,
+        ),
+      ],
+      warnings: const [
+        RoadWarning(
+          id: 'r4',
+          type: RoadWarningType.roundabout,
+          lat: 45.0005,
+          lon: 7,
+          distanceFromStart: 100,
+          text: 'Roundabout',
+          tags: {
+            'route_membership_confidence': 0.95,
+            'route_membership_start': 80.0,
+            'route_membership_end': 125.0,
+            'route_membership_overlap': 45.0,
+            'route_membership_heading_change': 12.0,
+            'route_membership_close_points': 4,
+          },
+        ),
+      ],
+      speedLimits: const [],
+    );
+
+    expect(refined.single.type, PaceNoteType.straight);
+    expect(refined.single.text, 'straight 100');
   });
 
   test(

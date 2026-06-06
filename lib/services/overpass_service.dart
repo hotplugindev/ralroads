@@ -360,16 +360,30 @@ out body geom;
     final avgLat = sumLat / closeMatches.length;
     final avgLon = sumLon / closeMatches.length;
     final overlapLength = maxEnd - minStart;
+    final headingChange = isRoundabout
+        ? _routeHeadingChangeDegrees(routePoints, minStart, maxEnd)
+        : 0.0;
 
     if (isRoundabout) {
-      final isTraversed = closeMatches.length >= 2 && overlapLength >= 8.0;
+      final isTraversed =
+          closeMatches.length >= 3 &&
+          overlapLength >= 12.0 &&
+          headingChange >= 30.0;
+      final confidence = isTraversed
+          ? (0.65 +
+                    math.min(0.25, headingChange / 180.0 * 0.25) +
+                    math.min(0.10, overlapLength / 60.0 * 0.10))
+                .clamp(0.0, 1.0)
+          : 0.0;
       return WayMembershipResult(
         isMember: isTraversed,
-        confidence: isTraversed ? 1.0 : 0.0,
+        confidence: confidence,
         startDistance: minStart,
         endDistance: maxEnd,
         matchLat: avgLat,
         matchLon: avgLon,
+        headingChangeDegrees: headingChange,
+        closePointCount: closeMatches.length,
       );
     }
 
@@ -451,8 +465,66 @@ out body geom;
         'route_membership_end': membership.endDistance,
         'route_membership_overlap':
             membership.endDistance - membership.startDistance,
+        'route_membership_heading_change': membership.headingChangeDegrees,
+        'route_membership_close_points': membership.closePointCount,
       },
     );
+  }
+
+  double _routeHeadingChangeDegrees(
+    List<RoutePoint> routePoints,
+    double startDistance,
+    double endDistance,
+  ) {
+    if (routePoints.length < 2) return 0.0;
+    final start = math.min(startDistance, endDistance);
+    final end = math.max(startDistance, endDistance);
+    final indexes = <int>[];
+
+    for (var i = 0; i < routePoints.length; i++) {
+      final distance = routePoints[i].distanceFromStart;
+      if (distance >= start && distance <= end) {
+        indexes.add(i);
+      }
+    }
+
+    final nearestStart = _nearestRouteIndexByDistance(routePoints, start);
+    final nearestEnd = _nearestRouteIndexByDistance(routePoints, end);
+    indexes
+      ..add(nearestStart)
+      ..add(nearestEnd)
+      ..sort();
+
+    var change = 0.0;
+    int? previousIndex;
+    for (final index in indexes.toSet()) {
+      if (previousIndex != null) {
+        change += normalizeAngleDeltaDegrees(
+          routePoints[index].heading,
+          routePoints[previousIndex].heading,
+        ).abs();
+      }
+      previousIndex = index;
+    }
+
+    return change;
+  }
+
+  int _nearestRouteIndexByDistance(
+    List<RoutePoint> routePoints,
+    double distanceFromStart,
+  ) {
+    var nearestIndex = 0;
+    var nearestDelta = double.infinity;
+    for (var i = 0; i < routePoints.length; i++) {
+      final delta = (routePoints[i].distanceFromStart - distanceFromStart)
+          .abs();
+      if (delta < nearestDelta) {
+        nearestDelta = delta;
+        nearestIndex = i;
+      }
+    }
+    return nearestIndex;
   }
 
   (RoadWarningType, String)? _wayWarningText(Map<String, dynamic> tags) {
@@ -638,6 +710,8 @@ class WayMembershipResult {
   final double endDistance;
   final double matchLat;
   final double matchLon;
+  final double headingChangeDegrees;
+  final int closePointCount;
 
   WayMembershipResult({
     required this.isMember,
@@ -646,5 +720,7 @@ class WayMembershipResult {
     required this.endDistance,
     required this.matchLat,
     required this.matchLon,
+    this.headingChangeDegrees = 0.0,
+    this.closePointCount = 0,
   });
 }
