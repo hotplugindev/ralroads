@@ -47,7 +47,7 @@ class GpsRouteMatcher {
     for (var i = 0; i < routePoints.length; i += chunkSize) {
       final end = (i + chunkSize).clamp(0, routePoints.length - 1);
       final count = end - i + 1;
-      
+
       var sumLat = 0.0;
       var sumLon = 0.0;
       for (var j = i; j <= end; j++) {
@@ -68,13 +68,15 @@ class GpsRouteMatcher {
         if (dist > maxDist) maxDist = dist;
       }
 
-      chunks.add(RouteChunk(
-        startIndex: i,
-        endIndex: end,
-        centerLat: centerLat,
-        centerLon: centerLon,
-        radiusMeters: maxDist,
-      ));
+      chunks.add(
+        RouteChunk(
+          startIndex: i,
+          endIndex: end,
+          centerLat: centerLat,
+          centerLon: centerLon,
+          radiusMeters: maxDist,
+        ),
+      );
     }
     return chunks;
   }
@@ -95,7 +97,11 @@ class GpsRouteMatcher {
 
     _ensureIndex(routePoints);
 
-    final localStart = clampInt(lastMatchedIndex - 10, 0, routePoints.length - 1);
+    final localStart = clampInt(
+      lastMatchedIndex - 10,
+      0,
+      routePoints.length - 1,
+    );
     final localEnd = clampInt(lastMatchedIndex + 50, 0, routePoints.length - 1);
 
     var nearestIndex = localStart;
@@ -135,7 +141,12 @@ class GpsRouteMatcher {
         final chunk = candidate.$1;
         for (var i = chunk.startIndex; i <= chunk.endIndex; i++) {
           final point = routePoints[i];
-          final distance = haversineDistanceMeters(lat, lon, point.lat, point.lon);
+          final distance = haversineDistanceMeters(
+            lat,
+            lon,
+            point.lat,
+            point.lon,
+          );
           if (distance < globalNearestDistance) {
             globalNearestDistance = distance;
             globalNearestIndex = i;

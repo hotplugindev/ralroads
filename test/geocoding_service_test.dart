@@ -57,10 +57,14 @@ void main() {
       // Since coordinates invalid, it goes to Photon, which will fail/return empty list because we don't mock it here or it returns empty.
       // Let's pass a mock adapter to ensure network error returns empty list.
       final dio = Dio();
-      dio.httpClientAdapter = MockHttpClientAdapter(mockResponse: {'features': []});
+      dio.httpClientAdapter = MockHttpClientAdapter(
+        mockResponse: {'features': []},
+      );
       final mockService = GeocodingService(dio: dio);
 
-      final results = await mockService.search('95.0, 190.0'); // out of lat/lon ranges
+      final results = await mockService.search(
+        '95.0, 190.0',
+      ); // out of lat/lon ranges
       expect(results, isEmpty);
     });
   });
@@ -73,17 +77,17 @@ void main() {
             'type': 'Feature',
             'geometry': {
               'type': 'Point',
-              'coordinates': [12.496365, 41.902783]
+              'coordinates': [12.496365, 41.902783],
             },
             'properties': {
               'name': 'Colosseum',
               'city': 'Rome',
               'country': 'Italy',
               'street': 'Piazza del Colosseo',
-              'housenumber': '1'
-            }
-          }
-        ]
+              'housenumber': '1',
+            },
+          },
+        ],
       };
 
       final dio = Dio();

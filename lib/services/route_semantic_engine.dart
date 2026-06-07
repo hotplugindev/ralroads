@@ -690,6 +690,17 @@ class RouteSemanticEngine {
       }
     }
 
+    final geometryContext = <String, dynamic>{};
+    if (overlap != null) {
+      geometryContext['overlapMeters'] = overlap;
+    }
+    if (headingChange != null) {
+      geometryContext['headingChangeDegrees'] = headingChange;
+    }
+    if (closePointCount != null) {
+      geometryContext['closePointCount'] = closePointCount;
+    }
+
     return SemanticCandidate(
       id: 'candidate-roundabout-${warning.id}',
       classification: SemanticClassification.roundabout,
@@ -707,11 +718,7 @@ class RouteSemanticEngine {
         'startDistance': start,
         'endDistance': end,
       },
-      geometryContext: {
-        if (overlap != null) 'overlapMeters': overlap,
-        if (headingChange != null) 'headingChangeDegrees': headingChange,
-        if (closePointCount != null) 'closePointCount': closePointCount,
-      },
+      geometryContext: geometryContext,
       scores: SemanticScorecard(roundaboutScore: confidence.clamp(0.0, 1.0)),
     );
   }

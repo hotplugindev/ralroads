@@ -1,0 +1,10 @@
+name: ralroads_validation
+description: Pure Dart local validation engine for RalRoads attempts.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  crypto: ^3.0.7

@@ -44,6 +44,17 @@ dependencies:
   wakelock_plus: ^1.2.8
   sensors_plus: ^6.1.1
   flutter_compass: ^0.8.1
+  flutter_secure_storage: ^10.3.1
+  drift: ^2.33.0
+  sqlite3_flutter_libs: ^0.6.0+eol
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  crypto: ^3.0.7
+  ralroads_validation:
+    path: packages/ralroads_validation
+  encrypt: ^5.0.3
+  cryptography: ^2.5.0
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:
@@ -57,6 +68,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  drift_dev: ^2.33.0
+  build_runner: ^2.15.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

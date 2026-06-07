@@ -1,0 +1,13 @@
+name: ralroads_validator
+description: Standalone federated validation CLI tool for RalRoads.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  cryptography: ^2.5.0
+  crypto: ^3.0.7
+  ralroads_validation:
+    path: ../../packages/ralroads_validation

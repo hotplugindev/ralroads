@@ -21,13 +21,7 @@ enum RouteManeuverType {
   arrive,
 }
 
-enum RouteChunkStatus {
-  pending,
-  processing,
-  ready,
-  partial,
-  failed,
-}
+enum RouteChunkStatus { pending, processing, ready, partial, failed }
 
 enum RoadSectorType {
   straight,
@@ -216,7 +210,8 @@ class RouteManeuver {
   }
 
   factory RouteManeuver.fromJson(Map<dynamic, dynamic> json) {
-    final typeName = json['type'] as String? ?? RouteManeuverType.continueStraight.name;
+    final typeName =
+        json['type'] as String? ?? RouteManeuverType.continueStraight.name;
     return RouteManeuver(
       id: json['id'] as String,
       type: RouteManeuverType.values.firstWhere(
@@ -227,7 +222,9 @@ class RouteManeuver {
       fromEdgeIndex: (json['fromEdgeIndex'] as num).toInt(),
       toEdgeIndex: (json['toEdgeIndex'] as num).toInt(),
       instruction: json['instruction'] as String?,
-      roundaboutExit: json['roundaboutExit'] != null ? (json['roundaboutExit'] as num).toInt() : null,
+      roundaboutExit: json['roundaboutExit'] != null
+          ? (json['roundaboutExit'] as num).toInt()
+          : null,
       confidence: (json['confidence'] as num? ?? 1.0).toDouble(),
     );
   }
@@ -273,8 +270,10 @@ class RouteIntersection {
       connectedRoads: (json['connectedRoads'] as List)
           .map((c) => ConnectedRoad.fromJson(c as Map))
           .toList(),
-      traversedIncomingEdgeIndex: (json['traversedIncomingEdgeIndex'] as num).toInt(),
-      traversedOutgoingEdgeIndex: (json['traversedOutgoingEdgeIndex'] as num).toInt(),
+      traversedIncomingEdgeIndex: (json['traversedIncomingEdgeIndex'] as num)
+          .toInt(),
+      traversedOutgoingEdgeIndex: (json['traversedOutgoingEdgeIndex'] as num)
+          .toInt(),
     );
   }
 }
@@ -347,17 +346,24 @@ class RoadSector {
       startDistance: (json['startDistance'] as num).toDouble(),
       endDistance: (json['endDistance'] as num).toDouble(),
       lengthMeters: (json['lengthMeters'] as num).toDouble(),
-      totalHeadingChange: (json['totalHeadingChange'] as num? ?? 0.0).toDouble(),
+      totalHeadingChange: (json['totalHeadingChange'] as num? ?? 0.0)
+          .toDouble(),
       averageCurvature: (json['averageCurvature'] as num).toDouble(),
       peakCurvature: (json['peakCurvature'] as num).toDouble(),
       approximateRadiusMeters: json['approximateRadiusMeters'] != null
           ? (json['approximateRadiusMeters'] as num).toDouble()
           : null,
-      severity: json['severity'] != null ? (json['severity'] as num).toInt() : null,
-      gripSpeedKmh: json['gripSpeedKmh'] != null ? (json['gripSpeedKmh'] as num).toInt() : null,
+      severity: json['severity'] != null
+          ? (json['severity'] as num).toInt()
+          : null,
+      gripSpeedKmh: json['gripSpeedKmh'] != null
+          ? (json['gripSpeedKmh'] as num).toInt()
+          : null,
       confidence: (json['confidence'] as num).toDouble(),
       modifiers: List<String>.from(json['modifiers'] as List? ?? const []),
-      matchedEdgeIndexes: List<int>.from(json['matchedEdgeIndexes'] as List? ?? const []),
+      matchedEdgeIndexes: List<int>.from(
+        json['matchedEdgeIndexes'] as List? ?? const [],
+      ),
       context: Map<String, dynamic>.from(json['context'] as Map? ?? const {}),
     );
   }
@@ -410,7 +416,8 @@ class RouteChunk {
   }
 
   factory RouteChunk.fromJson(Map<dynamic, dynamic> json) {
-    final statusName = json['status'] as String? ?? RouteChunkStatus.pending.name;
+    final statusName =
+        json['status'] as String? ?? RouteChunkStatus.pending.name;
     return RouteChunk(
       id: json['id'] as String,
       index: (json['index'] as num).toInt(),
@@ -520,7 +527,8 @@ class RouteEventScore {
   factory RouteEventScore.fromJson(Map<dynamic, dynamic> json) {
     return RouteEventScore(
       routeMembership: (json['routeMembership'] as num).toDouble(),
-      classificationConfidence: (json['classificationConfidence'] as num).toDouble(),
+      classificationConfidence: (json['classificationConfidence'] as num)
+          .toDouble(),
       drivingRelevance: (json['drivingRelevance'] as num).toDouble(),
       severity: (json['severity'] as num).toDouble(),
       urgency: (json['urgency'] as num).toDouble(),
@@ -565,12 +573,22 @@ class MatchedRoute {
   factory MatchedRoute.fromJson(Map<dynamic, dynamic> json) {
     return MatchedRoute(
       id: json['id'] as String,
-      edges: (json['edges'] as List).map((e) => MatchedRouteEdge.fromJson(e as Map)).toList(),
-      maneuvers: (json['maneuvers'] as List).map((m) => RouteManeuver.fromJson(m as Map)).toList(),
-      intersections: (json['intersections'] as List).map((i) => RouteIntersection.fromJson(i as Map)).toList(),
-      chunks: (json['chunks'] as List).map((c) => RouteChunk.fromJson(c as Map)).toList(),
+      edges: (json['edges'] as List)
+          .map((e) => MatchedRouteEdge.fromJson(e as Map))
+          .toList(),
+      maneuvers: (json['maneuvers'] as List)
+          .map((m) => RouteManeuver.fromJson(m as Map))
+          .toList(),
+      intersections: (json['intersections'] as List)
+          .map((i) => RouteIntersection.fromJson(i as Map))
+          .toList(),
+      chunks: (json['chunks'] as List)
+          .map((c) => RouteChunk.fromJson(c as Map))
+          .toList(),
       totalDistanceMeters: (json['totalDistanceMeters'] as num).toDouble(),
-      analysisManifest: RouteAnalysisManifest.fromJson(json['analysisManifest'] as Map),
+      analysisManifest: RouteAnalysisManifest.fromJson(
+        json['analysisManifest'] as Map,
+      ),
     );
   }
 }

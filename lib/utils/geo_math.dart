@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import '../models/route_point.dart';
 
-
 double degreesToRadians(double degrees) => degrees * math.pi / 180;
 
 double radiansToDegrees(double radians) => radians * 180 / math.pi;
@@ -11,7 +10,6 @@ double normalizeHeading(double heading) {
 }
 
 double haversineDistanceMeters(
-
   double lat1,
   double lon1,
   double lat2,
@@ -97,7 +95,9 @@ double perpendicularDistance(RoutePoint p, RoutePoint start, RoutePoint end) {
 
   final distLatMeters = dLat * 111139.0;
   final distLonMeters = dLon * 111139.0 * cosLat;
-  return math.sqrt(distLatMeters * distLatMeters + distLonMeters * distLonMeters);
+  return math.sqrt(
+    distLatMeters * distLatMeters + distLonMeters * distLonMeters,
+  );
 }
 
 List<RoutePoint> simplifyPoints(List<RoutePoint> points, double epsilonMeters) {
@@ -116,7 +116,10 @@ List<RoutePoint> simplifyPoints(List<RoutePoint> points, double epsilonMeters) {
   }
 
   if (maxDist > epsilonMeters) {
-    final results1 = simplifyPoints(points.sublist(0, maxIndex + 1), epsilonMeters);
+    final results1 = simplifyPoints(
+      points.sublist(0, maxIndex + 1),
+      epsilonMeters,
+    );
     final results2 = simplifyPoints(points.sublist(maxIndex), epsilonMeters);
 
     return [...results1.sublist(0, results1.length - 1), ...results2];
@@ -124,4 +127,3 @@ List<RoutePoint> simplifyPoints(List<RoutePoint> points, double epsilonMeters) {
     return [points.first, points.last];
   }
 }
-

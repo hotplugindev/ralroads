@@ -13,6 +13,7 @@ import '../services/route_storage_service.dart';
 import '../services/settings_service.dart';
 import '../services/offline_map_service.dart';
 import '../services/route_analysis_service.dart';
+import '../controllers/driving_session_controller.dart';
 import '../models/matched_route.dart';
 import '../utils/format_helpers.dart';
 import '../utils/geo_math.dart';
@@ -23,6 +24,7 @@ class RoutePreviewScreen extends StatefulWidget {
   const RoutePreviewScreen({
     required this.storage,
     required this.settings,
+    required this.drivingSession,
     required this.points,
     required this.pacenotes,
     this.savedRoute,
@@ -34,6 +36,7 @@ class RoutePreviewScreen extends StatefulWidget {
 
   final RouteStorageService storage;
   final SettingsService settings;
+  final DrivingSessionController drivingSession;
   final List<RoutePoint> points;
   final List<PaceNote> pacenotes;
   final SavedRoute? savedRoute;
@@ -404,6 +407,7 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
                           roadWarnings: _visibleRoadWarnings,
                           speedLimitSegments: _visibleSpeedLimitSegments,
                           settings: widget.settings,
+                          drivingSession: widget.drivingSession,
                         ),
                       ),
                     );

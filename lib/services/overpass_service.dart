@@ -33,8 +33,6 @@ class OverpassService {
 
   static const _endpoint = 'https://overpass-api.de/api/interpreter';
   static const _bboxPaddingDegrees = 0.005;
-  static const _pointMatchThresholdMeters = 35.0;
-  static const _wayMatchThresholdMeters = 50.0;
 
   final Dio _dio;
 
@@ -585,25 +583,6 @@ out body geom;
           ),
         )
         .toList();
-  }
-
-  _GeometryMatch? _bestGeometryMatch(
-    List<_LatLon> geometry,
-    List<RoutePoint> routePoints,
-  ) {
-    _GeometryMatch? best;
-    for (final point in geometry) {
-      final match = nearestRouteMatchForLatLon(
-        point.lat,
-        point.lon,
-        routePoints,
-      );
-      if (best == null ||
-          match.distanceToRouteMeters < best.match.distanceToRouteMeters) {
-        best = _GeometryMatch(lat: point.lat, lon: point.lon, match: match);
-      }
-    }
-    return best;
   }
 
   List<RoadWarning> _dedupeWarnings(List<RoadWarning> warnings) {

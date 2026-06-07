@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../controllers/driving_session_controller.dart';
 import '../models/saved_route.dart';
 import '../services/route_storage_service.dart';
 import '../services/settings_service.dart';
@@ -16,11 +17,13 @@ class SavedRoutesScreen extends StatefulWidget {
   const SavedRoutesScreen({
     required this.storage,
     required this.settings,
+    required this.drivingSession,
     super.key,
   });
 
   final RouteStorageService storage;
   final SettingsService settings;
+  final DrivingSessionController drivingSession;
 
   @override
   State<SavedRoutesScreen> createState() => _SavedRoutesScreenState();
@@ -105,6 +108,7 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
                               route: route,
                               storage: widget.storage,
                               settings: widget.settings,
+                              drivingSession: widget.drivingSession,
                               onRename: _renameRoute,
                               onDelete: _deleteRoute,
                               renameDialogOpen: _renameDialogOpen,
@@ -238,6 +242,7 @@ class _SavedRouteCard extends StatelessWidget {
     required this.route,
     required this.storage,
     required this.settings,
+    required this.drivingSession,
     required this.onRename,
     required this.onDelete,
     required this.renameDialogOpen,
@@ -246,6 +251,7 @@ class _SavedRouteCard extends StatelessWidget {
   final SavedRoute route;
   final RouteStorageService storage;
   final SettingsService settings;
+  final DrivingSessionController drivingSession;
   final Future<void> Function(SavedRoute route) onRename;
   final Future<void> Function(SavedRoute route) onDelete;
   final bool renameDialogOpen;
@@ -272,6 +278,7 @@ class _SavedRouteCard extends StatelessWidget {
               builder: (_) => RoutePreviewScreen(
                 storage: storage,
                 settings: settings,
+                drivingSession: drivingSession,
                 points: route.points,
                 pacenotes: route.pacenotes,
                 savedRoute: route,

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
 
+import '../controllers/driving_session_controller.dart';
 import '../models/route_point.dart';
 import '../services/geocoding_service.dart';
 import '../services/ors_service.dart';
@@ -23,11 +24,13 @@ class MapPlannerScreen extends StatefulWidget {
   const MapPlannerScreen({
     required this.storage,
     required this.settings,
+    required this.drivingSession,
     super.key,
   });
 
   final RouteStorageService storage;
   final SettingsService settings;
+  final DrivingSessionController drivingSession;
 
   @override
   State<MapPlannerScreen> createState() => _MapPlannerScreenState();
@@ -1189,6 +1192,7 @@ class _MapPlannerScreenState extends State<MapPlannerScreen> {
           builder: (_) => RoutePreviewScreen(
             storage: widget.storage,
             settings: widget.settings,
+            drivingSession: widget.drivingSession,
             points: routePoints,
             pacenotes: pacenotes,
             initialRouteName: _routeNameForSelection(DateTime.now()),

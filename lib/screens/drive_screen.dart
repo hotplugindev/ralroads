@@ -4,22 +4,19 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' as maplibre;
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../controllers/driving_session_controller.dart';
+import 'trip_summary_screen.dart';
 import '../models/pace_note.dart';
 import '../models/road_warning.dart';
 import '../models/route_point.dart';
 import '../models/speed_limit_segment.dart';
-import '../services/gps_route_matcher.dart';
 import '../services/settings_service.dart';
 import '../services/navigation_fusion_service.dart';
 import '../services/callout_speech_service.dart';
 import '../services/callout_scheduler.dart';
-import '../services/ors_service.dart';
-import '../services/overpass_service.dart';
-import '../services/pacenote_generator.dart';
 import '../utils/geo_math.dart';
 import '../utils/format_helpers.dart';
 import '../utils/ui_helpers.dart';
@@ -63,6 +60,7 @@ class DriveScreen extends StatefulWidget {
     required this.roadWarnings,
     required this.speedLimitSegments,
     required this.settings,
+    required this.drivingSession,
     super.key,
   });
 
@@ -71,6 +69,7 @@ class DriveScreen extends StatefulWidget {
   final List<RoadWarning> roadWarnings;
   final List<SpeedLimitSegment> speedLimitSegments;
   final SettingsService settings;
+  final DrivingSessionController drivingSession;
 
   @override
   State<DriveScreen> createState() => _DriveScreenState();
@@ -78,17 +77,18 @@ class DriveScreen extends StatefulWidget {
 
 class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   static const double driverIconHeadingOffsetDegrees = 0.0;
-  final _matcher = GpsRouteMatcher();
   late final CalloutSpeechService _speechService;
   late final CalloutScheduler _scheduler;
-  late final NavigationFusionService _fusionService;
+  StreamSubscription<List<RoutePoint>>? _reroutedSubscription;
   bool _showDebugOverlay = false;
-  late List<RoutePoint> _activeRoutePoints;
-  late List<PaceNote> _notes;
-  late List<RoadWarning> _visibleRoadWarnings;
-  late List<SpeedLimitSegment> _visibleSpeedLimitSegments;
+
+  List<RoutePoint> get _activeRoutePoints => widget.drivingSession.activeRoutePoints;
+  List<PaceNote> get _notes => widget.drivingSession.activeNotes;
+  List<RoadWarning> get _visibleRoadWarnings => widget.drivingSession.visibleRoadWarnings;
+
+  NavigationFusionService? get _fusionService => widget.drivingSession.fusionService;
+
   bool _isRerouting = false;
-  DateTime? _lastOnRouteTime;
   maplibre.MapLibreMapController? _controller;
   maplibre.Line? _baseRouteLine;
   final List<maplibre.Line> _dangerLines = [];
@@ -96,125 +96,24 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   final List<maplibre.Symbol> _noteLabels = [];
   final List<maplibre.Circle> _warningMarkers = [];
   final List<maplibre.Symbol> _warningLabels = [];
-  maplibre.Circle? _currentOuterCircle;
-  maplibre.Circle? _currentInnerCircle;
   bool _driverLayerAdded = false;
-  Position? _lastPosition;
-  Position? _previousPosition;
   int _lastMatchedIndex = 0;
   double _distanceAlongRoute = 0;
   double _distanceFromRoute = 0;
   double _speedMps = 0;
-  String? _permissionMessage;
 
   // ValueNotifiers for performance-optimized UI updates
   late final ValueNotifier<DriveState> _driveStateNotifier;
   late final ValueNotifier<bool> _followLocationNotifier;
   late final ValueNotifier<bool> _voiceEnabledNotifier;
 
-  String? _lastLoadedStyle;
   bool _carImageLoaded = false;
   bool _mapStyleReady = false;
-  double _lastGoodHeading = 0;
-  double? _lastVisualLat;
-  double? _lastVisualLon;
-  bool _gpsWeak = false;
-  final Set<String> _spokenWarningIds = {};
   double _rawSpeedMps = 0;
   double _gpsAccuracy = 0;
   double _gpsHeading = 0;
   DateTime? _lastCameraUpdateTime;
   bool _cameraUpdateInFlight = false;
-
-  int _findNextNoteIndex(double distance) {
-    if (_notes.isEmpty) return -1;
-    var low = 0;
-    var high = _notes.length - 1;
-    var result = -1;
-    while (low <= high) {
-      final mid = (low + high) >> 1;
-      if (_notes[mid].distanceFromStart >= distance) {
-        result = mid;
-        high = mid - 1;
-      } else {
-        low = mid + 1;
-      }
-    }
-    return result;
-  }
-
-  int _findNextWarningIndex(double distance) {
-    final warnings = _visibleRoadWarnings;
-    if (warnings.isEmpty) return -1;
-    var low = 0;
-    var high = warnings.length - 1;
-    var result = -1;
-    while (low <= high) {
-      final mid = (low + high) >> 1;
-      if (warnings[mid].distanceFromStart >= distance) {
-        result = mid;
-        high = mid - 1;
-      } else {
-        low = mid + 1;
-      }
-    }
-    return result;
-  }
-
-  int _findCurrentSpeedLimitIndex(double distance) {
-    final segments = _visibleSpeedLimitSegments;
-    if (segments.isEmpty) return -1;
-    var low = 0;
-    var high = segments.length - 1;
-    var result = -1;
-    while (low <= high) {
-      final mid = (low + high) >> 1;
-      if (segments[mid].startDistance <= distance) {
-        result = mid;
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
-    }
-    return result;
-  }
-
-  PaceNote? get _nextNote {
-    final idx = _findNextNoteIndex(_distanceAlongRoute);
-    if (idx == -1) return null;
-    for (var i = idx; i < _notes.length; i++) {
-      final note = _notes[i];
-      if (!_scheduler.spokenIds.contains(note.id) &&
-          !_scheduler.expiredIds.contains(note.id)) {
-        return note;
-      }
-    }
-    return null;
-  }
-
-  RoadWarning? get _nextRoadWarning {
-    final idx = _findNextWarningIndex(_distanceAlongRoute);
-    if (idx == -1) return null;
-    for (var i = idx; i < _visibleRoadWarnings.length; i++) {
-      final warning = _visibleRoadWarnings[i];
-      if (!_scheduler.spokenIds.contains(warning.id) &&
-          !_scheduler.expiredIds.contains(warning.id)) {
-        return warning;
-      }
-    }
-    return null;
-  }
-
-  SpeedLimitSegment? get _currentSpeedLimit {
-    final idx = _findCurrentSpeedLimitIndex(_distanceAlongRoute);
-    if (idx == -1) return null;
-    final seg = _visibleSpeedLimitSegments[idx];
-    if (_distanceAlongRoute >= seg.startDistance &&
-        _distanceAlongRoute <= seg.endDistance) {
-      return seg;
-    }
-    return null;
-  }
 
   @override
   void initState() {
@@ -229,40 +128,31 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Wakelock enable failed: $e');
     }
-    _activeRoutePoints = widget.routePoints;
-    _notes = widget.pacenotes
-        .map((note) => note.copyWith(spoken: false))
-        .toList();
-    _visibleRoadWarnings = filterRoadWarnings(
-      widget.roadWarnings,
-      widget.settings,
-    );
-    _visibleSpeedLimitSegments = widget.settings.showSpeedLimits
-        ? widget.speedLimitSegments
-        : const [];
 
-    _speechService = CalloutSpeechService();
-    _speechService.init().then((_) {
-      _speechService.setEnabled(_voiceEnabledNotifier.value);
+    _speechService = widget.drivingSession.speechService;
+    _scheduler = widget.drivingSession.scheduler;
+    _speechService.setEnabled(_voiceEnabledNotifier.value);
+
+    widget.drivingSession.addListener(_onSessionUpdate);
+    _reroutedSubscription = widget.drivingSession.onRerouted.listen((_) {
+      if (mounted) {
+        _drawNavigationRoute();
+      }
     });
 
-    _scheduler = CalloutScheduler(
-      speechService: _speechService,
-      settings: widget.settings,
-    );
-    _scheduler.loadRouteData(
-      notes: _notes,
-      warnings: _visibleRoadWarnings,
-      speedLimits: _visibleSpeedLimitSegments,
-    );
+    final snap = widget.drivingSession.snapshot;
+    if (snap.state == DrivingSessionState.idle) {
+      final config = DrivingSessionConfig(
+        routePoints: widget.routePoints,
+        pacenotes: widget.pacenotes,
+        roadWarnings: widget.roadWarnings,
+        speedLimitSegments: widget.speedLimitSegments,
+        recordTrip: widget.settings.autoRecordNavigation,
+      );
+      widget.drivingSession.startSession(config);
+    }
 
-    _fusionService = NavigationFusionService(
-      routePoints: _activeRoutePoints,
-      settings: widget.settings,
-    );
-    _fusionService.addListener(_onFusionUpdate);
-
-    _startLocationTracking();
+    _onSessionUpdate();
   }
 
   @override
@@ -273,10 +163,8 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Wakelock disable failed: $e');
     }
-    _fusionService.removeListener(_onFusionUpdate);
-    _fusionService.stop();
-    _speechService.stop();
-    _scheduler.reset();
+    widget.drivingSession.removeListener(_onSessionUpdate);
+    _reroutedSubscription?.cancel();
     _driveStateNotifier.dispose();
     _followLocationNotifier.dispose();
     _voiceEnabledNotifier.dispose();
@@ -883,6 +771,92 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                               minHeight: 6,
                             ),
                           ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ListenableBuilder(
+                                  listenable: widget.drivingSession,
+                                  builder: (context, _) {
+                                    final recording = widget.drivingSession.snapshot.recording;
+                                    return OutlinedButton.icon(
+                                      onPressed: () {
+                                        widget.drivingSession.toggleRecording(!recording);
+                                      },
+                                      icon: Icon(
+                                        recording
+                                            ? Icons.stop_circle
+                                            : Icons.fiber_manual_record,
+                                        color: recording ? Colors.red : null,
+                                      ),
+                                      label: Text(
+                                        recording ? 'Stop Rec' : 'Record',
+                                        style: TextStyle(
+                                          color: recording ? Colors.red : null,
+                                        ),
+                                      ),
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        side: BorderSide(
+                                          color: recording
+                                              ? Colors.red
+                                              : Theme.of(context).colorScheme.outline,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ListenableBuilder(
+                                  listenable: widget.drivingSession,
+                                  builder: (context, _) {
+                                    final stateVal = widget.drivingSession.snapshot.state;
+                                    final isPaused = stateVal == DrivingSessionState.paused;
+                                    return ElevatedButton.icon(
+                                      onPressed: () {
+                                        if (isPaused) {
+                                          widget.drivingSession.resumeSession();
+                                        } else {
+                                          widget.drivingSession.pauseSession();
+                                        }
+                                      },
+                                      icon: Icon(
+                                        isPaused ? Icons.play_arrow : Icons.pause,
+                                      ),
+                                      label: Text(isPaused ? 'Resume' : 'Pause'),
+                                      style: ElevatedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton.filled(
+                                onPressed: _finishSession,
+                                icon: const Icon(Icons.check),
+                                tooltip: 'Finish Session',
+                                style: IconButton.styleFrom(
+                                  backgroundColor: Theme.of(context).colorScheme.primary,
+                                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                                  padding: const EdgeInsets.all(12),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton.filledTonal(
+                                onPressed: _cancelSession,
+                                icon: const Icon(Icons.close),
+                                tooltip: 'Discard Session',
+                                style: IconButton.styleFrom(
+                                  backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                                  foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
+                                  padding: const EdgeInsets.all(12),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -911,59 +885,26 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _startLocationTracking() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      setState(() {
-        _permissionMessage = 'Location services are disabled.';
-      });
-      return;
+  void _onSessionUpdate() {
+    if (!mounted) return;
+
+    final snap = widget.drivingSession.snapshot;
+    final state = widget.drivingSession.fusionService?.currentState;
+
+
+
+    _lastMatchedIndex = widget.drivingSession.fusionService?.lastMatchedIndex ?? 0;
+    _distanceAlongRoute = widget.drivingSession.fusionService?.distanceAlongRoute ?? 0.0;
+    _distanceFromRoute = widget.drivingSession.fusionService?.distanceFromRoute ?? 0.0;
+    _speedMps = snap.speedMps;
+    if (state != null) {
+      _rawSpeedMps = state.rawSpeedMps;
+      _gpsAccuracy = state.gpsAccuracyMeters;
+      _gpsHeading = state.headingDegrees;
     }
+    _isRerouting = widget.drivingSession.isRerouting;
 
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      setState(() {
-        _permissionMessage = 'Location permission is required for drive mode.';
-      });
-      return;
-    }
-
-    _fusionService.start();
-  }
-
-  void _onFusionUpdate() {
-    final state = _fusionService.currentState;
-    if (state == null) return;
-
-    _lastPosition = Position(
-      latitude: state.rawLat,
-      longitude: state.rawLon,
-      timestamp: state.timestamp,
-      accuracy: state.gpsAccuracyMeters,
-      altitude: 0.0,
-      altitudeAccuracy: 0.0,
-      heading: state.headingDegrees,
-      headingAccuracy: state.headingAccuracy,
-      speed: state.rawSpeedMps,
-      speedAccuracy: 0.0,
-      floor: null,
-    );
-
-    _lastMatchedIndex = _fusionService.lastMatchedIndex;
-    _distanceAlongRoute = _fusionService.distanceAlongRoute;
-    _distanceFromRoute = _fusionService.distanceFromRoute;
-    _speedMps = state.displaySpeedMps;
-    _rawSpeedMps = state.rawSpeedMps;
-    _gpsAccuracy = state.gpsAccuracyMeters;
-    _gpsHeading = state.headingDegrees;
-    _gpsWeak = state.gpsAccuracyMeters > 20.0;
-
-    if (_mapStyleReady) {
+    if (_mapStyleReady && state != null) {
       _updateCurrentLocationMarker(state);
 
       if (_followLocationNotifier.value) {
@@ -975,256 +916,77 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       }
     }
 
-    _scheduler.update(_distanceAlongRoute, _speedMps);
-
-    final nextNote = _nextNote;
-    final nextWarning = _nextRoadWarning;
-    final currentLimit = _currentSpeedLimit;
-    final distanceToNote = nextNote == null
-        ? null
-        : math.max(0.0, nextNote.distanceFromStart - _distanceAlongRoute);
-    final distanceToWarning = nextWarning == null
-        ? null
-        : math.max(0.0, nextWarning.distanceFromStart - _distanceAlongRoute);
-    final offRoute = _distanceFromRoute > 60 && _lastPosition != null;
-
-    if (offRoute) {
-      if (_lastOnRouteTime == null) {
-        _lastOnRouteTime = DateTime.now();
-      } else if (DateTime.now().difference(_lastOnRouteTime!).inSeconds >= 5 &&
-          !_isRerouting) {
-        _recalculateRoute();
-      }
-    } else {
-      _lastOnRouteTime = null;
-    }
-
-    _driveStateNotifier.value = _buildDriveState(
-      nextNote: nextNote,
-      distanceToNote: distanceToNote,
-      nextWarning: nextWarning,
-      distanceToWarning: distanceToWarning,
-      currentLimit: currentLimit,
-      speedMps: _speedMps,
-      offRoute: offRoute,
-      gpsWeak: _gpsWeak,
-      permissionMessage: _permissionMessage,
+    _driveStateNotifier.value = DriveState(
+      nextNote: snap.nextNote,
+      distanceToNote: snap.distanceToNote,
+      nextWarning: snap.nextWarning,
+      distanceToWarning: snap.distanceToWarning,
+      currentLimit: snap.currentLimit,
+      speedMps: snap.speedMps,
+      offRoute: snap.offRoute,
+      gpsWeak: snap.gpsWeak,
+      permissionMessage: snap.errorMessage,
+      remainingDistanceMeters: snap.remainingDistanceMeters,
+      remainingDurationSeconds: snap.remainingDurationSeconds,
+      etaString: snap.etaString,
+      progressPercentage: snap.progressPercentage,
     );
   }
 
   void _resetNotes() {
-    _scheduler.reset();
-    _scheduler.loadRouteData(
-      notes: _notes,
-      warnings: _visibleRoadWarnings,
-      speedLimits: _visibleSpeedLimitSegments,
-    );
-    _lastMatchedIndex = 0;
-
-    final nextNote = _nextNote;
-    final nextWarning = _nextRoadWarning;
-    final currentLimit = _currentSpeedLimit;
-    final distanceToNote = nextNote == null
-        ? null
-        : math.max(0.0, nextNote.distanceFromStart - _distanceAlongRoute);
-    final distanceToWarning = nextWarning == null
-        ? null
-        : math.max(0.0, nextWarning.distanceFromStart - _distanceAlongRoute);
-    final offRoute = _distanceFromRoute > 60 && _lastPosition != null;
-
-    _driveStateNotifier.value = _buildDriveState(
-      nextNote: nextNote,
-      distanceToNote: distanceToNote,
-      nextWarning: nextWarning,
-      distanceToWarning: distanceToWarning,
-      currentLimit: currentLimit,
-      speedMps: _speedMps,
-      offRoute: offRoute,
-      gpsWeak: _gpsWeak,
-      permissionMessage: _permissionMessage,
-    );
-  }
-
-  DriveState _buildDriveState({
-    required PaceNote? nextNote,
-    required double? distanceToNote,
-    required RoadWarning? nextWarning,
-    required double? distanceToWarning,
-    required SpeedLimitSegment? currentLimit,
-    required double speedMps,
-    required bool offRoute,
-    required bool gpsWeak,
-    required String? permissionMessage,
-  }) {
-    final remainingDistanceMeters = _activeRoutePoints.isNotEmpty
-        ? math.max(
-            0.0,
-            _activeRoutePoints.last.distanceFromStart - _distanceAlongRoute,
-          )
-        : 0.0;
-
-    double remainingDurationSeconds = 0.0;
-    double prevDist = _distanceAlongRoute;
-    for (var i = _lastMatchedIndex + 1; i < _activeRoutePoints.length; i++) {
-      final p = _activeRoutePoints[i];
-      final segmentLength = p.distanceFromStart - prevDist;
-      if (segmentLength <= 0) continue;
-      final limitSegment = _visibleSpeedLimitSegments.firstWhere(
-        (s) =>
-            p.distanceFromStart >= s.startDistance &&
-            p.distanceFromStart <= s.endDistance,
-        orElse: () => const SpeedLimitSegment(
-          id: 'default',
-          startDistance: 0.0,
-          endDistance: 0.0,
-          rawMaxspeed: '60',
-          parsedKmh: 60,
-        ),
-      );
-      final speedLimitMps = (limitSegment.parsedKmh ?? 60) / 3.6;
-      remainingDurationSeconds += segmentLength / speedLimitMps;
-      prevDist = p.distanceFromStart;
-    }
-
-    final etaTime = DateTime.now().add(
-      Duration(seconds: remainingDurationSeconds.round()),
-    );
-    final etaString =
-        "${etaTime.hour.toString().padLeft(2, '0')}:${etaTime.minute.toString().padLeft(2, '0')}";
-
-    final totalDistance = _activeRoutePoints.isNotEmpty
-        ? _activeRoutePoints.last.distanceFromStart
-        : 1.0;
-    final progressPercentage = (_distanceAlongRoute / totalDistance).clamp(
-      0.0,
-      1.0,
-    );
-
-    return DriveState(
-      nextNote: nextNote,
-      distanceToNote: distanceToNote,
-      nextWarning: nextWarning,
-      distanceToWarning: distanceToWarning,
-      currentLimit: currentLimit,
-      speedMps: speedMps,
-      offRoute: offRoute,
-      gpsWeak: gpsWeak,
-      permissionMessage: permissionMessage,
-      remainingDistanceMeters: remainingDistanceMeters,
-      remainingDurationSeconds: remainingDurationSeconds,
-      etaString: etaString,
-      progressPercentage: progressPercentage,
-    );
-  }
-
-  Future<void> _recalculateRoute() async {
-    if (_isRerouting) return;
-    setState(() {
-      _isRerouting = true;
-    });
-
-    final currentPos = _lastPosition;
-    if (currentPos == null) {
-      setState(() {
-        _isRerouting = false;
-      });
-      return;
-    }
-
-    final startPoint = RoutePoint(
-      lat: currentPos.latitude,
-      lon: currentPos.longitude,
-    );
-    final destination = _activeRoutePoints.last;
-
-    try {
-      _speechService.speak('Off route. Recalculating route.', () {});
-
-      final newPoints = await OrsService(
-        settings: widget.settings,
-      ).buildRoute([startPoint, destination]);
-      if (newPoints.isEmpty) throw Exception('No points returned');
-
-      final newPacenotes = PacenoteGenerator(
-        settings: widget.settings,
-      ).generate(newPoints);
-
-      setState(() {
-        _activeRoutePoints = newPoints;
-        _notes = newPacenotes
-            .map((note) => note.copyWith(spoken: false))
-            .toList();
-        _visibleRoadWarnings = [];
-        _visibleSpeedLimitSegments = [];
-        _lastMatchedIndex = 0;
-        _distanceAlongRoute = 0;
-        _distanceFromRoute = 0;
-      });
-
-      _fusionService.updateRoutePoints(_activeRoutePoints);
-
-      _scheduler.reset();
-      _scheduler.loadRouteData(
-        notes: _notes,
-        warnings: _visibleRoadWarnings,
-        speedLimits: _visibleSpeedLimitSegments,
-      );
-
-      if (_controller != null) {
-        await _drawNavigationRoute();
-      }
-
-      _lastOnRouteTime = null;
-
-      _enrichRecalculatedRoute(newPoints);
-    } catch (e) {
-      debugPrint('Rerouting failed: $e');
-      _speechService.speak(
-        'Recalculating route failed. Please check internet connection.',
-        () {},
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isRerouting = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _enrichRecalculatedRoute(List<RoutePoint> newPoints) async {
-    try {
-      final enrichment = await OverpassService().enrichRoute(newPoints);
-      if (mounted) {
-        setState(() {
-          _visibleRoadWarnings = filterRoadWarnings(
-            enrichment.roadWarnings,
-            widget.settings,
-          );
-          _visibleSpeedLimitSegments = widget.settings.showSpeedLimits
-              ? enrichment.speedLimitSegments
-              : const [];
-        });
-
-        _scheduler.reset();
-        _scheduler.loadRouteData(
-          notes: _notes,
-          warnings: _visibleRoadWarnings,
-          speedLimits: _visibleSpeedLimitSegments,
-        );
-
-        if (_controller != null) {
-          await _drawNavigationRoute();
-        }
-      }
-    } catch (e) {
-      debugPrint('Enriching recalculated route failed: $e');
-    }
+    widget.drivingSession.resetCallouts();
+    _onSessionUpdate();
   }
 
   void _toggleVoice() {
     _voiceEnabledNotifier.value = !_voiceEnabledNotifier.value;
     _speechService.setEnabled(_voiceEnabledNotifier.value);
+  }
+
+  Future<void> _finishSession() async {
+    final tripId = await widget.drivingSession.finishSession();
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    if (tripId != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => TripSummaryScreen(
+            repository: widget.drivingSession.tripRepository,
+            tripId: tripId,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _cancelSession() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Discard Session?'),
+        content: const Text('This will end the drive and discard the recorded trip data (if any).'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await widget.drivingSession.cancelSession();
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    }
   }
 
   void _cyclePacenoteStyle() async {
@@ -1392,11 +1154,6 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   Future<void> _drawStaticMapLayers() async {
     _mapStyleReady = false;
     _driverLayerAdded = false;
-    final currentStyle = getMapStyle(context, widget.settings);
-    _lastLoadedStyle = currentStyle;
-
-    _currentInnerCircle = null;
-    _currentOuterCircle = null;
     _carImageLoaded = false;
 
     try {
@@ -1446,7 +1203,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       await _drawNavigationRoute();
       _mapStyleReady = true;
 
-      final state = _fusionService.currentState;
+      final state = _fusionService?.currentState;
       if (state != null) {
         await _updateCurrentLocationMarker(state);
       } else if (_activeRoutePoints.isNotEmpty) {
@@ -1472,9 +1229,21 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _permissionMessage = 'Map route drawing failed: $error';
-      });
+      _driveStateNotifier.value = DriveState(
+        nextNote: _driveStateNotifier.value.nextNote,
+        distanceToNote: _driveStateNotifier.value.distanceToNote,
+        nextWarning: _driveStateNotifier.value.nextWarning,
+        distanceToWarning: _driveStateNotifier.value.distanceToWarning,
+        currentLimit: _driveStateNotifier.value.currentLimit,
+        speedMps: _driveStateNotifier.value.speedMps,
+        offRoute: _driveStateNotifier.value.offRoute,
+        gpsWeak: _driveStateNotifier.value.gpsWeak,
+        permissionMessage: 'Map route drawing failed: $error',
+        remainingDistanceMeters: _driveStateNotifier.value.remainingDistanceMeters,
+        remainingDurationSeconds: _driveStateNotifier.value.remainingDurationSeconds,
+        etaString: _driveStateNotifier.value.etaString,
+        progressPercentage: _driveStateNotifier.value.progressPercentage,
+      );
     }
   }
 
@@ -1637,7 +1406,7 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
 
     _followLocationNotifier.value = true;
 
-    final state = _fusionService.currentState;
+    final state = _fusionService?.currentState;
     if (state != null) {
       _followPosition(
         state.displayLat,

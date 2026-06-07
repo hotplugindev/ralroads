@@ -1,33 +1,441 @@
-# Route Awareness Follow-Up Plan
+# RalRoads Federated Navigation And Challenge Platform Plan
 
-## Current Failures
+## Baseline Stabilization
 
-- Intersections and roundabouts are still sometimes classified as severe ordinary curves.
-- OpenRouteService is requested with `instructions: true`, but the route creation path discarded those maneuver steps before pacenote generation.
-- Roundabouts therefore depended on Overpass route-membership warnings or geometry, and missed ORS-confirmed roundabouts.
-- Junctions likewise depended on nearby curve geometry unless later metadata existed.
-- Callout timing was based on a small speech-duration lead and a low minimum distance, so severe calls could be queued too close to the maneuver entry.
+- `flutter pub get`: passed.
+- `flutter analyze`: initially reported 31 warnings/infos; fixed. Current result: no issues.
+- `flutter test`: passed, 47 tests after shell/session/repository and validation coverage.
+- `flutter build apk --debug`: blocked by environment, not source code. Flutter reports no Android SDK and suggests setting `ANDROID_HOME`.
+- Follow-up baseline on 2026-06-07: `flutter analyze` clean, `flutter test` 40 tests passing, `adb` not found on PATH.
+- Current run baseline on 2026-06-07: `flutter pub get` passed, `flutter analyze` clean, `flutter test` 47 tests passing, `adb` not found on PATH.
 
-## Implementation
+## Implementation Ledger
 
-- Parse ORS `segments[].steps[]` into canonical `RouteManeuver`s during route creation.
-- Preserve the parsed maneuvers on `OrsService.lastRouteManeuvers`.
-- Pass maneuvers through `PacenoteBackgroundParams` into background pacenote generation.
-- Let `RouteSemanticEngine` convert nearby curve notes or insert missing maneuver notes for confirmed junctions/forks/roundabouts.
-- Include roundabout exit text when ORS instruction text exposes it.
-- Keep warning-only traffic controls from creating junctions.
-- Increase callout trigger distance based on speed, speech duration, priority, severity, and semantic type.
+Completed:
 
-## Expected Behavior
+- Repository audit captured current models, services, UI screens, Hive boxes, ORS/Overpass integration, navigation pipeline, route analysis, DriveScreen, and tests.
+- Analyzer cleanup removed stale imports/fields, fixed deprecated widget/sensor APIs, and resolved style lints.
+- `flutter_secure_storage` added.
+- `SecureCredentialService` introduced with injectable storage and in-memory test implementation.
+- ORS API key reads/writes moved from Hive into secure storage.
+- Legacy Hive ORS key migration is idempotent and deletes the Hive key only after a successful secure write.
+- Secure credential tests added.
 
-- Actual ORS turn maneuvers become junction/keep/fork notes instead of severe curve notes.
-- Actual ORS roundabout maneuvers become exactly one roundabout note, with exit number when reliable.
-- Overlapping internal curve notes are suppressed by the semantic engine.
-- Severe corners, junctions, hairpins, and roundabouts are called early enough for the driver to hear and react before entry.
+Current checkpoint:
 
-## Regression Coverage
+- The app still launches through the existing `HomeScreen` and does not require an ORS key.
+- Existing route planning, saved routes, preview, DriveScreen, pacenotes, warnings, TTS, and settings are preserved.
+- Android build remains blocked by missing Android SDK in this environment.
+- Drift/SQLite schema version 1 is present with local account, Matrix metadata, social, trip, route, segment, attempt, challenge, moderation, privacy, outgoing-event, media-upload, sync-cursor, directory-cache, and blocked-user tables.
+- Saved-route migration mirrors Hive saved routes into normalized SQLite rows for route summary, points, pacenotes, road warnings, and speed limits.
+- Saved-route migration is idempotent and does not delete Hive saved-route data.
+- Repository container introduced with `NavigationRepository` and `TripRepository`.
+- `NavigationRepository` hides Hive plus saved-route SQLite migration behind saved-route methods.
+- `TripRepository` writes real local trip rows and trip points to Drift and can finish/list trips.
+- Five-tab shell introduced: Navigate, Challenges, Trips, Community, Settings.
+- Onboarding introduced and shown until local completion.
+- App/session state introduced for local profile, Matrix connection state, ORS connection state, offline status, and onboarding completion.
+- Matrix account foundation introduced with real password-login HTTP boundary, secure token storage, session restoration, and logout.
+- Trips tab, trip recording screen, trip summary screen, and private segment creation entry point introduced.
+- Local repositories expanded for profiles, friends, groups, segments, attempts, challenges, sync/media queues, offline maps, and social snapshots.
+- Trip recording hardened with single-active-trip behavior, active-trip resume, pause/resume persistence, cancel confirmation, progress persistence, and trip deletion support.
+- Trip summary now reads persisted trip point stats and exposes rename, privacy, delete, and create-segment actions.
+- Pure Dart `packages/ralroads_validation` MVP added with deterministic local attempt validation and SHA-256 result hashes.
+- Validator tests cover clean results, sustained speed-limit invalidation, and deterministic hashes.
 
-- Matched left-turn maneuver converts nearby curve to junction.
-- Matched roundabout maneuver inserts a roundabout note.
-- Severe corner callout queues with enough lead distance.
-- Existing multi-corner segmentation, roundabout ownership, hairpin, and warning-only junction tests continue to pass.
+Next checkpoint:
+
+- Expand repository coverage for segments, attempts, challenges, social/profile, offline maps, and sync.
+- Start moving screens onto repositories while preserving existing behavior.
+
+This run targets:
+
+- Complete local repository boundaries for profile, friends, groups, segments, attempts, challenges, sync, social, and offline maps.
+- Add lightweight app session and account connection state.
+- Replace the one-screen landing page with a five-tab RalRoads shell.
+- Add real local trips dashboard and trip recording UI backed by `TripRepository`.
+- Add disconnected Matrix/ORS states that explain account requirements without fake data.
+
+Visible action audit:
+
+- Onboarding `Use offline`: working; marks onboarding complete and opens the app shell.
+- Onboarding `Connect Matrix`: opens real Matrix login flow.
+- Onboarding `ORS settings`: opens existing ORS settings/key test flow.
+- Navigate `Plan`: opens existing planner when ORS is connected; otherwise opens ORS settings.
+- Navigate `Saved routes`: opens existing saved-routes flow.
+- Navigate `Offline maps`: opens existing offline-map manager.
+- Navigate `Navigation settings`: opens existing settings.
+- Trips `Start`: opens real `TripRecordingScreen` backed by `TripRepository`.
+- Trips trip cards: open real `TripSummaryScreen`.
+- Trip recording `Pause`, `Resume`, `Stop`: implemented; cancel/restart recovery still needs hardening.
+- Trip summary `Create segment`: opens local segment creation from persisted trip points.
+- Segment creation `Save private segment`: persists private local segment; non-private visibility explains Matrix requirement.
+- Challenges `Create`: creates a local challenge when a local segment exists; otherwise explains that a segment must be created first.
+- Challenges `Connect Matrix`: opens real Matrix login flow.
+- Community `Connect Matrix`: opens real Matrix login flow.
+- Community local profile/group actions: create local Drift-backed profile/group data; no fake network data.
+- Settings Matrix/ORS/offline actions: open real implemented flows.
+
+Exact remaining product gaps after this checkpoint:
+
+- Trip recording still needs richer lifecycle/background warnings and speed-limit lookup during free recording.
+- Trip summary still needs richer route visualization and export controls.
+- Segment creation needs map-based start/end selection, stronger suitability checks, content hash/signature, and richer persisted metadata.
+- Deterministic validation exists as a pure Dart MVP but is not yet wired into visible segment/challenge attempt recording.
+- Matrix sync is not yet a full SDK-backed sync loop; current Matrix support is login/session only.
+- Matrix media sharing and signed `.rrsegment` packages are not yet implemented.
+- Challenge detail, segment detail, local leaderboard, and attempt UI remain to be built.
+
+## Current Architecture
+
+RalRoads is a local-first Flutter app with a small service layer and mostly screen-local orchestration.
+
+- App entry: `lib/main.dart` initializes `RouteStorageService` and `SettingsService`, then opens `HomeScreen`.
+- Navigation UI: `HomeScreen`, `MapPlannerScreen`, `RoutePreviewScreen`, `DriveScreen`, `SavedRoutesScreen`, `OfflineMapsScreen`, `SettingsScreen`.
+- Online routing: `OrsService` calls OpenRouteService directions and parses route geometry plus ORS steps into `RouteManeuver`s.
+- Online place search: `GeocodingService` uses OpenRouteService geocoding and ranking heuristics.
+- Road metadata: `OverpassService` queries Overpass in route chunks and extracts route-relevant warnings and speed limits.
+- Route analysis: `RouteAnalysisService`, `RouteSemanticEngine`, `RouteFeatureMatcher`, `PacenoteGenerator`, and `RouteEventScorer` form the existing road-awareness pipeline.
+- Driving: `DriveScreen` consumes route points, pacenotes, warnings, speed limits, `NavigationFusionService`, `CalloutScheduler`, and TTS.
+- Local persistence: Hive boxes store saved routes and settings.
+- Tests: coverage exists for geocoding, route analysis, pacenote context, route simplification, HUD calculations, and the home widget.
+
+## Reusable Systems
+
+- `RoutePoint`, `MatchedRoute`, `RouteManeuver`, `RoadSector`, `PaceNote`, `RoadWarning`, and `SpeedLimitSegment` are good canonical model seeds for SQLite entities.
+- `RouteSemanticEngine` already has conservative semantic concepts: roundabouts, junctions, forks, hairpins, connected roads, evidence, contradictions, and diagnostics.
+- `RouteFeatureMatcher` already encodes route ownership ideas needed for stop signs, cameras, speed limits, bridges, tunnels, and side-road rejection.
+- `CalloutScheduler` already centralizes callout queueing, priority, expiration, merging, interruption, spoken IDs, and speed-based lead distance.
+- `NavigationFusionService` already combines GPS, route matching, compass, gyroscope, accelerometer, smoothing, and display interpolation.
+- `RouteStorageService` preserves current saved-route behavior and is the required backward-compatibility source for migration.
+- `SettingsService` is the current single settings API and should remain the compatibility facade while storage moves underneath it.
+
+## Broken, Missing, Or Duplicated Systems
+
+- ORS API keys are currently stored in Hive, which is not acceptable for production secrets.
+- There is no Matrix account, sync, room, media, notification, profile, friends, group, report, or moderation system.
+- There is no Drift/SQLite database; durable structured data is stored as Hive maps.
+- Saved routes are stored as large JSON-like blobs, which will not scale to trips, route chunks, traces, attempts, or sync state.
+- Route planning, preview, DriveScreen, and callout systems are partially coupled through screen constructors rather than a canonical persisted route-analysis manifest.
+- There is no trip recorder, segment model, attempt model, validator package, signature model, or package format.
+- Offline map management exists as a screen/service shell, but no full offline route package readiness model is persisted.
+- There is no privacy model, private zones, data export/delete flow, or validator trust settings.
+- There is no product-level primary navigation matching Navigate, Challenges, Trips, Community, Settings.
+
+## Product Principles
+
+- Navigation, saved routes, prepared routes, simulation, DriveScreen, and offline-capable data remain usable without Matrix.
+- Matrix powers social identity, federation, rooms, friends, groups, challenges, directories, sync, notifications, media, reports, and moderation.
+- OpenRouteService powers online routing, place search, alternatives, route metadata, and elevation where available.
+- RalRoads does not operate proprietary account infrastructure and does not reuse passwords across services.
+- ORS credentials are API keys only; no ORS account password is requested or stored.
+- Private trips and invalid attempts remain local unless the user explicitly shares them.
+- Official rankings accept only legal clean attempts. Speed-limit violations invalidate official attempts.
+- No top-speed ranking, public illegal leaderboard, live ghost racing, live opponent delta, or public over-limit stats.
+- Driving UI stays calm and honest about map, speed-limit, GPS, grip, and road-data uncertainty.
+
+## Data Migration Strategy
+
+- Keep Hive readable for existing settings and saved routes until migration is complete.
+- Add a schema version table in SQLite/Drift and run idempotent migrations at app startup.
+- Migrate saved routes from Hive into normalized SQLite tables without deleting Hive data until the user confirms or a verified backup/export exists.
+- Migrate ORS API keys from Hive into secure storage, then remove only the legacy Hive key after a successful secure write.
+- Store large traces as compact point rows or chunked binary payloads with indexes, not duplicated JSON blobs.
+- Keep compatibility facades (`SettingsService`, `RouteStorageService`) while replacing their backing stores.
+- Add migration tests using representative old Hive maps for routes with and without `matchedRoute`, warnings, and speed limits.
+
+## Secure Storage And Device Identity
+
+- Use platform secure storage backed by Android Keystore/iOS Keychain for Matrix tokens, ORS API key, Matrix device IDs, crypto secrets, signing keys, and recovery secrets.
+- Implement `SecureCredentialService` as the only API for secrets.
+- Implement `DeviceIdentityService` to create and load a RalRoads Ed25519 device identity.
+- Implement `EventSigningService` and `SignatureVerificationService` for authorship and package integrity.
+- Sign segment packages, attempt packages, validation requests, and device/profile events where appropriate.
+- State clearly in code and UI that signatures do not prove GPS authenticity.
+
+## Local Database Architecture
+
+Use Drift/SQLite for structured durable data. Hive may remain for small non-secret preferences during migration.
+
+Core tables:
+
+- `app_accounts`, `matrix_sessions`, `matrix_devices`, `signing_keys`
+- `profiles`, `friends`, `friend_requests`, `rooms`, `groups`, `group_members`
+- `trips`, `trip_points`
+- `route_plans`, `saved_routes`, `route_chunks`, `route_edges`, `route_maneuvers`
+- `semantic_sectors`, `pacenotes`, `road_warnings`, `speed_limit_segments`, `offline_map_regions`
+- `segments`, `segment_versions`, `segment_route_points`, `segment_rules`
+- `segment_attempts`, `attempt_points`, `attempt_validation_results`, `validator_attestations`
+- `challenges`, `challenge_participants`
+- `notifications`, `reports`, `moderation_actions`, `private_zones`
+- `outgoing_events`, `pending_media_uploads`, `sync_state`, `cached_directory_events`, `blocked_users`
+
+Requirements:
+
+- Stable IDs, foreign keys, schema versions, indexes, and transactions.
+- Indexes for route distance, dates, room IDs, segment IDs, attempt IDs, sync state, and upload state.
+- Large GPS traces stored efficiently and incrementally.
+- No destructive migration without explicit user consent.
+
+## Matrix Architecture
+
+Use a maintained Matrix Dart/Flutter SDK if compatible.
+
+Services:
+
+- `MatrixAccountService`: homeserver discovery, login, registration, logout, session restore.
+- `MatrixSyncService`: sync loop, reconnect, token refresh, offline queue coordination.
+- `MatrixRoomService`: direct rooms, group rooms, invites, membership, power levels, redactions.
+- `MatrixMediaService`: upload/download, hash verification, encrypted package upload.
+- `MatrixCryptoService`: encrypted room support, devices, verification, cross-signing where SDK supports it.
+- `MatrixProfileService`: display names, avatars, public RalRoads profile events.
+- `MatrixPushService`: push rules and notification state.
+
+Registration must support homeserver-specific flows such as email, CAPTCHA, terms, token, disabled registration, and unsupported stages via secure browser or clear UI.
+
+## RalRoads Matrix Event Schema
+
+Define strict versioned custom event types:
+
+- `org.ralroads.profile.v1`
+- `org.ralroads.friend.request.v1`
+- `org.ralroads.friend.accepted.v1`
+- `org.ralroads.friend.removed.v1`
+- `org.ralroads.device.key.v1`
+- `org.ralroads.group.profile.v1`
+- `org.ralroads.group.rules.v1`
+- `org.ralroads.segment.created.v1`
+- `org.ralroads.segment.updated.v1`
+- `org.ralroads.segment.deprecated.v1`
+- `org.ralroads.segment.published.v1`
+- `org.ralroads.attempt.submitted.v1`
+- `org.ralroads.attempt.result.v1`
+- `org.ralroads.attempt.attestation.v1`
+- `org.ralroads.challenge.created.v1`
+- `org.ralroads.challenge.updated.v1`
+- `org.ralroads.report.created.v1`
+- `org.ralroads.segment.moderation.v1`
+- `org.ralroads.validation.policy.v1`
+
+Every event includes schema version, stable entity ID, creation timestamp, author Matrix ID, author device key ID, relevant content hash, and RalRoads signature where relevant. Unsupported or malformed events are rejected safely.
+
+## Local-First Sync Architecture
+
+Services:
+
+- `SyncCoordinator`
+- `OutgoingEventQueue`
+- `PendingMediaQueue`
+- `ConflictResolver`
+- `MatrixEventIngestor`
+
+Requirements:
+
+- Queue offline changes and retry with exponential backoff.
+- Make outgoing operations idempotent.
+- Upload media before dependent events.
+- Resume interrupted uploads after restart.
+- Deduplicate Matrix events and handle redactions.
+- Handle federation delays without duplicate local entities.
+- Surface sync state in UI.
+
+Conflict rules:
+
+- Profiles: latest valid state wins.
+- Segments: immutable versions; updates reference previous version hash.
+- Attempts: immutable after submission; corrections create superseding attempts.
+- Challenges: explicit draft, active, ended, cancelled state machine.
+
+## ORS Architecture
+
+Split the current `OrsService` and `GeocodingService` into provider-layer services:
+
+- `OrsConnectionService`: secure API key, endpoint, validation, quota/error state.
+- `OrsRoutingService`: routes, profiles, alternatives, avoid options, metadata.
+- `OrsGeocodingService`: search, ranking, near bias, cancellation.
+- `OrsElevationService`: elevation where available.
+- `OrsQuotaService`: 401/403/429 and usage-state messaging.
+
+Saved routes, prepared routes, and offline navigation must not require an ORS key.
+
+## Navigation Architecture
+
+Canonical pipeline:
+
+Route response -> normalized geometry -> matched road edges -> route topology -> ORS maneuvers -> semantic sectors -> route-owned road features -> callout candidates -> mode filtering -> scheduler.
+
+Persist:
+
+- Raw route geometry.
+- Simplified overview geometry.
+- Normalized analysis geometry.
+- Matched route edges.
+- Route chunks.
+- Semantic sectors.
+- Pacenotes.
+- Road warnings.
+- Speed limits.
+- Analysis diagnostics.
+
+Map rendering, TTS, warnings, and route preview must consume this canonical result instead of independently classifying route semantics.
+
+## Long-Route Stability
+
+- Display a simplified overview quickly.
+- Analyze routes in 5-20 km chunks with 200-500 m overlap.
+- Keep active driving memory to current chunk, previous chunk, and next 1-2 chunks.
+- Persist successful chunks immediately.
+- Mark chunks as pending, processing, ready, partial, or failed.
+- Avoid global densification, huge Overpass bounding boxes, full-route nearest-point scans, and monolithic route objects.
+
+## Segment And Attempt Architecture
+
+Segments:
+
+- Created from recorded trips.
+- Include stable ID, version, name, description, creator, geometry, corridor, start/finish zones, distance, speed-limit coverage, road classes, safety status, visibility, region, rules, content hash, and signature.
+- Visibility: private, friends, group, public directory where available.
+- Public segments require stronger safety checks.
+
+Attempts:
+
+- Start on start-zone entry and finish on finish-zone crossing.
+- Validate route order, corridor completion, shortcuts, GPS quality, timestamp monotonicity, impossible jumps, acceleration, mock-location indicator, speed-limit compliance, and off-route intervals.
+- Statuses: valid clean, invalid speed limit, invalid route mismatch, invalid GPS quality, suspicious, rejected, manual review.
+- Invalid attempts stay private by default and are never official rankings.
+
+## Validation Architecture
+
+Extract deterministic validation into `packages/ralroads_validation/` with no Flutter UI dependency.
+
+Inputs:
+
+- Segment definition.
+- Trace.
+- Speed-limit snapshot.
+- Validation policy.
+- Engine version.
+
+Outputs:
+
+- Status.
+- Duration.
+- Route match score.
+- GPS quality.
+- Speed-limit coverage.
+- Violation reasons.
+- Deterministic result hash.
+
+Federated validator attestations include attempt ID, trace hash, status, duration, engine version, validator identity, validator public key, and signature.
+
+## Privacy Architecture
+
+- Trips and invalid attempts are local by default.
+- Raw location history is never public by default.
+- Private zones mask or block export/share around sensitive places.
+- Sharing is explicit per trip, segment, challenge, or attempt.
+- Friend sharing uses Matrix direct/private rooms and avoids fastest-sorted invalid attempts.
+- Public packages use hash and signature verification; private packages encrypt before upload.
+- Settings include privacy defaults, private zones, data export, deletion, storage use, and validator trust.
+
+## UI Navigation Redesign
+
+Primary destinations:
+
+- Navigate: route planner, search, ordered stops, saved routes, offline maps, preview, simulation, DriveScreen, pacenotes, navigation settings.
+- Challenges: personal segments, imported/shared segments, friend/group challenges, public regional segments, details, attempts, clean leaderboards.
+- Trips: recording, history, summary, speed-limit compliance, matched segments, local attempts, segment creation, privacy controls.
+- Community: Matrix profile, friends, requests, groups, invitations, directories, activity, reports, moderation status.
+- Settings: Matrix, ORS, navigation, callouts, voice, offline maps, privacy, private zones, validators, storage, export/delete, debug tools.
+
+First launch:
+
+- Offline-only path must enter the app immediately.
+- Matrix setup must be clearly Matrix-powered.
+- ORS setup must ask only for an API key and link to ORS signup/dashboard.
+- Completion explains which capabilities are enabled.
+
+## Phased Implementation Order
+
+1. Stabilization and audit: complete.
+2. Secure credentials: complete for ORS key; remaining Matrix/signing/recovery secrets depend on device identity and Matrix sessions.
+3. Drift foundation: add database dependencies, schema versioning, all core tables, indexes, foreign keys, and migration tests.
+4. Saved-route migration: normalize current Hive routes into SQLite without deleting Hive; depends on Drift foundation.
+5. Central repositories: partially complete for navigation and trips; remaining repositories cover segments, attempts, challenges, social/profile, offline maps, and sync.
+6. Product shell: primary Navigate, Challenges, Trips, Community, Settings destinations; depends on repositories to avoid widget-level storage/network wiring.
+7. ORS provider split: connection/routing/geocoding/elevation/quota services; depends on secure credentials and repository boundaries.
+8. Route analysis manifest: persist canonical analysis outputs and chunk statuses; depends on Drift and navigation repository.
+9. Long-route chunking: bounded analysis and resumable chunk persistence; depends on route analysis manifest.
+10. Trip recording: local trips, points, summaries, legal eligibility, privacy; depends on Drift and trip repository.
+11. Segment model: create private local segments from trips with safety checks; depends on trip recording.
+12. Attempt matching: local attempts and clean/invalid classification; depends on segment model and trip traces.
+13. Validation package: pure Dart deterministic validation with comprehensive tests; depends on attempt model.
+14. Device identity and signing: Ed25519 keys, event/package signatures; depends on secure credential extension.
+15. Matrix SDK integration: account, session restore, sync loop, rooms, media; depends on secure Matrix session storage.
+16. RalRoads event schemas: strict validation and local ingest; depends on signing and Matrix model tables.
+17. Local-first sync: outgoing queues, media queues, conflict resolution; depends on Matrix services and event schemas.
+18. Friends/groups/challenges UI: Matrix-backed social flows; depends on sync and product shell.
+19. Federated validators: attestations, trust policies, public clean leaderboards; depends on validation package, signing, Matrix media/events.
+20. Offline package/media formats: `.rrsegment`, `.rrattempt`, verification, encryption; depends on signing, validation, and Matrix media.
+21. Privacy/export/delete hardening; depends on complete local data model.
+
+## Migration Checkpoints
+
+- M0: Secure ORS key migration complete. Hive key removed only after secure write. No saved-route data changed.
+- M1: Drift schema created with `schemaVersion = 1`; app opens database at startup without changing current UI behavior. Complete.
+- M2: Saved-route snapshot migration writes all current Hive saved routes into SQLite in a transaction and can be run repeatedly without duplicate rows. Complete.
+- M3: Route detail migration stores points, pacenotes, warnings, speed limits, maneuvers, and chunk metadata in normalized tables. Hive data remains readable.
+- M4: Repository cutover reads saved routes from SQLite with Hive fallback. Rename/delete operations update the active store and preserve legacy compatibility.
+- M5: Trip/attempt tables receive real foreground-recording data in transactions. No giant JSON trace blobs.
+- M6: Matrix sync tables queue outgoing events and media uploads durably before any online send is attempted.
+
+## Acceptance Criteria
+
+- Every phase ends with `dart format`, `flutter analyze`, and `flutter test`.
+- Android debug build is attempted only when an Android SDK is available; missing SDK is documented as an environment limitation.
+- Existing offline app launch must continue to work with no ORS key and no Matrix account.
+- Existing saved Hive routes must remain present after migration.
+- Database migrations are idempotent and covered by tests.
+- Repositories expose app-domain methods; widgets do not call Matrix APIs or raw Drift tables directly.
+- Trip recording writes real GPS-derived points and can be summarized locally.
+- Attempt validation never publishes invalid attempts by default and never creates top-speed/public illegal rankings.
+- Matrix-backed features degrade gracefully when offline or unauthenticated.
+
+## Testing Strategy
+
+- Keep `flutter analyze` at zero issues.
+- Keep unit tests for geometry, semantics, pacenote filtering, scheduler timing, route feature ownership, and route analysis.
+- Add migration tests for legacy Hive settings and saved routes.
+- Add secure credential tests with an injectable in-memory secure store.
+- Add SQLite tests with in-memory Drift databases.
+- Add ORS/geocoding tests with mocked Dio adapters for 401, 403, 429, network errors, quota state, alternatives, and cancellation.
+- Add trip/attempt validation golden tests with deterministic traces.
+- Add Matrix schema validation tests for each event type.
+- Add package hash/signature verification tests.
+- Add widget tests for onboarding, primary navigation, settings states, trip summary, segment details, challenge details, and DriveScreen calm-state HUD.
+- Add integration tests for offline-only startup and saved-route navigation without Matrix or ORS.
+
+## Security Risks
+
+- Secrets in Hive or logs.
+- Matrix token refresh and encrypted-room secrets mishandled.
+- Device signing keys lost or exported insecurely.
+- Trust confusion: signatures prove authorship/package integrity, not GPS truth.
+- Malformed Matrix events or packages causing crashes or entity spoofing.
+- Media package hash mismatch or replay.
+- Public leaderboard abuse if validation policy is weak.
+- Private location leakage through reports, media, screenshots, package metadata, or Matrix room history.
+
+## Performance Risks
+
+- Long routes can still overload memory if normalized/chunked data is duplicated across screens.
+- Overpass queries can be slow, partial, rate-limited, or unavailable.
+- Full-route nearest-point scans must not run on every GPS tick.
+- Huge traces need indexed/chunked storage and streaming validation.
+- Matrix sync/media queues need bounded retries and storage backpressure.
+- MapLibre rendering can stutter if semantic sector overlays are too granular.
+- TTS scheduling must avoid dense speech queues and late callouts.
+
+## Current Implementation Slice
+
+The first implementation slice after this plan is secure ORS credential storage with backward migration from the existing Hive settings key. This directly removes a known secret-storage flaw while preserving current app behavior and avoiding a broad architecture rewrite before the database and Matrix foundations are in place.

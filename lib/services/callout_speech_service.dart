@@ -64,7 +64,9 @@ class CalloutSpeechService {
       Duration(milliseconds: (durationSeconds * 1000).round()),
       () {
         if (_isSpeaking) {
-          debugPrint('TTS safety timeout triggered after ${durationSeconds.toStringAsFixed(1)}s');
+          debugPrint(
+            'TTS safety timeout triggered after ${durationSeconds.toStringAsFixed(1)}s',
+          );
           _handleSpeechFinished();
         }
       },

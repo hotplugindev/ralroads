@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import '../models/matched_route.dart';
 import '../models/pace_note.dart';
 import '../models/road_warning.dart';
@@ -8,9 +7,10 @@ class RouteEventScorer {
     PaceNote note,
     double speedLimitKmh,
     double precedingStraightDistanceMeters,
-    String driveMode,
-    {double routeMembership = 1.0, double classificationConfidence = 0.85}
-  ) {
+    String driveMode, {
+    double routeMembership = 1.0,
+    double classificationConfidence = 0.85,
+  }) {
     double drivingRelevance = 0.8;
     double severityVal = 0.1;
 
@@ -75,12 +75,13 @@ class RouteEventScorer {
     double urgencyWeight = 0.15;
     double noveltyWeight = 0.1;
 
-    final finalScore = (routeMembership * membershipWeight) +
-                       (classificationConfidence * confidenceWeight) +
-                       (drivingRelevance * relevanceWeight) +
-                       (severityVal * severityWeight) +
-                       (urgency * urgencyWeight) +
-                       (novelty * noveltyWeight);
+    final finalScore =
+        (routeMembership * membershipWeight) +
+        (classificationConfidence * confidenceWeight) +
+        (drivingRelevance * relevanceWeight) +
+        (severityVal * severityWeight) +
+        (urgency * urgencyWeight) +
+        (novelty * noveltyWeight);
 
     // Calculate speechValue depending on the driver style/mode
     double speechValue = finalScore;
@@ -113,9 +114,10 @@ class RouteEventScorer {
     RoadWarning warning,
     double speedLimitKmh,
     double precedingStraightDistanceMeters,
-    String driveMode,
-    {double routeMembership = 1.0, double classificationConfidence = 1.0}
-  ) {
+    String driveMode, {
+    double routeMembership = 1.0,
+    double classificationConfidence = 1.0,
+  }) {
     double drivingRelevance = 0.9;
     double severityVal = 0.6;
 
@@ -182,12 +184,13 @@ class RouteEventScorer {
     double urgencyWeight = 0.15;
     double noveltyWeight = 0.1;
 
-    final finalScore = (routeMembership * membershipWeight) +
-                       (classificationConfidence * confidenceWeight) +
-                       (drivingRelevance * relevanceWeight) +
-                       (severityVal * severityWeight) +
-                       (urgency * urgencyWeight) +
-                       (novelty * noveltyWeight);
+    final finalScore =
+        (routeMembership * membershipWeight) +
+        (classificationConfidence * confidenceWeight) +
+        (drivingRelevance * relevanceWeight) +
+        (severityVal * severityWeight) +
+        (urgency * urgencyWeight) +
+        (novelty * noveltyWeight);
 
     double speechValue = finalScore;
     final mode = driveMode.toLowerCase();

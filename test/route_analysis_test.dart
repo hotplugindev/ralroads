@@ -17,10 +17,10 @@ class FakeOverpassService extends OverpassService {
     if (routePoints.isEmpty) {
       return const RoadEnrichment(roadWarnings: [], speedLimitSegments: []);
     }
-    
+
     final midPt = routePoints[routePoints.length ~/ 2];
     final dist = midPt.distanceFromStart;
-    
+
     return RoadEnrichment(
       roadWarnings: [
         RoadWarning(
@@ -70,11 +70,13 @@ void main() {
     test('correctly partitions a 25km route into 3 chunks', () {
       final points = <RoutePoint>[];
       for (var i = 0; i <= 250; i++) {
-        points.add(RoutePoint(
-          lat: 45.0 + (i * 0.0001),
-          lon: 7.0 + (i * 0.0001),
-          distanceFromStart: i * 100.0, // 0 to 25,000 meters
-        ));
+        points.add(
+          RoutePoint(
+            lat: 45.0 + (i * 0.0001),
+            lon: 7.0 + (i * 0.0001),
+            distanceFromStart: i * 100.0, // 0 to 25,000 meters
+          ),
+        );
       }
 
       final service = RouteAnalysisService(
@@ -99,11 +101,13 @@ void main() {
     test('sequential runAnalysis updates state progressively', () async {
       final points = <RoutePoint>[];
       for (var i = 0; i <= 250; i++) {
-        points.add(RoutePoint(
-          lat: 45.0 + (i * 0.0001),
-          lon: 7.0 + (i * 0.0001),
-          distanceFromStart: i * 100.0,
-        ));
+        points.add(
+          RoutePoint(
+            lat: 45.0 + (i * 0.0001),
+            lon: 7.0 + (i * 0.0001),
+            distanceFromStart: i * 100.0,
+          ),
+        );
       }
 
       final initialNotes = [

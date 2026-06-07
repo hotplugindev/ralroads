@@ -50,9 +50,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasSavedKey = widget.settings.hasOrsApiKey();
-    final usingDevelopmentKey = widget.settings.isUsingDevelopmentKey;
-    final theme = Theme.of(context);
+    return ListenableBuilder(
+      listenable: widget.settings,
+      builder: (context, _) {
+        final hasSavedKey = widget.settings.hasOrsApiKey();
+        final usingDevelopmentKey = widget.settings.isUsingDevelopmentKey;
+        final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -268,9 +271,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.speed,
                   title: 'Show speed limits',
                   value: widget.settings.showSpeedLimits,
-                  onChanged: (value) => _setWarningSetting(
-                    () => widget.settings.setShowSpeedLimits(value),
-                  ),
+                  onChanged: (value) => widget.settings.setShowSpeedLimits(value),
                 ),
                 _buildDivider(theme),
                 _buildSwitchRow(
@@ -278,9 +279,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.traffic,
                   title: 'Show traffic lights',
                   value: widget.settings.showTrafficLights,
-                  onChanged: (value) => _setWarningSetting(
-                    () => widget.settings.setShowTrafficLights(value),
-                  ),
+                  onChanged: (value) => widget.settings.setShowTrafficLights(value),
                 ),
                 _buildDivider(theme),
                 _buildSwitchRow(
@@ -288,9 +287,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.signpost_outlined,
                   title: 'Show stop/give-way signs',
                   value: widget.settings.showStopGiveWay,
-                  onChanged: (value) => _setWarningSetting(
-                    () => widget.settings.setShowStopGiveWay(value),
-                  ),
+                  onChanged: (value) => widget.settings.setShowStopGiveWay(value),
                 ),
                 _buildDivider(theme),
                 _buildSwitchRow(
@@ -298,9 +295,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.waves,
                   title: 'Show speed bumps',
                   value: widget.settings.showSpeedBumps,
-                  onChanged: (value) => _setWarningSetting(
-                    () => widget.settings.setShowSpeedBumps(value),
-                  ),
+                  onChanged: (value) => widget.settings.setShowSpeedBumps(value),
                 ),
                 _buildDivider(theme),
                 _buildSwitchRow(
@@ -309,9 +304,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Show road features',
                   subtitle: 'Surface, tunnels, bridges, roundabouts',
                   value: widget.settings.showRoadFeatures,
-                  onChanged: (value) => _setWarningSetting(
-                    () => widget.settings.setShowRoadFeatures(value),
-                  ),
+                  onChanged: (value) => widget.settings.setShowRoadFeatures(value),
                 ),
                 _buildDivider(theme),
                 _buildSwitchRow(
@@ -320,9 +313,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Show speed camera warnings',
                   subtitle: 'Use only where legally permitted',
                   value: widget.settings.showSpeedCameras,
-                  onChanged: (value) => _setWarningSetting(
-                    () => widget.settings.setShowSpeedCameras(value),
-                  ),
+                  onChanged: (value) => widget.settings.setShowSpeedCameras(value),
                 ),
               ],
             ),
@@ -387,12 +378,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ],
                         selected: {widget.settings.pacenoteStyle},
-                        onSelectionChanged:
-                            (Set<PacenoteStyle> selection) async {
+                        onSelectionChanged: (Set<PacenoteStyle> selection) async {
                               await widget.settings.setPacenoteStyle(
                                 selection.first,
                               );
-                              setState(() {});
                             },
                       ),
                       const SizedBox(height: 12),
@@ -469,11 +458,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             vertical: 8,
                           ),
                         ),
-                        value: widget.settings.orsProfile,
+                        initialValue: widget.settings.orsProfile,
                         onChanged: (OrsProfile? profile) async {
                           if (profile != null) {
                             await widget.settings.setOrsProfile(profile);
-                            setState(() {});
                           }
                         },
                         items: const [
@@ -587,9 +575,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   subtitle:
                       'Rotate map in driving direction. If disabled, map remains North-up.',
                   value: widget.settings.mapHeadingUp,
-                  onChanged: (value) => _setWarningSetting(
-                    () => widget.settings.setMapHeadingUp(value),
-                  ),
+                  onChanged: (value) => widget.settings.setMapHeadingUp(value),
                 ),
                 _buildDivider(theme),
                 _buildSwitchRow(
@@ -598,9 +584,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Use new black map style',
                   subtitle: 'If disabled, use the old simple map style',
                   value: widget.settings.useCleanMap,
-                  onChanged: (value) => _setWarningSetting(
-                    () => widget.settings.setUseCleanMap(value),
-                  ),
+                  onChanged: (value) => widget.settings.setUseCleanMap(value),
                 ),
                 _buildDivider(theme),
                 _buildSwitchRow(
@@ -609,20 +593,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Sensor-assisted heading',
                   subtitle: 'Use gyro and compass to stabilize heading',
                   value: widget.settings.sensorAssistedHeading,
-                  onChanged: (value) => _setWarningSetting(
-                    () => widget.settings.setSensorAssistedHeading(value),
-                  ),
+                  onChanged: (value) => widget.settings.setSensorAssistedHeading(value),
                 ),
                 _buildDivider(theme),
                 _buildSwitchRow(
                   context,
-                  icon: Icons.blur_on, // Or standard icon like Icons.blur_on
+                  icon: Icons.blur_on,
                   title: 'Smooth marker movement',
                   subtitle: 'Interpolate marker position between GPS updates',
                   value: widget.settings.smoothMarkerMovement,
-                  onChanged: (value) => _setWarningSetting(
-                    () => widget.settings.setSmoothMarkerMovement(value),
-                  ),
+                  onChanged: (value) => widget.settings.setSmoothMarkerMovement(value),
                 ),
               ],
             ),
@@ -692,7 +672,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
-    );
+      ); // end Scaffold
+      }, // end builder
+    ); // end ListenableBuilder
   }
 
   Widget _buildSwitchRow(
@@ -779,9 +761,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
-    setState(() {
-      _testing = true;
-    });
+    setState(() => _testing = true);
 
     try {
       final works = await _orsService.validateApiKey(key);
@@ -791,11 +771,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (_) {
       _refreshStatus(status: 'API key rejected');
     } finally {
-      if (mounted) {
-        setState(() {
-          _testing = false;
-        });
-      }
+      if (mounted) setState(() => _testing = false);
     }
   }
 
@@ -818,11 +794,5 @@ class _SettingsScreenState extends State<SettingsScreen> {
               : 'No API key saved');
     });
   }
-
-  Future<void> _setWarningSetting(Future<void> Function() update) async {
-    await update();
-    if (mounted) {
-      setState(() {});
-    }
-  }
 }
+

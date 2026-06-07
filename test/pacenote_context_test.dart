@@ -914,7 +914,6 @@ class _PathBuilder {
 
 class FakeCalloutSpeechService implements CalloutSpeechService {
   bool _speaking = false;
-  bool _enabled = true;
 
   @override
   bool get isSpeaking => _speaking;
@@ -923,9 +922,7 @@ class FakeCalloutSpeechService implements CalloutSpeechService {
   Future<void> init() async {}
 
   @override
-  void setEnabled(bool enabled) {
-    _enabled = enabled;
-  }
+  void setEnabled(bool enabled) {}
 
   @override
   Future<void> speak(String text, VoidCallback onComplete) async {

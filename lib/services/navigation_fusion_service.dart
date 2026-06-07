@@ -115,10 +115,7 @@ class NavigationFusionService extends ChangeNotifier {
   DateTime? _lastGpsTime;
   double _expectedIntervalMs = 500.0;
 
-  NavigationFusionService({
-    required this.routePoints,
-    required this.settings,
-  });
+  NavigationFusionService({required this.routePoints, required this.settings});
 
   void start() {
     _startSensors();
@@ -151,16 +148,15 @@ class NavigationFusionService extends ChangeNotifier {
       intervalDuration: const Duration(milliseconds: 500),
     );
 
-    _gpsSubscription = Geolocator.getPositionStream(
-      locationSettings: locationSettings,
-    ).listen(
-      _handleGpsUpdate,
-      onError: (e) => debugPrint('Geolocator stream error: $e'),
-    );
+    _gpsSubscription =
+        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+          _handleGpsUpdate,
+          onError: (e) => debugPrint('Geolocator stream error: $e'),
+        );
 
     if (settings.sensorAssistedHeading) {
       try {
-        _gyroSubscription = gyroscopeEvents.listen(
+        _gyroSubscription = gyroscopeEventStream().listen(
           _handleGyroUpdate,
           onError: (e) => debugPrint('Gyroscope error: $e'),
         );
@@ -169,7 +165,7 @@ class NavigationFusionService extends ChangeNotifier {
       }
 
       try {
-        _accelSubscription = accelerometerEvents.listen(
+        _accelSubscription = accelerometerEventStream().listen(
           _handleAccelUpdate,
           onError: (e) => debugPrint('Accelerometer error: $e'),
         );
@@ -240,20 +236,32 @@ class NavigationFusionService extends ChangeNotifier {
     _distanceFromRoute = match.distanceFromRoute;
 
     final gpsSpeed = position.speed;
-    final hasGpsHeading = position.heading.isFinite && (position.heading > 0.001 || position.heading < -0.001 || position.heading != 0.0);
+    final hasGpsHeading =
+        position.heading.isFinite &&
+        (position.heading > 0.001 ||
+            position.heading < -0.001 ||
+            position.heading != 0.0);
 
     if (settings.sensorAssistedHeading) {
       if (gpsSpeed >= 4.5 && hasGpsHeading) {
-        final routeBearing = routePoints[_lastMatchedIndex].heading;
         final gpsHeading = position.heading;
-
-        final bearingDiff = normalizeAngleDeltaDegrees(gpsHeading, routeBearing).abs();
-        if (bearingDiff < 90.0) {
+        if (routePoints.isEmpty) {
           final diff = normalizeAngleDeltaDegrees(_fusedHeading, gpsHeading);
           _fusedHeading = (_fusedHeading + diff * 0.6) % 360;
         } else {
-          final diff = normalizeAngleDeltaDegrees(_fusedHeading, gpsHeading);
-          _fusedHeading = (_fusedHeading + diff * 0.3) % 360;
+          final routeBearing = routePoints[_lastMatchedIndex].heading;
+
+          final bearingDiff = normalizeAngleDeltaDegrees(
+            gpsHeading,
+            routeBearing,
+          ).abs();
+          if (bearingDiff < 90.0) {
+            final diff = normalizeAngleDeltaDegrees(_fusedHeading, gpsHeading);
+            _fusedHeading = (_fusedHeading + diff * 0.6) % 360;
+          } else {
+            final diff = normalizeAngleDeltaDegrees(_fusedHeading, gpsHeading);
+            _fusedHeading = (_fusedHeading + diff * 0.3) % 360;
+          }
         }
       }
     } else {
@@ -349,10 +357,16 @@ class NavigationFusionService extends ChangeNotifier {
   }
 
   void _onTick() {
-    if (_prevPosition == null || _nextPosition == null || _currentState == null) return;
+    if (_prevPosition == null ||
+        _nextPosition == null ||
+        _currentState == null) {
+      return;
+    }
 
     final now = DateTime.now();
-    if (_lastGpsTime == null) return;
+    if (_lastGpsTime == null) {
+      return;
+    }
 
     final elapsedMs = now.difference(_lastGpsTime!).inMilliseconds.toDouble();
 

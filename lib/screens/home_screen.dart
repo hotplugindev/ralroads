@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../controllers/driving_session_controller.dart';
 import '../services/route_storage_service.dart';
 import '../services/settings_service.dart';
 import 'map_planner_screen.dart';
@@ -7,10 +8,16 @@ import 'saved_routes_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({required this.storage, required this.settings, super.key});
+  const HomeScreen({
+    required this.storage,
+    required this.settings,
+    required this.drivingSession,
+    super.key,
+  });
 
   final RouteStorageService storage;
   final SettingsService settings;
+  final DrivingSessionController drivingSession;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -71,6 +78,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             builder: (_) => MapPlannerScreen(
                               storage: widget.storage,
                               settings: widget.settings,
+                              drivingSession: widget.drivingSession,
                             ),
                           ),
                         );
@@ -86,6 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             builder: (_) => SavedRoutesScreen(
                               storage: widget.storage,
                               settings: widget.settings,
+                              drivingSession: widget.drivingSession,
                             ),
                           ),
                         );
@@ -112,10 +121,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(
-          storage: widget.storage,
-          settings: widget.settings,
-        ),
+        builder: (_) =>
+            SettingsScreen(storage: widget.storage, settings: widget.settings),
       ),
     );
     if (mounted) {

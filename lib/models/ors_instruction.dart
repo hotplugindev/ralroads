@@ -70,15 +70,15 @@ class OrsInstruction {
   bool get isRightward => type == 1 || type == 3 || type == 5 || type == 13;
 
   Map<String, dynamic> toJson() => {
-        'type': type,
-        'instruction': instruction,
-        'name': name,
-        'distance': distance,
-        'duration': duration,
-        'startWaypoint': startWaypoint,
-        'endWaypoint': endWaypoint,
-        'distanceFromStart': distanceFromStart,
-      };
+    'type': type,
+    'instruction': instruction,
+    'name': name,
+    'distance': distance,
+    'duration': duration,
+    'startWaypoint': startWaypoint,
+    'endWaypoint': endWaypoint,
+    'distanceFromStart': distanceFromStart,
+  };
 
   factory OrsInstruction.fromJson(Map<String, dynamic> json) {
     return OrsInstruction(

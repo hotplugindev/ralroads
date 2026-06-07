@@ -82,7 +82,12 @@ class RouteFeatureMatcher {
       );
     }
     if (geometry.length == 1) {
-      final d = haversineDistanceMeters(lat, lon, geometry.first.lat, geometry.first.lon);
+      final d = haversineDistanceMeters(
+        lat,
+        lon,
+        geometry.first.lat,
+        geometry.first.lon,
+      );
       return ProjectionResult(
         perpendicularDistanceMeters: d,
         distanceFromStart: geometry.first.distanceFromStart,
@@ -122,7 +127,9 @@ class RouteFeatureMatcher {
       final projLat = p1.lat + t * (p2.lat - p1.lat);
       final perp = haversineDistanceMeters(lat, lon, projLat, projLon);
 
-      final distFromStart = p1.distanceFromStart + t * (p2.distanceFromStart - p1.distanceFromStart);
+      final distFromStart =
+          p1.distanceFromStart +
+          t * (p2.distanceFromStart - p1.distanceFromStart);
 
       if (bestResult == null || perp < bestResult.perpendicularDistanceMeters) {
         bestResult = ProjectionResult(
@@ -167,7 +174,9 @@ class RouteFeatureMatcher {
     for (var i = 0; i < route.edges.length; i++) {
       final edge = route.edges[i];
       final proj = projectPoint(lat, lon, edge.geometry);
-      if (bestProj == null || proj.perpendicularDistanceMeters < bestProj.perpendicularDistanceMeters) {
+      if (bestProj == null ||
+          proj.perpendicularDistanceMeters <
+              bestProj.perpendicularDistanceMeters) {
         bestProj = proj;
         bestEdgeIdx = i;
       }
@@ -204,7 +213,8 @@ class RouteFeatureMatcher {
         layerScore: 1.0,
         confidence: 0.0,
         belongsToRoute: false,
-        rejectionReason: 'Distance to route is ${distM.toStringAsFixed(1)} meters (limit 25m)',
+        rejectionReason:
+            'Distance to route is ${distM.toStringAsFixed(1)} meters (limit 25m)',
       );
     }
 
@@ -217,7 +227,8 @@ class RouteFeatureMatcher {
     }
     if (edgeLayer != featureLayer) {
       layerScore = 0.0;
-      rejectionReason = 'Layer mismatch: edge=$edgeLayer, feature=$featureLayer';
+      rejectionReason =
+          'Layer mismatch: edge=$edgeLayer, feature=$featureLayer';
     }
 
     bool featureIsBridge = tags['bridge'] == 'yes';
@@ -233,25 +244,43 @@ class RouteFeatureMatcher {
 
     double directionScore = 1.0;
     double bearingDiff = 0.0;
-    final dirValue = tags['direction'] ?? tags['camera:direction'] ?? tags['camera:bearing'] ?? tags['bearing'] ?? tags['traffic_signals:direction'];
+    final dirValue =
+        tags['direction'] ??
+        tags['camera:direction'] ??
+        tags['camera:bearing'] ??
+        tags['bearing'] ??
+        tags['traffic_signals:direction'];
     if (dirValue != null) {
       double? featureBearing = double.tryParse(dirValue.toString());
       if (featureBearing == null) {
         final str = dirValue.toString().toLowerCase();
-        if (str == 'n') featureBearing = 0;
-        else if (str == 'ne') featureBearing = 45;
-        else if (str == 'e') featureBearing = 90;
-        else if (str == 'se') featureBearing = 135;
-        else if (str == 's') featureBearing = 180;
-        else if (str == 'sw') featureBearing = 225;
-        else if (str == 'w') featureBearing = 270;
-        else if (str == 'nw') featureBearing = 315;
+        if (str == 'n') {
+          featureBearing = 0;
+        } else if (str == 'ne') {
+          featureBearing = 45;
+        } else if (str == 'e') {
+          featureBearing = 90;
+        } else if (str == 'se') {
+          featureBearing = 135;
+        } else if (str == 's') {
+          featureBearing = 180;
+        } else if (str == 'sw') {
+          featureBearing = 225;
+        } else if (str == 'w') {
+          featureBearing = 270;
+        } else if (str == 'nw') {
+          featureBearing = 315;
+        }
       }
       if (featureBearing != null) {
-        bearingDiff = normalizeAngleDeltaDegrees(edge.forwardBearing, featureBearing).abs();
+        bearingDiff = normalizeAngleDeltaDegrees(
+          edge.forwardBearing,
+          featureBearing,
+        ).abs();
         if (bearingDiff > 45.0) {
           directionScore = 0.0;
-          rejectionReason = 'Bearing difference is ${bearingDiff.toStringAsFixed(1)} degrees (limit 45)';
+          rejectionReason =
+              'Bearing difference is ${bearingDiff.toStringAsFixed(1)} degrees (limit 45)';
         }
       }
     }
@@ -261,7 +290,9 @@ class RouteFeatureMatcher {
       final waysList = tags['ways'] as List<dynamic>?;
       if (waysList != null && waysList.isNotEmpty) {
         final traversedWayIds = route.edges.map((e) => e.osmWayId).toSet();
-        final sharesWay = waysList.any((w) => traversedWayIds.contains(w.toString()));
+        final sharesWay = waysList.any(
+          (w) => traversedWayIds.contains(w.toString()),
+        );
         if (!sharesWay) {
           connectivityScore = 0.0;
           rejectionReason = 'Feature belongs only to side ways: $waysList';
@@ -317,7 +348,9 @@ class RouteFeatureMatcher {
 
     final wayId = tags['way_id'] ?? tags['id'];
     if (wayId != null) {
-      final matchingEdges = route.edges.where((e) => e.osmWayId == wayId.toString()).toList();
+      final matchingEdges = route.edges
+          .where((e) => e.osmWayId == wayId.toString())
+          .toList();
       if (matchingEdges.isNotEmpty) {
         double totalLen = 0.0;
         for (final edge in matchingEdges) {
@@ -349,7 +382,9 @@ class RouteFeatureMatcher {
       for (var i = 0; i < route.edges.length; i++) {
         final edge = route.edges[i];
         final proj = projectPoint(p.lat, p.lon, edge.geometry);
-        if (bestProj == null || proj.perpendicularDistanceMeters < bestProj.perpendicularDistanceMeters) {
+        if (bestProj == null ||
+            proj.perpendicularDistanceMeters <
+                bestProj.perpendicularDistanceMeters) {
           bestProj = proj;
           edgeIdx = i;
         }
@@ -377,7 +412,8 @@ class RouteFeatureMatcher {
         layerScore: 1.0,
         confidence: 0.0,
         belongsToRoute: false,
-        rejectionReason: 'Geometry overlap too small (${overlapLen.toStringAsFixed(1)} meters, limit 15m)',
+        rejectionReason:
+            'Geometry overlap too small (${overlapLen.toStringAsFixed(1)} meters, limit 15m)',
       );
     }
 

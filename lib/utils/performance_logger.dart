@@ -31,7 +31,12 @@ class PerformanceLogger {
     }
   }
 
-  static void logMapState(String screen, {int? layers, int? sources, int? markers}) {
+  static void logMapState(
+    String screen, {
+    int? layers,
+    int? sources,
+    int? markers,
+  }) {
     if (kDebugMode) {
       developer.log(
         '[Perf] Map State ($screen) -> Layers: ${layers ?? "N/A"}, Sources: ${sources ?? "N/A"}, Markers: ${markers ?? "N/A"}',
