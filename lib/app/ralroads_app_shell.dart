@@ -28,6 +28,7 @@ class RalRoadsAppShell extends StatefulWidget {
   }) : socialController = MatrixSocialController(
           repositories: repositories,
           clientService: session.syncService.matrixAccount.clientService,
+          syncService: session.syncService,
         );
 
   final RouteStorageService storage;
@@ -84,7 +85,10 @@ class _RalRoadsAppShellState extends State<RalRoadsAppShell> {
           ),
           ChallengesScreen(
             repositories: widget.repositories,
-            session: widget,
+            session: widget.session,
+            socialController: widget.socialController,
+            accountController: widget.accountController,
+            settings: widget.settings,
           ),
           TripsScreen(
             repositories: widget.repositories,

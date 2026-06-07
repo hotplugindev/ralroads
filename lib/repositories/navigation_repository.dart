@@ -37,4 +37,6 @@ class NavigationRepository {
   Future<int> migrateLegacySavedRoutes() {
     return _migration.migrateSavedRoutes(_routeStorage.getRoutes());
   }
+
+  Stream<List<SavedRoute>> watchSavedRoutes() => _routeStorage.watchRoutes();
 }

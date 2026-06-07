@@ -42,4 +42,9 @@ class RouteStorageService {
   }
 
   Future<void> deleteRoute(String id) => _box.delete(id);
+
+  Stream<List<SavedRoute>> watchRoutes() async* {
+    yield getRoutes();
+    yield* _box.watch().map((_) => getRoutes());
+  }
 }

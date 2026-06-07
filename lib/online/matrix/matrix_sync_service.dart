@@ -46,7 +46,12 @@ class MatrixSyncService {
 
       // 1. Subscribe to events stream
       _eventSubscription = _client.onEvent.stream.listen((update) async {
-        final content = update.content;
+        var eventUpdate = update;
+        final room = _client.getRoomById(update.roomID);
+        if (room != null) {
+          eventUpdate = await update.decrypt(room);
+        }
+        final content = eventUpdate.content;
         final eventId = content['event_id'] as String?;
         final eventType = content['type'] as String?;
         final payload = content['content'] as Map<String, dynamic>?;
@@ -93,6 +98,10 @@ class MatrixSyncService {
 
       // Trigger initial outbox check
       processOutbox();
+
+      // Start background sync loop
+      _client.backgroundSync = false;
+      _client.backgroundSync = true;
     });
   }
 
@@ -104,6 +113,7 @@ class MatrixSyncService {
     _eventSubscription = null;
     _syncSubscription?.cancel();
     _syncSubscription = null;
+    _client.backgroundSync = false;
   }
 
   Future<void> processOutbox() async {

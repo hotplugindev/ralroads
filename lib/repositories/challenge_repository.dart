@@ -137,4 +137,16 @@ class ChallengeRepository {
           ..orderBy([(row) => OrderingTerm.desc(row.updatedAt)]))
         .watch();
   }
+
+  Future<Challenge?> getChallenge(String id) {
+    return (database.select(database.challenges)
+          ..where((row) => row.id.equals(id)))
+        .getSingleOrNull();
+  }
+
+  Stream<Challenge?> watchChallenge(String id) {
+    return (database.select(database.challenges)
+          ..where((row) => row.id.equals(id)))
+        .watchSingleOrNull();
+  }
 }

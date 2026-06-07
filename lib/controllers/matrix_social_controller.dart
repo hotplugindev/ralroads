@@ -10,6 +10,7 @@ import '../database/app_database.dart';
 import '../models/route_point.dart';
 import '../online/matrix/matrix_client_service.dart';
 import '../online/matrix/matrix_encryption_helper.dart';
+import '../online/matrix/matrix_sync_service.dart';
 import '../repositories/app_repositories.dart';
 import '../repositories/friend_repository.dart';
 import '../repositories/group_repository.dart';
@@ -20,11 +21,14 @@ class MatrixSocialController extends ChangeNotifier {
   MatrixSocialController({
     required AppRepositories repositories,
     required MatrixClientService clientService,
+    MatrixSyncService? syncService,
   }) : _repositories = repositories,
-       _clientService = clientService;
+       _clientService = clientService,
+       _syncService = syncService;
 
   final AppRepositories _repositories;
   final MatrixClientService _clientService;
+  final MatrixSyncService? _syncService;
 
   bool _busy = false;
   String? _message;
@@ -116,6 +120,8 @@ class MatrixSocialController extends ChangeNotifier {
         roomId: roomId,
       );
 
+      _syncService?.processOutbox();
+
       _setBusy(false, msg: 'Friend request sent.');
     } catch (e) {
       _setBusy(false, msg: 'Failed to send request: $e');
@@ -180,6 +186,8 @@ class MatrixSocialController extends ChangeNotifier {
         roomId: roomId,
       );
 
+      _syncService?.processOutbox();
+
       _setBusy(false, msg: 'Friend request accepted.');
     } catch (e) {
       _setBusy(false, msg: 'Failed to accept: $e');
@@ -228,6 +236,8 @@ class MatrixSocialController extends ChangeNotifier {
           payloadJson: jsonEncode(payload),
           roomId: roomId,
         );
+
+        _syncService?.processOutbox();
       }
 
       _setBusy(false, msg: 'Friend request rejected.');
@@ -290,6 +300,8 @@ class MatrixSocialController extends ChangeNotifier {
         payloadJson: jsonEncode(payload),
         roomId: roomId,
       );
+
+      _syncService?.processOutbox();
 
       _setBusy(false, msg: 'Group created successfully.');
     } catch (e) {
@@ -484,6 +496,8 @@ class MatrixSocialController extends ChangeNotifier {
         roomId: roomId,
       );
 
+      _syncService?.processOutbox();
+
       _setBusy(false, msg: 'Segment sharing queued.');
     } catch (e) {
       _setBusy(false, msg: 'Sharing failed: $e');
@@ -576,6 +590,8 @@ class MatrixSocialController extends ChangeNotifier {
         payloadJson: jsonEncode(payload),
         roomId: roomId,
       );
+
+      _syncService?.processOutbox();
 
       _setBusy(false, msg: 'Attempt sharing queued.');
     } catch (e) {
