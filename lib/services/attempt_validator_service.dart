@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:ralroads_validation/ralroads_validation.dart';
+import '../database/app_database.dart';
 import '../repositories/attempt_repository.dart';
 import '../repositories/segment_repository.dart';
 
@@ -108,6 +109,67 @@ class AttemptValidatorService {
       officialEligible: result.status == AttemptStatus.validClean,
     );
 
+    // 8. Award Gamification Badges if criteria are met
+    if (attempt.profileId != null && attempt.profileId!.isNotEmpty) {
+      await checkAndAwardBadges(attempt.profileId!);
+    }
+
     return result;
+  }
+
+  Future<void> checkAndAwardBadges(String profileId) async {
+    try {
+      final db = attemptRepository.database;
+      final attempts = await (db.select(db.segmentAttempts)
+            ..where((row) => row.profileId.equals(profileId)))
+          .get();
+
+      final cleanAttempts = attempts
+          .where((a) => a.status == 'validClean' || a.status == 'valid_clean')
+          .toList();
+
+      // Helper to award a badge
+      Future<void> awardBadge({
+        required String id,
+        required String title,
+        required String body,
+      }) async {
+        final exists = await (db.select(db.localNotifications)
+              ..where((row) => row.id.equals(id)))
+            .getSingleOrNull();
+
+        if (exists == null) {
+          await db.into(db.localNotifications).insertOnConflictUpdate(
+                LocalNotificationsCompanion(
+                  id: Value(id),
+                  type: const Value('badge_earned'),
+                  title: Value(title),
+                  body: Value(body),
+                  createdAt: Value(DateTime.now()),
+                ),
+              );
+        }
+      }
+
+      // Check "First Clean Run" badge
+      if (cleanAttempts.isNotEmpty) {
+        await awardBadge(
+          id: 'badge_first_clean',
+          title: 'First Clean Run',
+          body: 'Congratulations! You completed your first clean segment attempt.',
+        );
+      }
+
+      // Check "Frequent Flyer" badge (5 or more attempts)
+      if (attempts.length >= 5) {
+        await awardBadge(
+          id: 'badge_frequent_flyer',
+          title: 'Frequent Flyer',
+          body: 'Awesome! You have completed 5 or more segment attempts.',
+        );
+      }
+    } catch (_) {
+      // Prevent badge awarding failures from crashing
+    }
   }
 }

@@ -314,7 +314,7 @@ class _FakeAccountConnectionController extends ChangeNotifier
 
   @override
   Future<void> connectMatrix({
-    required Uri homeserver,
+    required String homeserverInput,
     required String username,
     required String password,
   }) async {

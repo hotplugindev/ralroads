@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../database/app_database.dart';
 import '../online/matrix/matrix_account_service.dart';
+import '../online/matrix/matrix_server_config.dart';
 import '../online/matrix/matrix_sync_service.dart';
 import '../repositories/app_repositories.dart';
 import '../services/secure_credential_service.dart';
@@ -167,7 +168,7 @@ class AccountConnectionController extends ChangeNotifier {
   String? get message => _message;
 
   Future<void> connectMatrix({
-    required Uri homeserver,
+    required String homeserverInput,
     required String username,
     required String password,
   }) async {
@@ -175,15 +176,28 @@ class AccountConnectionController extends ChangeNotifier {
     _message = null;
     notifyListeners();
     try {
+      final server = await discoverHomeserver(
+        input: homeserverInput,
+        matrixUserId: username,
+      );
       final result = await _matrixAccountService.loginWithPassword(
-        homeserver: homeserver,
+        server: server,
         username: username,
         password: password,
       );
       _message = 'Connected as ${result.userId}';
       await _session.refreshConnections();
-    } on MatrixAccountException catch (error) {
+    } on FormatException catch (error) {
       _message = error.message;
+    } on MatrixAccountException catch (error) {
+      final msg = error.message;
+      if (msg.contains('M_FORBIDDEN') || msg.contains('forbidden') || msg.contains('credentials') || msg.contains('password') || msg.contains('rejected')) {
+        _message = 'Matrix rejected those credentials.';
+      } else {
+        _message = msg;
+      }
+    } catch (error) {
+      _message = 'Server unavailable';
     } finally {
       _busy = false;
       notifyListeners();

@@ -747,7 +747,7 @@ class _MatrixPageState extends State<_MatrixPage> {
       return;
     }
     await widget.accountController.connectMatrix(
-      homeserver: Uri.parse(homeserverText),
+      homeserverInput: homeserverText,
       username: _usernameController.text.trim(),
       password: _passwordController.text,
     );

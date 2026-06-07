@@ -7,7 +7,7 @@ import 'controllers/driving_session_controller.dart';
 import 'database/app_database.dart';
 import 'online/matrix/matrix_account_service.dart';
 import 'repositories/app_repositories.dart';
-import 'screens/app_shell.dart';
+import 'app/ralroads_app_shell.dart';
 import 'services/route_storage_service.dart';
 import 'services/secure_credential_service.dart';
 import 'services/settings_service.dart';

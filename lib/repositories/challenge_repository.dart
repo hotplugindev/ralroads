@@ -11,6 +11,7 @@ class ChallengeRepository {
     required String id,
     required String segmentId,
     required String name,
+    String? roomId,
     DateTime? startsAt,
     DateTime? endsAt,
   }) async {
@@ -22,6 +23,7 @@ class ChallengeRepository {
             id: Value(id),
             segmentId: Value(segmentId),
             name: Value(name),
+            roomId: Value(roomId),
             status: const Value('draft'),
             startsAt: Value(startsAt),
             endsAt: Value(endsAt),
@@ -121,6 +123,16 @@ class ChallengeRepository {
     return (database.select(database.challenges)
           ..where(
             (row) => row.status.equals('active') | row.status.equals('draft'),
+          )
+          ..orderBy([(row) => OrderingTerm.desc(row.updatedAt)]))
+        .watch();
+  }
+
+  Stream<List<Challenge>> watchPastChallenges() {
+    return (database.select(database.challenges)
+          ..where(
+            (row) =>
+                row.status.equals('ended') | row.status.equals('cancelled'),
           )
           ..orderBy([(row) => OrderingTerm.desc(row.updatedAt)]))
         .watch();

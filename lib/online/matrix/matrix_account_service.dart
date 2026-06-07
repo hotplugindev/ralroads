@@ -1,8 +1,8 @@
-import 'package:dio/dio.dart';
 import 'package:drift/drift.dart';
-
 import '../../database/app_database.dart';
 import '../../services/secure_credential_service.dart';
+import 'matrix_client_service.dart';
+import 'matrix_server_config.dart';
 
 class MatrixLoginResult {
   const MatrixLoginResult({
@@ -29,14 +29,19 @@ class MatrixAccountService {
   MatrixAccountService({
     required AppDatabase database,
     required SecureCredentialService secureCredentials,
-    Dio? dio,
+    MatrixClientService? clientService,
   }) : _database = database,
        _secureCredentials = secureCredentials,
-       _dio = dio ?? Dio();
+       _clientService = clientService ?? MatrixClientService(
+         database: database,
+         secureCredentials: secureCredentials,
+       );
 
   final AppDatabase _database;
   final SecureCredentialService _secureCredentials;
-  final Dio _dio;
+  final MatrixClientService _clientService;
+
+  MatrixClientService get clientService => _clientService;
 
   Future<MatrixSession?> restoreSession() {
     return (_database.select(_database.matrixSessions)
@@ -46,77 +51,46 @@ class MatrixAccountService {
   }
 
   Future<MatrixLoginResult> loginWithPassword({
-    required Uri homeserver,
+    required MatrixServerConfig server,
     required String username,
     required String password,
   }) async {
-    final baseUrl = _normalizeHomeserver(homeserver);
+    final baseUrl = server.canonicalBaseUrl;
     try {
-      final response = await _dio.post<Map<String, dynamic>>(
-        '$baseUrl/_matrix/client/v3/login',
-        data: {
-          'type': 'm.login.password',
-          'identifier': {'type': 'm.id.user', 'user': username},
-          'password': password,
-          'initial_device_display_name': 'RalRoads',
-        },
-        options: Options(headers: {'Content-Type': 'application/json'}),
+      await _clientService.login(
+        server: server,
+        username: username,
+        password: password,
       );
-      final data = response.data;
-      final accessToken = data?['access_token'] as String?;
-      final userId = data?['user_id'] as String?;
-      final deviceId = data?['device_id'] as String?;
-      final refreshToken = data?['refresh_token'] as String?;
-      if (accessToken == null || userId == null || deviceId == null) {
+
+      final client = _clientService.client;
+      final userId = client.userID;
+      final deviceId = client.deviceID;
+
+      if (userId == null || deviceId == null) {
         throw const MatrixAccountException(
           'Matrix login response was missing required session fields.',
         );
       }
 
-      await _secureCredentials.writeString(
-        SecureCredentialKey.matrixAccessToken,
-        accessToken,
-      );
-      if (refreshToken != null) {
-        await _secureCredentials.writeString(
-          SecureCredentialKey.matrixRefreshToken,
-          refreshToken,
-        );
-      }
-      await _secureCredentials.writeString(
-        SecureCredentialKey.matrixDeviceId,
-        deviceId,
-      );
       await _persistSession(
         homeserverUrl: baseUrl,
         matrixUserId: userId,
         deviceId: deviceId,
       );
+
       return MatrixLoginResult(
         userId: userId,
         deviceId: deviceId,
         homeserverUrl: baseUrl,
       );
-    } on DioException catch (error) {
-      final status = error.response?.statusCode;
-      final err = error.response?.data;
-      if (status == 403) {
-        throw const MatrixAccountException(
-          'Matrix rejected those credentials.',
-        );
-      }
-      if (status == 429) {
-        throw const MatrixAccountException(
-          'Matrix login is rate-limited. Try again later.',
-        );
-      }
-      throw MatrixAccountException(
-        'Matrix login failed${status == null ? '' : ' ($status)'}: $err',
-      );
+    } catch (error) {
+      throw MatrixAccountException('Matrix login failed: $error');
     }
   }
 
   Future<void> logout() async {
+    await _clientService.logout();
     await _secureCredentials.delete(SecureCredentialKey.matrixAccessToken);
     await _secureCredentials.delete(SecureCredentialKey.matrixRefreshToken);
     await _secureCredentials.delete(SecureCredentialKey.matrixDeviceId);
@@ -168,15 +142,5 @@ class MatrixAccountService {
             ),
           );
     });
-  }
-
-  String _normalizeHomeserver(Uri homeserver) {
-    final withScheme = homeserver.hasScheme
-        ? homeserver
-        : Uri.parse('https://${homeserver.toString()}');
-    return withScheme
-        .replace(path: '')
-        .toString()
-        .replaceFirst(RegExp(r'/$'), '');
   }
 }

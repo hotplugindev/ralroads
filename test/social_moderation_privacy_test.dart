@@ -8,13 +8,13 @@ import 'package:ralroads/repositories/trip_repository.dart';
 import 'package:ralroads/models/route_point.dart';
 import 'package:ralroads/repositories/segment_repository.dart';
 import 'package:ralroads/services/route_storage_service.dart';
-import 'package:ralroads/services/badge_service.dart';
+import 'package:ralroads/services/attempt_validator_service.dart';
 
 void main() {
   group('Social, Moderation, Privacy Zones, and Badges', () {
     late AppDatabase database;
     late AppRepositories repositories;
-    late BadgeService badgeService;
+    late AttemptValidatorService validatorService;
 
     setUp(() async {
       database = AppDatabase(NativeDatabase.memory());
@@ -22,9 +22,9 @@ void main() {
         routeStorage: RouteStorageService(),
         database: database,
       );
-      badgeService = BadgeService(
-        database: database,
-        notifications: repositories.notifications,
+      validatorService = AttemptValidatorService(
+        attemptRepository: repositories.attempts,
+        segmentRepository: repositories.segments,
       );
 
       // Create a segment for foreign key constraints in attempts
@@ -202,7 +202,7 @@ void main() {
         startedAt: DateTime.now(),
         profileId: 'prof-1',
       );
-      await badgeService.checkAndAwardBadges('prof-1');
+      await validatorService.checkAndAwardBadges('prof-1');
       // No clean attempts yet -> no badges
       expect(
         await repositories.notifications.getUnreadNotifications(),
@@ -227,7 +227,7 @@ void main() {
         status: 'valid_clean',
       );
 
-      await badgeService.checkAndAwardBadges('prof-1');
+      await validatorService.checkAndAwardBadges('prof-1');
       final unreadAfterClean = await repositories.notifications
           .getUnreadNotifications();
       expect(unreadAfterClean, hasLength(1));
@@ -251,7 +251,7 @@ void main() {
         );
       }
 
-      await badgeService.checkAndAwardBadges('prof-1');
+      await validatorService.checkAndAwardBadges('prof-1');
       final unreadAfter5 = await repositories.notifications
           .getUnreadNotifications();
       expect(unreadAfter5, hasLength(1));

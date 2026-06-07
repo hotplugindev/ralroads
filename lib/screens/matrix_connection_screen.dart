@@ -126,7 +126,7 @@ class _MatrixConnectionScreenState extends State<MatrixConnectionScreen> {
   Future<void> _connect() async {
     FocusManager.instance.primaryFocus?.unfocus();
     await widget.controller.connectMatrix(
-      homeserver: Uri.parse(_homeserver.text.trim()),
+      homeserverInput: _homeserver.text.trim(),
       username: _username.text.trim(),
       password: _password.text,
     );

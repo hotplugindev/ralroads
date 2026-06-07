@@ -37,4 +37,11 @@ class NotificationRepository {
           ..where((row) => row.id.equals(id)))
         .write(LocalNotificationsCompanion(readAt: Value(DateTime.now())));
   }
+
+  Stream<List<LocalNotification>> watchUnreadNotifications() {
+    return (database.select(database.localNotifications)
+          ..where((row) => row.readAt.isNull())
+          ..orderBy([(row) => OrderingTerm.desc(row.createdAt)]))
+        .watch();
+  }
 }
