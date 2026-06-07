@@ -58,6 +58,47 @@ class GroupRepository {
     )..where((row) => row.id.equals(id))).getSingle();
   }
 
+  Future<Group> upsertMatrixGroup({
+    required String id,
+    required String roomId,
+    required String name,
+    String? description,
+    String visibility = 'private',
+    bool encrypted = false,
+  }) async {
+    final now = DateTime.now();
+    await database.transaction(() async {
+      await database
+          .into(database.rooms)
+          .insertOnConflictUpdate(
+            RoomsCompanion(
+              id: Value(roomId),
+              matrixRoomId: Value(roomId),
+              type: const Value('group'),
+              name: Value(name),
+              encrypted: Value(encrypted),
+              updatedAt: Value(now),
+            ),
+          );
+      await database
+          .into(database.groups)
+          .insertOnConflictUpdate(
+            GroupsCompanion(
+              id: Value(id),
+              roomId: Value(roomId),
+              name: Value(name),
+              description: Value(description),
+              visibility: Value(visibility),
+              createdAt: Value(now),
+              updatedAt: Value(now),
+            ),
+          );
+    });
+    return (database.select(
+      database.groups,
+    )..where((row) => row.id.equals(id))).getSingle();
+  }
+
   Future<void> updateCachedGroupMetadata({
     required String id,
     String? name,

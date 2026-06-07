@@ -7,7 +7,6 @@ import '../repositories/profile_repository.dart';
 import '../services/ors_service.dart';
 import '../services/route_storage_service.dart';
 import '../services/settings_service.dart';
-import 'matrix_connection_screen.dart';
 
 // ─── Entry point ────────────────────────────────────────────────────────────
 
@@ -33,7 +32,6 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen>
     with TickerProviderStateMixin {
-  final PageController _pageController = PageController();
   late final AnimationController _fadeController;
   late final Animation<double> _fadeAnimation;
 
@@ -56,79 +54,111 @@ class _OnboardingScreenState extends State<OnboardingScreen>
 
   @override
   void dispose() {
-    _pageController.dispose();
     _fadeController.dispose();
     super.dispose();
   }
 
   void _next() {
+    FocusManager.instance.primaryFocus?.unfocus();
     if (_currentPage < _totalPages - 1) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOutCubic,
-      );
+      setState(() => _currentPage += 1);
     }
   }
 
   void _prev() {
+    FocusManager.instance.primaryFocus?.unfocus();
     if (_currentPage > 0) {
-      _pageController.previousPage(
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOutCubic,
-      );
+      setState(() => _currentPage -= 1);
     }
   }
 
   void _finish() => widget.session.completeOnboarding();
 
+  Widget _currentStep() {
+    return switch (_currentPage) {
+      0 => _WelcomePage(onNext: _next, onSkip: _finish),
+      1 => _OrsKeyPage(settings: widget.settings, onNext: _next),
+      2 => _ProfilePage(repositories: widget.repositories, onNext: _next),
+      3 => _MatrixPage(
+        accountController: widget.accountController,
+        session: widget.session,
+        onNext: _next,
+      ),
+      _ => _ReadyPage(onFinish: _finish),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final keyboardBottom = MediaQuery.viewInsetsOf(context).bottom;
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       backgroundColor: scheme.surface,
-      body: SafeArea(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: Column(
-            children: [
-              // ── Progress bar ──
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-                child: _OnboardingProgress(
-                  current: _currentPage,
-                  total: _totalPages,
-                ),
-              ),
-              // ── Pages ──
-              Expanded(
-                child: PageView(
-                  controller: _pageController,
-                  physics: const NeverScrollableScrollPhysics(),
-                  onPageChanged: (i) => setState(() => _currentPage = i),
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: SafeArea(
+          child: FadeTransition(
+            opacity: _fadeAnimation,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final maxWidth = constraints.maxWidth >= 700 ? 560.0 : null;
+                return Column(
                   children: [
-                    _WelcomePage(onNext: _next, onSkip: _finish),
-                    _OrsKeyPage(settings: widget.settings, onNext: _next),
-                    _ProfilePage(
-                      repositories: widget.repositories,
-                      onNext: _next,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: maxWidth ?? double.infinity,
+                          ),
+                          child: _OnboardingProgress(
+                            current: _currentPage,
+                            total: _totalPages,
+                          ),
+                        ),
+                      ),
                     ),
-                    _MatrixPage(
-                      accountController: widget.accountController,
-                      session: widget.session,
-                      onNext: _next,
+                    Expanded(
+                      child: SingleChildScrollView(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: EdgeInsets.fromLTRB(
+                          24,
+                          8,
+                          24,
+                          24 + keyboardBottom,
+                        ),
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: maxWidth ?? double.infinity,
+                            ),
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 220),
+                              switchInCurve: Curves.easeOut,
+                              switchOutCurve: Curves.easeIn,
+                              child: KeyedSubtree(
+                                key: ValueKey<int>(_currentPage),
+                                child: _currentStep(),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                    _ReadyPage(onFinish: _finish),
+                    _OnboardingNav(
+                      current: _currentPage,
+                      total: _totalPages,
+                      keyboardVisible: keyboardBottom > 0,
+                      onBack: _currentPage > 0 ? _prev : null,
+                      onSkip: _currentPage < _totalPages - 1 ? _finish : null,
+                    ),
                   ],
-                ),
-              ),
-              // ── Bottom nav row ──
-              _OnboardingNav(
-                current: _currentPage,
-                total: _totalPages,
-                onBack: _currentPage > 0 ? _prev : null,
-                onSkip: _currentPage < _totalPages - 1 ? _finish : null,
-              ),
-            ],
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -177,22 +207,34 @@ class _OnboardingNav extends StatelessWidget {
   const _OnboardingNav({
     required this.current,
     required this.total,
+    required this.keyboardVisible,
     this.onBack,
     this.onSkip,
   });
 
   final int current;
   final int total;
+  final bool keyboardVisible;
   final VoidCallback? onBack;
   final VoidCallback? onSkip;
 
   @override
   Widget build(BuildContext context) {
     if (current == 0 || current == total - 1) return const SizedBox(height: 12);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.fromLTRB(
+        24,
+        0,
+        24,
+        12 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
         children: [
           if (onBack != null)
             TextButton.icon(
@@ -204,6 +246,12 @@ class _OnboardingNav extends StatelessWidget {
             const SizedBox.shrink(),
           if (onSkip != null)
             TextButton(onPressed: onSkip, child: const Text('Skip setup')),
+          if (keyboardVisible)
+            IconButton(
+              tooltip: 'Hide keyboard',
+              onPressed: () => FocusManager.instance.primaryFocus?.unfocus(),
+              icon: const Icon(Icons.keyboard_hide_outlined),
+            ),
         ],
       ),
     );
@@ -223,12 +271,11 @@ class _WelcomePage extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.symmetric(vertical: 24),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 2),
           Center(
             child: Container(
               width: 100,
@@ -259,7 +306,7 @@ class _WelcomePage extends StatelessWidget {
             ),
             textAlign: TextAlign.center,
           ),
-          const Spacer(flex: 2),
+          const SizedBox(height: 32),
           FilledButton(
             onPressed: onNext,
             style: FilledButton.styleFrom(
@@ -281,7 +328,6 @@ class _WelcomePage extends StatelessWidget {
             ),
             child: const Text('Use offline without setup'),
           ),
-          const Spacer(),
         ],
       ),
     );
@@ -379,11 +425,11 @@ class _OrsKeyPageState extends State<_OrsKeyPage> {
     final hasKey = widget.settings.hasEffectiveOrsApiKey();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(),
           Icon(Icons.route_outlined, size: 48, color: scheme.primary),
           const SizedBox(height: 16),
           Text(
@@ -404,6 +450,7 @@ class _OrsKeyPageState extends State<_OrsKeyPage> {
             controller: _controller,
             obscureText: _obscure,
             autocorrect: false,
+            scrollPadding: const EdgeInsets.all(96),
             decoration: InputDecoration(
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -485,7 +532,7 @@ class _OrsKeyPageState extends State<_OrsKeyPage> {
               ),
             ],
           ),
-          const Spacer(),
+          const SizedBox(height: 24),
           FilledButton(
             onPressed: widget.onNext,
             style: FilledButton.styleFrom(
@@ -545,11 +592,12 @@ class _ProfilePageState extends State<_ProfilePage> {
     await widget.repositories.profiles.createOrUpdateLocalProfile(
       LocalProfileInput(id: 'local-profile', displayName: name),
     );
-    if (mounted)
+    if (mounted) {
       setState(() {
         _saving = false;
         _saved = true;
       });
+    }
   }
 
   @override
@@ -558,11 +606,11 @@ class _ProfilePageState extends State<_ProfilePage> {
     final text = Theme.of(context).textTheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(),
           Icon(Icons.person_outline, size: 48, color: scheme.primary),
           const SizedBox(height: 16),
           Text(
@@ -582,6 +630,7 @@ class _ProfilePageState extends State<_ProfilePage> {
           TextField(
             controller: _nameController,
             textCapitalization: TextCapitalization.words,
+            scrollPadding: const EdgeInsets.all(96),
             decoration: InputDecoration(
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -610,7 +659,7 @@ class _ProfilePageState extends State<_ProfilePage> {
               ),
             ),
           ),
-          const Spacer(),
+          const SizedBox(height: 24),
           FilledButton(
             onPressed: widget.onNext,
             style: FilledButton.styleFrom(
@@ -630,7 +679,7 @@ class _ProfilePageState extends State<_ProfilePage> {
 
 // ─── Page 3 — Matrix ─────────────────────────────────────────────────────────
 
-class _MatrixPage extends StatelessWidget {
+class _MatrixPage extends StatefulWidget {
   const _MatrixPage({
     required this.accountController,
     required this.session,
@@ -642,16 +691,79 @@ class _MatrixPage extends StatelessWidget {
   final VoidCallback onNext;
 
   @override
+  State<_MatrixPage> createState() => _MatrixPageState();
+}
+
+class _MatrixPageState extends State<_MatrixPage> {
+  final _homeserverController = TextEditingController(
+    text: 'https://matrix.org',
+  );
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _autoAdvanced = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.session.addListener(_maybeAdvance);
+    widget.accountController.addListener(_maybeAdvance);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAdvance());
+  }
+
+  @override
+  void dispose() {
+    widget.session.removeListener(_maybeAdvance);
+    widget.accountController.removeListener(_maybeAdvance);
+    _homeserverController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  void _maybeAdvance() {
+    if (_autoAdvanced || !mounted) return;
+    final connected =
+        widget.session.snapshot.matrixStatus ==
+            MatrixConnectionStatus.connected ||
+        widget.session.snapshot.matrixStatus == MatrixConnectionStatus.syncing;
+    if (!connected || widget.accountController.busy) return;
+    _autoAdvanced = true;
+    Future<void>.delayed(const Duration(milliseconds: 650), () {
+      if (mounted) widget.onNext();
+    });
+  }
+
+  Future<void> _connect() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final homeserverText = _homeserverController.text.trim();
+    if (homeserverText.isEmpty ||
+        _usernameController.text.trim().isEmpty ||
+        _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter homeserver, Matrix ID and password.'),
+        ),
+      );
+      return;
+    }
+    await widget.accountController.connectMatrix(
+      homeserver: Uri.parse(homeserverText),
+      username: _usernameController.text.trim(),
+      password: _passwordController.text,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(),
           Icon(Icons.hub_outlined, size: 48, color: scheme.primary),
           const SizedBox(height: 16),
           Text(
@@ -679,28 +791,88 @@ class _MatrixPage extends StatelessWidget {
             icon: Icons.leaderboard_outlined,
             label: 'Federated leaderboards',
           ),
-          const Spacer(),
+          const SizedBox(height: 20),
           ListenableBuilder(
-            listenable: session,
+            listenable: Listenable.merge([
+              widget.session,
+              widget.accountController,
+            ]),
             builder: (context, _) {
               final connected =
-                  session.snapshot.matrixStatus ==
+                  widget.session.snapshot.matrixStatus ==
                   MatrixConnectionStatus.connected;
               if (connected) {
-                return _ConnectedBanner(onNext: onNext);
+                return _ConnectedBanner(
+                  matrixUserId:
+                      widget.session.snapshot.matrixSession?.matrixUserId,
+                  syncing: widget.session.syncService.isRunning,
+                  onNext: widget.onNext,
+                );
               }
+              final message = widget.accountController.message;
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  FilledButton.icon(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => MatrixConnectionScreen(
-                          controller: accountController,
-                        ),
+                  TextField(
+                    controller: _homeserverController,
+                    keyboardType: TextInputType.url,
+                    textInputAction: TextInputAction.next,
+                    autocorrect: false,
+                    scrollPadding: const EdgeInsets.all(96),
+                    decoration: InputDecoration(
+                      labelText: 'Homeserver',
+                      prefixIcon: const Icon(Icons.dns_outlined),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    icon: const Icon(Icons.login),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _usernameController,
+                    textInputAction: TextInputAction.next,
+                    autocorrect: false,
+                    scrollPadding: const EdgeInsets.all(96),
+                    decoration: InputDecoration(
+                      labelText: 'Matrix ID or username',
+                      prefixIcon: const Icon(Icons.person_outline),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) =>
+                        widget.accountController.busy ? null : _connect(),
+                    scrollPadding: const EdgeInsets.all(120),
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  if (message != null) ...[
+                    const SizedBox(height: 10),
+                    _InlineStatus(
+                      label: message,
+                      error: !message.startsWith('Connected as'),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: widget.accountController.busy ? null : _connect,
+                    icon: widget.accountController.busy
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.login),
                     label: const Text(
                       'Connect Matrix',
                       style: TextStyle(fontSize: 16),
@@ -714,7 +886,7 @@ class _MatrixPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   OutlinedButton(
-                    onPressed: onNext,
+                    onPressed: widget.onNext,
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -734,6 +906,37 @@ class _MatrixPage extends StatelessWidget {
   }
 }
 
+class _InlineStatus extends StatelessWidget {
+  const _InlineStatus({required this.label, required this.error});
+
+  final String label;
+  final bool error;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(
+          error ? Icons.error_outline : Icons.check_circle_outline,
+          size: 18,
+          color: error ? scheme.error : Colors.green,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: error ? scheme.error : Colors.green,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _FeatureBullet extends StatelessWidget {
   const _FeatureBullet({required this.icon, required this.label});
   final IconData icon;
@@ -748,7 +951,7 @@ class _FeatureBullet extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: scheme.primary),
           const SizedBox(width: 12),
-          Text(label, style: const TextStyle(fontSize: 14)),
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
         ],
       ),
     );
@@ -756,8 +959,15 @@ class _FeatureBullet extends StatelessWidget {
 }
 
 class _ConnectedBanner extends StatelessWidget {
-  const _ConnectedBanner({required this.onNext});
+  const _ConnectedBanner({
+    required this.onNext,
+    required this.syncing,
+    this.matrixUserId,
+  });
+
   final VoidCallback onNext;
+  final bool syncing;
+  final String? matrixUserId;
 
   @override
   Widget build(BuildContext context) {
@@ -783,9 +993,27 @@ class _ConnectedBanner extends StatelessWidget {
                   color: scheme.onSurface,
                 ),
               ),
+              if (matrixUserId != null) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    matrixUserId!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
+        if (syncing) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Community data is syncing in the background.',
+            style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+          ),
+        ],
         const SizedBox(height: 12),
         FilledButton(
           onPressed: onNext,
@@ -814,12 +1042,11 @@ class _ReadyPage extends StatelessWidget {
     final text = Theme.of(context).textTheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.symmetric(vertical: 24),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Spacer(flex: 2),
           Center(
             child: Container(
               width: 100,
@@ -851,7 +1078,7 @@ class _ReadyPage extends StatelessWidget {
             ),
             textAlign: TextAlign.center,
           ),
-          const Spacer(flex: 2),
+          const SizedBox(height: 32),
           FilledButton(
             onPressed: onFinish,
             style: FilledButton.styleFrom(
@@ -865,7 +1092,6 @@ class _ReadyPage extends StatelessWidget {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
           ),
-          const Spacer(),
         ],
       ),
     );

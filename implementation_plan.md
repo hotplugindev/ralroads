@@ -9,6 +9,25 @@
 - Follow-up baseline on 2026-06-07: `flutter analyze` clean, `flutter test` 40 tests passing, `adb` not found on PATH.
 - Current run baseline on 2026-06-07: `flutter pub get` passed, `flutter analyze` clean, `flutter test` 47 tests passing, `adb` not found on PATH.
 - Scope-correction baseline on 2026-06-07: `flutter pub get` passed and `flutter analyze` passed before validator-removal edits. Initial sandboxed `flutter test` was blocked by loopback binding permissions; elevated test run exposed a Trip Summary stream-cleanup test failure.
+- Final verification on 2026-06-07: `dart format .` completed, `flutter analyze` is clean, and `flutter test --concurrency=1` passes 67 tests. Android builds are blocked because Flutter Doctor cannot locate an Android SDK.
+- Onboarding/Matrix product pass on 2026-06-07: baseline verified at 67 tests, onboarding rebuilt with keyboard-aware scrolling and inline Matrix login, Matrix login now advances onboarding automatically after session state changes, Matrix custom profile/friend/group/directory event ingestion writes through Drift repositories, Community shows cached requests/friends/groups/directory events, and tests now cover 72 passing cases. Android builds remain blocked by missing Android SDK.
+
+## Current Product Phases
+
+- Phase 1 baseline verification: complete for this run; `flutter pub get`, `flutter analyze`, and `flutter test --concurrency=1` matched the expected clean baseline before product edits.
+- Phase 2 onboarding keyboard/layout behavior: implemented a SafeArea/LayoutBuilder/Column/Expanded/SingleChildScrollView structure with keyboard-aware padding, dismiss-on-tap/drag, scroll padding on fields, wrapping bottom controls, and responsive text wrapping.
+- Phase 3 onboarding smoothness: removed the non-scrollable PageView and Spacer-heavy pages, kept controllers in state, narrowed rebuilds to current step widgets, and avoided duplicate Matrix route navigation during onboarding.
+- Phase 4 Matrix onboarding completion: Matrix login is inline, preserves entered values on failure, shows progress/error/success state, listens to canonical session state, and auto-advances after a persisted usable session appears.
+- Phase 5 canonical Matrix implementation: no second Matrix client was added. The app still uses one existing HTTP Matrix account/sync boundary because network-restricted dependency changes prevented adding a maintained SDK in this run.
+- Phase 6/7 Matrix lifecycle and sync: existing session restore/sync loop is preserved; ingestion now handles RalRoads profile, friend, group, and directory events in addition to segment/attempt events.
+- Phase 8 outgoing queue: existing durable outbox remains and is still covered by tests; advanced dependency/media retry states remain incomplete.
+- Phase 9 custom events: profile, friend request/accepted/removed, group profile, and directory segment publication events now have concrete ingestion paths with payload-size and shape checks.
+- Phase 10 friends: Matrix-derived friend request/accepted/removed events persist to Drift and appear in Community; interactive send/accept/reject/block UI is still incomplete.
+- Phase 11 groups: Matrix group profile events persist Matrix-room-backed groups and appear in Community; create/invite/join/roles/power-level UI remains incomplete.
+- Phase 12 communities/directories: subscribed directory event cache now has a watcher and Community display; subscribe/search/import/publish flows remain incomplete.
+- Phase 15 shared leaderboards: trust labels remain documented, but Matrix-derived leaderboard aggregation is still incomplete.
+- Phase 16/17 Community/reactivity: Community now watches Drift-backed social and directory data and updates without tab switching.
+- Phase 18-22 UI/responsive/settings work: onboarding received the responsive overhaul and regression tests; the full app-wide UI cleanup remains a larger unfinished phase.
 
 ## Validator Scope Decision
 

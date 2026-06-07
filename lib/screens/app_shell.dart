@@ -483,61 +483,140 @@ class _CommunityTab extends StatelessWidget {
           stream: parent.repositories.social.watchLocalSnapshot(),
           builder: (context, snapshot) {
             final social = snapshot.data;
-            return RalRoadsPage(
-              title: 'Community',
-              children: [
-                ConnectionCard(
-                  title: 'Matrix',
-                  status: session.matrixStatus.name,
-                  icon: Icons.hub_outlined,
-                  description:
-                      'Matrix powers friends, groups, shared challenges, sync and moderation. No fake users are shown while disconnected.',
-                  actionLabel:
-                      session.matrixStatus == MatrixConnectionStatus.connected
-                      ? 'Manage'
-                      : 'Connect Matrix',
-                  onAction: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => MatrixConnectionScreen(
-                        controller: parent.accountController,
+            return StreamBuilder<List<CachedDirectoryEvent>>(
+              stream: parent.repositories.directories.watchRecentEvents(),
+              builder: (context, directorySnapshot) {
+                final directories =
+                    directorySnapshot.data ?? const <CachedDirectoryEvent>[];
+                return RalRoadsPage(
+                  title: 'Community',
+                  children: [
+                    ConnectionCard(
+                      title: 'Matrix',
+                      status: session.matrixStatus.name,
+                      icon: Icons.hub_outlined,
+                      description:
+                          'Matrix powers friends, groups, shared challenges, sync and moderation. No fake users are shown while disconnected.',
+                      actionLabel:
+                          session.matrixStatus ==
+                              MatrixConnectionStatus.connected
+                          ? 'Manage'
+                          : 'Connect Matrix',
+                      onAction: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => MatrixConnectionScreen(
+                            controller: parent.accountController,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                FeatureCard(
-                  title: social?.profile?.displayName ?? 'Local profile',
-                  subtitle: social?.profile == null
-                      ? 'Create a local-only profile for trips and private segments.'
-                      : 'Stored locally${social!.profile!.matrixUserId == null ? '' : ' and linked to Matrix'}.',
-                  icon: Icons.person_outline,
-                  onTap: () => _createLocalProfile(context),
-                ),
-                SectionHeader(
-                  title: 'Friends',
-                  trailing: StatusChip(label: '${social?.friends.length ?? 0}'),
-                ),
-                if ((social?.friends ?? const []).isEmpty)
-                  const EmptyState(
-                    title: 'No cached friends',
-                    message:
-                        'Friend data appears here after Matrix connection and sync.',
-                  ),
-                SectionHeader(
-                  title: 'Groups',
-                  trailing: StatusChip(label: '${social?.groups.length ?? 0}'),
-                ),
-                if ((social?.groups ?? const []).isEmpty)
-                  EmptyState(
-                    title: 'No local groups',
-                    message:
-                        'Create a private local draft, then connect Matrix to invite others.',
-                    action: OutlinedButton.icon(
-                      onPressed: () => _createLocalGroup(context),
-                      icon: const Icon(Icons.group_add_outlined),
-                      label: const Text('Create local group'),
+                    FeatureCard(
+                      title: social?.profile?.displayName ?? 'Local profile',
+                      subtitle: social?.profile == null
+                          ? 'Create a local-only profile for trips and private segments.'
+                          : 'Stored locally${social!.profile!.matrixUserId == null ? '' : ' and linked to Matrix'}.',
+                      icon: Icons.person_outline,
+                      onTap: () => _createLocalProfile(context),
                     ),
-                  ),
-              ],
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        StatusChip(
+                          label:
+                              '${social?.pendingRequests.length ?? 0} requests',
+                        ),
+                        StatusChip(
+                          label: '${social?.friends.length ?? 0} friends',
+                        ),
+                        StatusChip(
+                          label: '${social?.groups.length ?? 0} groups',
+                        ),
+                        StatusChip(
+                          label: '${directories.length} directory events',
+                        ),
+                      ],
+                    ),
+                    const SectionHeader(title: 'Requests'),
+                    if ((social?.pendingRequests ?? const []).isEmpty)
+                      const EmptyState(
+                        title: 'No friend requests',
+                        message:
+                            'Incoming and outgoing Matrix friend requests appear here after sync.',
+                      )
+                    else
+                      for (final request in social!.pendingRequests)
+                        FeatureCard(
+                          title: request.state,
+                          subtitle:
+                              '${request.fromProfileId} -> ${request.toProfileId}',
+                          icon: Icons.person_add_alt_1_outlined,
+                        ),
+                    SectionHeader(
+                      title: 'Friends',
+                      trailing: StatusChip(
+                        label: '${social?.friends.length ?? 0}',
+                      ),
+                    ),
+                    if ((social?.friends ?? const []).isEmpty)
+                      const EmptyState(
+                        title: 'No cached friends',
+                        message:
+                            'Friend data appears here after Matrix connection and sync.',
+                      )
+                    else
+                      for (final friendship in social!.friends)
+                        FeatureCard(
+                          title: 'Friend',
+                          subtitle:
+                              '${friendship.profileId} <-> ${friendship.friendProfileId}',
+                          icon: Icons.person_outline,
+                        ),
+                    SectionHeader(
+                      title: 'Groups',
+                      trailing: StatusChip(
+                        label: '${social?.groups.length ?? 0}',
+                      ),
+                    ),
+                    if ((social?.groups ?? const []).isEmpty)
+                      EmptyState(
+                        title: 'No local groups',
+                        message:
+                            'Create a private local draft, then connect Matrix to invite others.',
+                        action: OutlinedButton.icon(
+                          onPressed: () => _createLocalGroup(context),
+                          icon: const Icon(Icons.group_add_outlined),
+                          label: const Text('Create local group'),
+                        ),
+                      )
+                    else
+                      for (final group in social!.groups)
+                        FeatureCard(
+                          title: group.name,
+                          subtitle:
+                              '${group.visibility} • ${group.description ?? 'Matrix/local group'}',
+                          icon: Icons.groups_outlined,
+                        ),
+                    SectionHeader(
+                      title: 'Subscribed directories',
+                      trailing: StatusChip(label: '${directories.length}'),
+                    ),
+                    if (directories.isEmpty)
+                      const EmptyState(
+                        title: 'No cached directory activity',
+                        message:
+                            'Subscribed regional directory events appear here after Matrix sync.',
+                      )
+                    else
+                      for (final event in directories)
+                        FeatureCard(
+                          title: event.eventType,
+                          subtitle: '${event.entityId} • ${event.roomId}',
+                          icon: Icons.travel_explore_outlined,
+                        ),
+                  ],
+                );
+              },
             );
           },
         );

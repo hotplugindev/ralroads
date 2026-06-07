@@ -9,6 +9,8 @@ import '../../models/route_point.dart';
 import '../../repositories/app_repositories.dart';
 import '../../repositories/segment_repository.dart';
 import '../../repositories/attempt_repository.dart';
+import '../../repositories/friend_repository.dart';
+import '../../repositories/profile_repository.dart';
 import '../../repositories/trip_repository.dart';
 import '../../services/secure_credential_service.dart';
 import 'matrix_account_service.dart';
@@ -193,8 +195,49 @@ class MatrixSyncService {
           )..where((row) => row.id.equals(eventId))).getSingleOrNull();
           if (exists != null) continue;
 
-          // Process known custom events
-          if (eventType == 'org.ralroads.shared_package.v1') {
+          // Process known custom events.
+          if (eventType == 'org.ralroads.profile.v1') {
+            await importProfileEvent(
+              content,
+              sender: event['sender'] as String?,
+            );
+          } else if (eventType == 'org.ralroads.friend.request.v1') {
+            await importFriendEvent(
+              content,
+              session: session,
+              state: 'pending',
+            );
+          } else if (eventType == 'org.ralroads.friend.accepted.v1') {
+            await importFriendEvent(
+              content,
+              session: session,
+              state: 'accepted',
+            );
+          } else if (eventType == 'org.ralroads.friend.rejected.v1' ||
+              eventType == 'org.ralroads.friend.removed.v1') {
+            await importFriendEvent(
+              content,
+              session: session,
+              state: 'removed',
+            );
+          } else if (eventType == 'org.ralroads.group.profile.v1') {
+            await importGroupEvent(content, roomId: roomId);
+          } else if (eventType ==
+              'org.ralroads.directory.segment.published.v1') {
+            await repositories.directories.cacheDirectoryEvent(
+              id: eventId,
+              roomId: roomId,
+              eventType: eventType,
+              entityId:
+                  content['segmentId'] as String? ??
+                  content['id'] as String? ??
+                  eventId,
+              payloadJson: jsonEncode(content),
+              originTimestamp: DateTime.fromMillisecondsSinceEpoch(
+                originServerTs,
+              ),
+            );
+          } else if (eventType == 'org.ralroads.shared_package.v1') {
             await _handleSharedPackage(content, session, accessToken);
           } else if (eventType == 'org.ralroads.segment.v1') {
             await _handlePlainSegment(content);
@@ -249,6 +292,147 @@ class MatrixSyncService {
     try {
       await importAttempt(content);
     } catch (_) {}
+  }
+
+  Future<void> importProfileEvent(
+    Map<String, dynamic> content, {
+    String? sender,
+  }) async {
+    if (!_payloadAllowed(content)) return;
+    final payload = _payload(content);
+    final matrixUserId =
+        payload['matrixUserId'] as String? ??
+        payload['matrix_user_id'] as String? ??
+        payload['authorMatrixId'] as String? ??
+        sender;
+    if (matrixUserId == null || !_isMatrixId(matrixUserId)) return;
+    final displayName =
+        payload['displayName'] as String? ??
+        payload['display_name'] as String? ??
+        matrixUserId;
+    await repositories.profiles.createOrUpdateLocalProfile(
+      LocalProfileInput(
+        id: _profileIdForMatrix(matrixUserId),
+        matrixUserId: matrixUserId,
+        displayName: displayName,
+        avatarUri: payload['avatarUri'] as String?,
+        homeRegion: payload['homeRegion'] as String?,
+        visibility: payload['visibility'] as String? ?? 'friends',
+      ),
+    );
+  }
+
+  Future<void> importFriendEvent(
+    Map<String, dynamic> content, {
+    required MatrixSession session,
+    required String state,
+  }) async {
+    if (!_payloadAllowed(content)) return;
+    final payload = _payload(content);
+    final fromMatrixId =
+        payload['fromMatrixId'] as String? ??
+        payload['from'] as String? ??
+        payload['authorMatrixId'] as String?;
+    final toMatrixId =
+        payload['toMatrixId'] as String? ??
+        payload['to'] as String? ??
+        payload['targetMatrixId'] as String?;
+    if (!_isMatrixId(fromMatrixId) || !_isMatrixId(toMatrixId)) return;
+    final fromId = fromMatrixId!;
+    final toId = toMatrixId!;
+
+    final localProfile = await repositories.profiles.getCurrentLocalProfile();
+    final fromProfileId = fromId == session.matrixUserId
+        ? localProfile?.id ?? _profileIdForMatrix(fromId)
+        : _profileIdForMatrix(fromId);
+    final toProfileId = toId == session.matrixUserId
+        ? localProfile?.id ?? _profileIdForMatrix(toId)
+        : _profileIdForMatrix(toId);
+
+    await _ensureMatrixProfile(fromId, fromProfileId);
+    await _ensureMatrixProfile(toId, toProfileId);
+
+    final requestId =
+        payload['id'] as String? ??
+        payload['requestId'] as String? ??
+        'friend-$fromProfileId-$toProfileId';
+    if (state == 'pending') {
+      await repositories.friends.upsertRequest(
+        CachedFriendRequestInput(
+          id: requestId,
+          fromProfileId: fromProfileId,
+          toProfileId: toProfileId,
+          state: 'pending',
+          roomId: payload['roomId'] as String?,
+        ),
+      );
+      return;
+    }
+
+    await repositories.friends.upsertFriend(
+      id: 'friendship-$fromProfileId-$toProfileId',
+      profileId: fromProfileId,
+      friendProfileId: toProfileId,
+      state: state,
+    );
+  }
+
+  Future<void> importGroupEvent(
+    Map<String, dynamic> content, {
+    required String roomId,
+  }) async {
+    if (!_payloadAllowed(content)) return;
+    final payload = _payload(content);
+    final groupId =
+        payload['id'] as String? ??
+        payload['groupId'] as String? ??
+        'group-$roomId';
+    final name =
+        payload['name'] as String? ??
+        payload['displayName'] as String? ??
+        'Matrix group';
+    await repositories.groups.upsertMatrixGroup(
+      id: groupId,
+      roomId: roomId,
+      name: name,
+      description: payload['description'] as String?,
+      visibility: payload['visibility'] as String? ?? 'private',
+      encrypted: payload['encrypted'] as bool? ?? false,
+    );
+  }
+
+  Future<void> _ensureMatrixProfile(String matrixUserId, String id) async {
+    final existing = await (repositories.profiles.database.select(
+      repositories.profiles.database.profiles,
+    )..where((row) => row.id.equals(id))).getSingleOrNull();
+    if (existing != null) return;
+    await repositories.profiles.createOrUpdateLocalProfile(
+      LocalProfileInput(
+        id: id,
+        matrixUserId: matrixUserId,
+        displayName: matrixUserId,
+        visibility: 'friends',
+      ),
+    );
+  }
+
+  Map<String, dynamic> _payload(Map<String, dynamic> content) {
+    final payload = content['payload'];
+    if (payload is Map<String, dynamic>) return payload;
+    return content;
+  }
+
+  bool _payloadAllowed(Map<String, dynamic> content) {
+    return jsonEncode(content).length <= 64 * 1024;
+  }
+
+  bool _isMatrixId(String? value) {
+    if (value == null) return false;
+    return value.startsWith('@') && value.contains(':');
+  }
+
+  String _profileIdForMatrix(String matrixUserId) {
+    return 'matrix-${matrixUserId.replaceAll(RegExp(r'[^a-zA-Z0-9]+'), '-')}';
   }
 
   Future<void> _handleSharedPackage(

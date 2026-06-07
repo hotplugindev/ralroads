@@ -201,6 +201,110 @@ void main() {
       expect(validation!.routeMatchScore, 0.98);
     });
 
+    test(
+      'imports Matrix profile, friend, group and directory events',
+      () async {
+        final syncService = MatrixSyncService(
+          repositories: repositories,
+          secureCredentials: secureCredentials,
+          matrixAccount: matrixAccount,
+          dio: Dio(),
+        );
+
+        await repositories.profiles.createOrUpdateLocalProfile(
+          const LocalProfileInput(
+            id: 'local-profile',
+            displayName: 'Local Driver',
+          ),
+        );
+
+        final session = MatrixSession(
+          id: 'matrix-primary-session',
+          accountId: 'matrix-primary',
+          matrixUserId: '@me:matrix.org',
+          homeserverUrl: 'https://matrix.org',
+          deviceId: 'DEVICE',
+          isActive: true,
+          createdAt: DateTime(2026, 1, 1, 12),
+          updatedAt: DateTime(2026, 1, 1, 12),
+        );
+
+        await syncService.importProfileEvent({
+          'schemaVersion': 1,
+          'payload': {
+            'matrixUserId': '@friend:matrix.org',
+            'displayName': 'Friend Driver',
+          },
+        });
+        await syncService.importFriendEvent(
+          {
+            'schemaVersion': 1,
+            'payload': {
+              'id': 'friend-request-1',
+              'fromMatrixId': '@friend:matrix.org',
+              'toMatrixId': '@me:matrix.org',
+            },
+          },
+          session: session,
+          state: 'pending',
+        );
+        await syncService.importFriendEvent(
+          {
+            'schemaVersion': 1,
+            'payload': {
+              'id': 'friend-request-1',
+              'fromMatrixId': '@friend:matrix.org',
+              'toMatrixId': '@me:matrix.org',
+            },
+          },
+          session: session,
+          state: 'accepted',
+        );
+        await syncService.importGroupEvent({
+          'schemaVersion': 1,
+          'payload': {
+            'groupId': 'group-1',
+            'name': 'Sunday Roads',
+            'description': 'Private group',
+            'visibility': 'private',
+          },
+        }, roomId: '!group:matrix.org');
+        await repositories.directories.cacheDirectoryEvent(
+          id: 'directory-event-1',
+          roomId: '!directory:matrix.org',
+          eventType: 'org.ralroads.directory.segment.published.v1',
+          entityId: 'seg-1',
+          payloadJson: '{"segmentId":"seg-1"}',
+          originTimestamp: DateTime(2026, 1, 1, 12),
+        );
+
+        final friendProfile =
+            await (database.select(database.profiles)..where(
+                  (row) => row.matrixUserId.equals('@friend:matrix.org'),
+                ))
+                .getSingleOrNull();
+        expect(friendProfile?.displayName, 'Friend Driver');
+
+        final requests = await repositories.friends.listPendingRequests(
+          'local-profile',
+        );
+        expect(requests.single.id, 'friend-request-1');
+
+        final friends = await repositories.friends.listCachedFriends(
+          'local-profile',
+        );
+        expect(friends.single.state, 'accepted');
+
+        final groups = await repositories.groups.listCachedGroups();
+        expect(groups.single.name, 'Sunday Roads');
+
+        final directoryEvents = await repositories.directories.getEventsForRoom(
+          '!directory:matrix.org',
+        );
+        expect(directoryEvents.single.entityId, 'seg-1');
+      },
+    );
+
     test('processes outbox events successfully', () async {
       // Setup active session
       final now = DateTime.now();

@@ -935,8 +935,11 @@ class DrivingSessionController extends ChangeNotifier {
 
   Future<void> _flushAttemptPoints() async {
     final attemptId = _snapshot.attemptId;
-    if (attemptId == null || _pendingAttemptPoints.isEmpty || _flushingAttempt)
+    if (attemptId == null ||
+        _pendingAttemptPoints.isEmpty ||
+        _flushingAttempt) {
       return;
+    }
     _flushingAttempt = true;
     final batch = List<TripRecordingPoint>.from(_pendingAttemptPoints);
     _pendingAttemptPoints.clear();

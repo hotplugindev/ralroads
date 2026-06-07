@@ -35,4 +35,11 @@ class DirectoryRepository {
           ..orderBy([(row) => OrderingTerm.desc(row.originTimestamp)]))
         .get();
   }
+
+  Stream<List<CachedDirectoryEvent>> watchRecentEvents({int limit = 20}) {
+    return (database.select(database.cachedDirectoryEvents)
+          ..orderBy([(row) => OrderingTerm.desc(row.originTimestamp)])
+          ..limit(limit))
+        .watch();
+  }
 }
