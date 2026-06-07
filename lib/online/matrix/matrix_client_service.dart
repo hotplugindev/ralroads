@@ -37,6 +37,7 @@ class MatrixClientService {
         newHomeserver: Uri.parse(session.homeserverUrl),
         newUserID: session.matrixUserId,
         newDeviceID: session.deviceId,
+        newDeviceName: 'RalRoads',
       );
       _client.backgroundSync = true;
     }
