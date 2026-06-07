@@ -1,10 +1,10 @@
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../database/app_database.dart';
 import '../repositories/trip_repository.dart';
 import '../utils/format_helpers.dart';
 import '../widgets/product_components.dart';
@@ -25,11 +25,11 @@ class TripSummaryScreen extends StatelessWidget {
     return StreamBuilder<TripSummary?>(
       stream: repository.watchTrip(tripId),
       builder: (context, tripSnap) {
-        return FutureBuilder<(TripPointStats, List<TripPoint>)>(
-          future: _loadStats(),
-          builder: (context, statsSnap) {
+        return StreamBuilder<List<TripPoint>>(
+          stream: repository.watchPointsForTrip(tripId),
+          builder: (context, pointsSnap) {
             final trip = tripSnap.data;
-            if (!tripSnap.hasData || !statsSnap.hasData) {
+            if (!tripSnap.hasData || !pointsSnap.hasData) {
               return const Scaffold(body: LoadingState(label: 'Loading trip'));
             }
             if (trip == null) {
@@ -37,8 +37,8 @@ class TripSummaryScreen extends StatelessWidget {
                 body: ErrorState(message: 'Trip was not found locally.'),
               );
             }
-            final pts = statsSnap.data!.$1;
-            final points = statsSnap.data!.$2;
+            final points = pointsSnap.data ?? const <TripPoint>[];
+            final pts = repository.statsForPoints(points);
             return _TripSummaryView(
               repository: repository,
               trip: trip,
@@ -50,19 +50,12 @@ class TripSummaryScreen extends StatelessWidget {
       },
     );
   }
-
-  Future<(TripPointStats, List<TripPoint>)> _loadStats() async {
-    return (
-      await repository.pointStats(tripId),
-      await repository.pointsForTrip(tripId),
-    );
-  }
 }
 
 // ─── Main summary view ───────────────────────────────────────────────────────
 
 class _TripSummaryView extends StatelessWidget {
-  const _TripSummaryView({
+  _TripSummaryView({
     required this.repository,
     required this.trip,
     required this.pointStats,
@@ -79,7 +72,9 @@ class _TripSummaryView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final duration = (trip.endedAt ?? DateTime.now()).difference(trip.startedAt);
+    final duration = (trip.endedAt ?? DateTime.now()).difference(
+      trip.startedAt,
+    );
     final scheme = Theme.of(context).colorScheme;
     final speedPoints = points
         .where((p) => p.speedMps != null && p.speedMps! >= 0)
@@ -90,7 +85,7 @@ class _TripSummaryView extends StatelessWidget {
     final avgSpeedMps = speedPoints.isEmpty
         ? 0.0
         : speedPoints.map((p) => p.speedMps!).reduce((a, b) => a + b) /
-            speedPoints.length;
+              speedPoints.length;
 
     return Scaffold(
       body: CustomScrollView(
@@ -120,64 +115,65 @@ class _TripSummaryView extends StatelessWidget {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             sliver: SliverList.separated(
-              separatorBuilder: (_, __) => const SizedBox(height: 14),
+              separatorBuilder: (context, index) => const SizedBox(height: 14),
               itemCount: 8,
               itemBuilder: (context, index) {
                 return switch (index) {
                   0 => _ShareableCard(
-                      repaintKey: _shareKey,
-                      trip: trip,
-                      duration: duration,
-                      maxSpeedMps: maxSpeedMps,
-                      avgSpeedMps: avgSpeedMps,
-                    ),
+                    repaintKey: _shareKey,
+                    trip: trip,
+                    duration: duration,
+                    maxSpeedMps: maxSpeedMps,
+                    avgSpeedMps: avgSpeedMps,
+                  ),
                   1 => _StatsGrid(
-                      trip: trip,
-                      duration: duration,
-                      pointStats: pointStats,
-                      maxSpeedMps: maxSpeedMps,
-                      avgSpeedMps: avgSpeedMps,
-                    ),
-                  2 => speedPoints.length > 2
-                      ? _SpeedGraph(points: speedPoints)
-                      : const SizedBox.shrink(),
+                    trip: trip,
+                    duration: duration,
+                    pointStats: pointStats,
+                    maxSpeedMps: maxSpeedMps,
+                    avgSpeedMps: avgSpeedMps,
+                  ),
+                  2 =>
+                    speedPoints.length > 2
+                        ? _SpeedGraph(points: speedPoints)
+                        : const SizedBox.shrink(),
                   3 => _GpsQualityBar(pointStats: pointStats),
                   4 => const _LegalDisclaimer(),
                   5 => FilledButton.icon(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => SegmentCreationScreen(
-                            tripRepository: repository,
-                            tripId: trip.id,
-                          ),
-                        ),
-                      ),
-                      icon: const Icon(Icons.linear_scale),
-                      label: const Text('Create segment from this trip'),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => SegmentCreationScreen(
+                          tripRepository: repository,
+                          tripId: trip.id,
                         ),
                       ),
                     ),
+                    icon: const Icon(Icons.linear_scale),
+                    label: const Text('Create segment from this trip'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
                   6 => OutlinedButton.icon(
-                      onPressed: () => _shareCard(context),
-                      icon: const Icon(Icons.ios_share_outlined),
-                      label: const Text('Share trip card as image'),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                    onPressed: () => _shareCard(context),
+                    icon: const Icon(Icons.ios_share_outlined),
+                    label: const Text('Share trip card as image'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
+                  ),
                   7 => TextButton.icon(
-                      onPressed: () => _delete(context),
-                      icon: const Icon(Icons.delete_outline),
-                      label: const Text('Delete this trip'),
-                      style: TextButton.styleFrom(foregroundColor: scheme.error),
-                    ),
+                    onPressed: () => _delete(context),
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Delete this trip'),
+                    style: TextButton.styleFrom(foregroundColor: scheme.error),
+                  ),
                   _ => const SizedBox.shrink(),
                 };
               },
@@ -190,8 +186,9 @@ class _TripSummaryView extends StatelessWidget {
 
   Future<void> _shareCard(BuildContext context) async {
     try {
-      final boundary = _shareKey.currentContext?.findRenderObject()
-          as RenderRepaintBoundary?;
+      final boundary =
+          _shareKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
       if (boundary == null) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -205,17 +202,17 @@ class _TripSummaryView extends StatelessWidget {
       if (byteData == null) return;
       final bytes = byteData.buffer.asUint8List();
       final name = (trip.name ?? 'trip').replaceAll(RegExp(r'[^\w]'), '_');
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile.fromData(bytes, name: '$name.png', mimeType: 'image/png')],
-          text: 'Trip: ${trip.name ?? 'Trip'} — ${formatDistance(trip.distanceMeters)}',
-        ),
+      await Share.shareXFiles(
+        [XFile.fromData(bytes, name: '$name.png', mimeType: 'image/png')],
+        text:
+            'Trip: ${trip.name ?? 'Trip'} - ${formatDistance(trip.distanceMeters)}',
+        fileNameOverrides: ['$name.png'],
       );
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Share failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Share failed: $e')));
       }
     }
   }
@@ -323,10 +320,7 @@ class _ShareableCard extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              scheme.primaryContainer,
-              scheme.secondaryContainer,
-            ],
+            colors: [scheme.primaryContainer, scheme.secondaryContainer],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -351,9 +345,14 @@ class _ShareableCard extends StatelessWidget {
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
-                    color: clean ? Colors.green.withValues(alpha: 0.2) : scheme.errorContainer,
+                    color: clean
+                        ? Colors.green.withValues(alpha: 0.2)
+                        : scheme.errorContainer,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: clean ? Colors.green : scheme.error,
@@ -374,20 +373,14 @@ class _ShareableCard extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               trip.name ?? 'Trip',
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-              ),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 4),
             Text(
               formatDate(trip.startedAt),
-              style: TextStyle(
-                fontSize: 12,
-                color: scheme.onSurfaceVariant,
-              ),
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
             Row(
@@ -405,17 +398,13 @@ class _ShareableCard extends StatelessWidget {
                 ),
                 _CardStat(
                   label: 'Top speed',
-                  value: maxSpeedMps > 0
-                      ? formatSpeed(maxSpeedMps)
-                      : '—',
+                  value: maxSpeedMps > 0 ? formatSpeed(maxSpeedMps) : '—',
                   icon: Icons.speed,
                 ),
                 _CardStat(
                   label: 'Avg speed',
-                  value: avgSpeedMps > 0
-                      ? formatSpeed(avgSpeedMps)
-                      : '—',
-                  icon: Icons.avg_pace,
+                  value: avgSpeedMps > 0 ? formatSpeed(avgSpeedMps) : '—',
+                  icon: Icons.query_stats,
                 ),
               ],
             ),
@@ -427,7 +416,11 @@ class _ShareableCard extends StatelessWidget {
 }
 
 class _CardStat extends StatelessWidget {
-  const _CardStat({required this.label, required this.value, required this.icon});
+  const _CardStat({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
 
   final String label;
   final String value;
@@ -476,25 +469,33 @@ class _StatsGrid extends StatelessWidget {
     final items = [
       (Icons.straighten, 'Distance', formatDistance(trip.distanceMeters)),
       (Icons.timer_outlined, 'Duration', formatDuration(duration)),
-      (Icons.speed, 'Top speed', maxSpeedMps > 0 ? formatSpeed(maxSpeedMps) : '—'),
-      (Icons.avg_pace, 'Avg speed', avgSpeedMps > 0 ? formatSpeed(avgSpeedMps) : '—'),
+      (
+        Icons.speed,
+        'Top speed',
+        maxSpeedMps > 0 ? formatSpeed(maxSpeedMps) : '—',
+      ),
+      (
+        Icons.query_stats,
+        'Avg speed',
+        avgSpeedMps > 0 ? formatSpeed(avgSpeedMps) : '—',
+      ),
       (Icons.gps_fixed, 'GPS points', '${pointStats.pointCount}'),
       (
         Icons.location_searching,
         'Avg accuracy',
         pointStats.averageGpsAccuracyMeters != null
             ? '${pointStats.averageGpsAccuracyMeters!.toStringAsFixed(1)} m'
-            : '—'
+            : '—',
       ),
       (
         Icons.speed_outlined,
         'Limit coverage',
-        '${((pointStats.speedLimitCoverage * 100).round())}%'
+        '${((pointStats.speedLimitCoverage * 100).round())}%',
       ),
       (
         Icons.verified_outlined,
         'Status',
-        trip.cleanEligible ? 'Clean eligible' : 'Not clean'
+        trip.cleanEligible ? 'Clean eligible' : 'Not clean',
       ),
     ];
 
@@ -566,10 +567,9 @@ class _SpeedGraph extends StatelessWidget {
       children: [
         Text(
           'Speed profile',
-          style: Theme.of(context)
-              .textTheme
-              .titleSmall
-              ?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 8),
         Container(
@@ -626,10 +626,7 @@ class _SpeedPainter extends CustomPainter {
     fillPath.lineTo(size.width, size.height);
     fillPath.close();
 
-    canvas.drawPath(
-      fillPath,
-      Paint()..color = color.withValues(alpha: 0.15),
-    );
+    canvas.drawPath(fillPath, Paint()..color = color.withValues(alpha: 0.15));
     canvas.drawPath(
       path,
       Paint()
@@ -661,22 +658,21 @@ class _GpsQualityBar extends StatelessWidget {
     final (label, frac, color) = acc == null
         ? ('Unknown', 0.5, scheme.outline)
         : acc < 5
-            ? ('Excellent (${acc.toStringAsFixed(1)} m)', 1.0, Colors.green)
-            : acc < 15
-                ? ('Good (${acc.toStringAsFixed(1)} m)', 0.75, Colors.lightGreen)
-                : acc < 30
-                    ? ('Fair (${acc.toStringAsFixed(1)} m)', 0.45, Colors.orange)
-                    : ('Poor (${acc.toStringAsFixed(1)} m)', 0.2, scheme.error);
+        ? ('Excellent (${acc.toStringAsFixed(1)} m)', 1.0, Colors.green)
+        : acc < 15
+        ? ('Good (${acc.toStringAsFixed(1)} m)', 0.75, Colors.lightGreen)
+        : acc < 30
+        ? ('Fair (${acc.toStringAsFixed(1)} m)', 0.45, Colors.orange)
+        : ('Poor (${acc.toStringAsFixed(1)} m)', 0.2, scheme.error);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'GPS quality',
-          style: Theme.of(context)
-              .textTheme
-              .titleSmall
-              ?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 8),
         Container(
@@ -741,9 +737,7 @@ class _LegalDisclaimer extends StatelessWidget {
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.4),
-        ),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
       ),
       padding: const EdgeInsets.all(12),
       child: Row(

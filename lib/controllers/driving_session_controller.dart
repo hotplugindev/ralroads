@@ -163,7 +163,8 @@ class DrivingSessionSnapshot {
       elapsed: elapsed ?? this.elapsed,
       distanceMeters: distanceMeters ?? this.distanceMeters,
       recording: recording ?? this.recording,
-      attemptRecordingState: attemptRecordingState ?? this.attemptRecordingState,
+      attemptRecordingState:
+          attemptRecordingState ?? this.attemptRecordingState,
       tripId: clearTripId ? null : (tripId ?? this.tripId),
       attemptId: clearAttemptId ? null : (attemptId ?? this.attemptId),
       speedMps: speedMps ?? this.speedMps,
@@ -180,8 +181,10 @@ class DrivingSessionSnapshot {
       offRoute: offRoute ?? this.offRoute,
       gpsWeak: gpsWeak ?? this.gpsWeak,
       progressPercentage: progressPercentage ?? this.progressPercentage,
-      remainingDistanceMeters: remainingDistanceMeters ?? this.remainingDistanceMeters,
-      remainingDurationSeconds: remainingDurationSeconds ?? this.remainingDurationSeconds,
+      remainingDistanceMeters:
+          remainingDistanceMeters ?? this.remainingDistanceMeters,
+      remainingDurationSeconds:
+          remainingDurationSeconds ?? this.remainingDurationSeconds,
       etaString: etaString ?? this.etaString,
       errorMessage: errorMessage ?? this.errorMessage,
     );
@@ -194,10 +197,10 @@ class DrivingSessionController extends ChangeNotifier {
     required AttemptRepository attemptRepository,
     required AttemptValidatorService validatorService,
     required SettingsService settings,
-  })  : _tripRepository = tripRepository,
-        _attemptRepository = attemptRepository,
-        _validatorService = validatorService,
-        _settings = settings {
+  }) : _tripRepository = tripRepository,
+       _attemptRepository = attemptRepository,
+       _validatorService = validatorService,
+       _settings = settings {
     _speechService = CalloutSpeechService();
     _speechService.init().then((_) {
       _speechService.setEnabled(true);
@@ -239,7 +242,8 @@ class DrivingSessionController extends ChangeNotifier {
   List<RoutePoint> get activeRoutePoints => _activeRoutePoints;
   List<PaceNote> get activeNotes => _activeNotes;
   List<RoadWarning> get visibleRoadWarnings => _visibleRoadWarnings;
-  List<SpeedLimitSegment> get visibleSpeedLimitSegments => _visibleSpeedLimitSegments;
+  List<SpeedLimitSegment> get visibleSpeedLimitSegments =>
+      _visibleSpeedLimitSegments;
   bool get isRerouting => _isRerouting;
 
   // Stream for when rerouting completes, so the map UI can redraw the line
@@ -312,9 +316,13 @@ class DrivingSessionController extends ChangeNotifier {
     }
 
     _activeRoutePoints = List<RoutePoint>.from(config.routePoints);
-    _activeNotes = config.pacenotes.map((n) => n.copyWith(spoken: false)).toList();
+    _activeNotes = config.pacenotes
+        .map((n) => n.copyWith(spoken: false))
+        .toList();
     _visibleRoadWarnings = filterRoadWarnings(config.roadWarnings, _settings);
-    _visibleSpeedLimitSegments = _settings.showSpeedLimits ? config.speedLimitSegments : const [];
+    _visibleSpeedLimitSegments = _settings.showSpeedLimits
+        ? config.speedLimitSegments
+        : const [];
 
     _scheduler.reset();
     _scheduler.loadRouteData(
@@ -343,7 +351,8 @@ class DrivingSessionController extends ChangeNotifier {
       await _tripRepository.startTrip(
         id: tripId,
         startedAt: now,
-        name: 'Trip ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
+        name:
+            'Trip ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
       );
     }
 
@@ -355,9 +364,13 @@ class DrivingSessionController extends ChangeNotifier {
       distanceMeters: 0.0,
       recording: recording,
       tripId: tripId,
-      attemptRecordingState: config.attemptMode ? AttemptRecordingState.waitingToStart : AttemptRecordingState.idle,
+      attemptRecordingState: config.attemptMode
+          ? AttemptRecordingState.waitingToStart
+          : AttemptRecordingState.idle,
       progressPercentage: 0.0,
-      remainingDistanceMeters: _activeRoutePoints.isNotEmpty ? _activeRoutePoints.last.distanceFromStart : 0.0,
+      remainingDistanceMeters: _activeRoutePoints.isNotEmpty
+          ? _activeRoutePoints.last.distanceFromStart
+          : 0.0,
       remainingDurationSeconds: 0.0,
       etaString: '--:--',
     );
@@ -397,7 +410,8 @@ class DrivingSessionController extends ChangeNotifier {
   }
 
   Future<void> toggleRecording(bool enabled) async {
-    if (_snapshot.state != DrivingSessionState.active && _snapshot.state != DrivingSessionState.paused) {
+    if (_snapshot.state != DrivingSessionState.active &&
+        _snapshot.state != DrivingSessionState.paused) {
       return;
     }
     if (_snapshot.recording == enabled) return;
@@ -411,7 +425,8 @@ class DrivingSessionController extends ChangeNotifier {
       await _tripRepository.startTrip(
         id: tripId,
         startedAt: now,
-        name: 'Trip ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
+        name:
+            'Trip ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
       );
       _lastLat = _fusionService?.currentState?.rawLat;
       _lastLon = _fusionService?.currentState?.rawLon;
@@ -439,7 +454,8 @@ class DrivingSessionController extends ChangeNotifier {
 
   Future<String?> finishSession() async {
     final state = _snapshot.state;
-    if (state == DrivingSessionState.idle || state == DrivingSessionState.finished) {
+    if (state == DrivingSessionState.idle ||
+        state == DrivingSessionState.finished) {
       return _snapshot.tripId;
     }
 
@@ -462,13 +478,12 @@ class DrivingSessionController extends ChangeNotifier {
       );
     }
 
-    if (_snapshot.config?.attemptMode == true && _snapshot.attemptRecordingState == AttemptRecordingState.recording) {
+    if (_snapshot.config?.attemptMode == true &&
+        _snapshot.attemptRecordingState == AttemptRecordingState.recording) {
       await _finishAttempt();
     }
 
-    _snapshot = _snapshot.copyWith(
-      state: DrivingSessionState.finished,
-    );
+    _snapshot = _snapshot.copyWith(state: DrivingSessionState.finished);
     notifyListeners();
 
     return tripId;
@@ -508,7 +523,8 @@ class DrivingSessionController extends ChangeNotifier {
   // Abort attempt specifically without cancelling trip/navigation
   Future<void> abortAttempt() async {
     if (_snapshot.attemptRecordingState == AttemptRecordingState.recording ||
-        _snapshot.attemptRecordingState == AttemptRecordingState.waitingToStart) {
+        _snapshot.attemptRecordingState ==
+            AttemptRecordingState.waitingToStart) {
       final attemptId = _snapshot.attemptId;
       if (attemptId != null) {
         await _attemptRepository.deleteAttempt(attemptId);
@@ -555,7 +571,8 @@ class DrivingSessionController extends ChangeNotifier {
 
     // 2. Trip points appending
     if (_snapshot.recording && _snapshot.tripId != null) {
-      if (_lastPointAt == null || now.difference(_lastPointAt!).inMilliseconds >= 700) {
+      if (_lastPointAt == null ||
+          now.difference(_lastPointAt!).inMilliseconds >= 700) {
         _lastPointAt = now;
         final speedLimit = _getCurrentSpeedLimit(distance);
         final speedKmh = state.rawSpeedMps * 3.6;
@@ -602,9 +619,12 @@ class DrivingSessionController extends ChangeNotifier {
         finishPoint.lon,
       );
 
-      if (_snapshot.attemptRecordingState == AttemptRecordingState.waitingToStart && distanceToStart <= 35.0) {
+      if (_snapshot.attemptRecordingState ==
+              AttemptRecordingState.waitingToStart &&
+          distanceToStart <= 35.0) {
         _startAttempt(state);
-      } else if (_snapshot.attemptRecordingState == AttemptRecordingState.recording) {
+      } else if (_snapshot.attemptRecordingState ==
+          AttemptRecordingState.recording) {
         _updateAttemptRecording(state, now);
       }
     }
@@ -620,7 +640,8 @@ class DrivingSessionController extends ChangeNotifier {
     if (offRoute) {
       if (_lastOnRouteTime == null) {
         _lastOnRouteTime = now;
-      } else if (now.difference(_lastOnRouteTime!).inSeconds >= 5 && !_isRerouting) {
+      } else if (now.difference(_lastOnRouteTime!).inSeconds >= 5 &&
+          !_isRerouting) {
         _recalculateRoute(state);
       }
     } else {
@@ -641,7 +662,10 @@ class DrivingSessionController extends ChangeNotifier {
 
     // Compute remaining items
     final remainingDistanceMeters = _activeRoutePoints.isNotEmpty
-        ? math.max(0.0, _activeRoutePoints.last.distanceFromStart - distanceAlong)
+        ? math.max(
+            0.0,
+            _activeRoutePoints.last.distanceFromStart - distanceAlong,
+          )
         : 0.0;
 
     double remainingDurationSeconds = 0.0;
@@ -652,7 +676,9 @@ class DrivingSessionController extends ChangeNotifier {
       final segmentLength = p.distanceFromStart - prevDist;
       if (segmentLength <= 0) continue;
       final limitSegment = _visibleSpeedLimitSegments.firstWhere(
-        (s) => p.distanceFromStart >= s.startDistance && p.distanceFromStart <= s.endDistance,
+        (s) =>
+            p.distanceFromStart >= s.startDistance &&
+            p.distanceFromStart <= s.endDistance,
         orElse: () => const SpeedLimitSegment(
           id: 'default',
           startDistance: 0.0,
@@ -666,10 +692,15 @@ class DrivingSessionController extends ChangeNotifier {
       prevDist = p.distanceFromStart;
     }
 
-    final etaTime = now.add(Duration(seconds: remainingDurationSeconds.round()));
-    final etaString = "${etaTime.hour.toString().padLeft(2, '0')}:${etaTime.minute.toString().padLeft(2, '0')}";
+    final etaTime = now.add(
+      Duration(seconds: remainingDurationSeconds.round()),
+    );
+    final etaString =
+        "${etaTime.hour.toString().padLeft(2, '0')}:${etaTime.minute.toString().padLeft(2, '0')}";
 
-    final totalDistance = _activeRoutePoints.isNotEmpty ? _activeRoutePoints.last.distanceFromStart : 1.0;
+    final totalDistance = _activeRoutePoints.isNotEmpty
+        ? _activeRoutePoints.last.distanceFromStart
+        : 1.0;
     final progressPercentage = (distanceAlong / totalDistance).clamp(0.0, 1.0);
 
     // Determine speed limit value
@@ -690,7 +721,9 @@ class DrivingSessionController extends ChangeNotifier {
     }
 
     _snapshot = _snapshot.copyWith(
-      elapsed: _sessionStartedAt != null ? now.difference(_sessionStartedAt!) : Duration.zero,
+      elapsed: _sessionStartedAt != null
+          ? now.difference(_sessionStartedAt!)
+          : Duration.zero,
       distanceMeters: distance,
       speedMps: state.rawSpeedMps,
       headingDegrees: state.headingDegrees,
@@ -795,7 +828,8 @@ class DrivingSessionController extends ChangeNotifier {
   }
 
   void _updateAttemptRecording(FusedNavigationState state, DateTime now) {
-    if (_lastAttemptPointAt != null && state.timestamp.difference(_lastAttemptPointAt!).inMilliseconds < 700) {
+    if (_lastAttemptPointAt != null &&
+        state.timestamp.difference(_lastAttemptPointAt!).inMilliseconds < 700) {
       return;
     }
 
@@ -887,7 +921,9 @@ class DrivingSessionController extends ChangeNotifier {
         tripId: tripId,
         distanceMeters: _snapshot.distanceMeters,
         cleanEligible: true,
-        status: _snapshot.state == DrivingSessionState.paused ? 'paused' : 'recording',
+        status: _snapshot.state == DrivingSessionState.paused
+            ? 'paused'
+            : 'recording',
       );
     } finally {
       _flushingTrip = false;
@@ -899,7 +935,8 @@ class DrivingSessionController extends ChangeNotifier {
 
   Future<void> _flushAttemptPoints() async {
     final attemptId = _snapshot.attemptId;
-    if (attemptId == null || _pendingAttemptPoints.isEmpty || _flushingAttempt) return;
+    if (attemptId == null || _pendingAttemptPoints.isEmpty || _flushingAttempt)
+      return;
     _flushingAttempt = true;
     final batch = List<TripRecordingPoint>.from(_pendingAttemptPoints);
     _pendingAttemptPoints.clear();
@@ -924,13 +961,19 @@ class DrivingSessionController extends ChangeNotifier {
     try {
       _speechService.speak('Off route. Recalculating route.', () {});
 
-      final newPoints = await OrsService(settings: _settings).buildRoute([startPoint, destination]);
+      final newPoints = await OrsService(
+        settings: _settings,
+      ).buildRoute([startPoint, destination]);
       if (newPoints.isEmpty) throw Exception('No points returned');
 
-      final newPacenotes = PacenoteGenerator(settings: _settings).generate(newPoints);
+      final newPacenotes = PacenoteGenerator(
+        settings: _settings,
+      ).generate(newPoints);
 
       _activeRoutePoints = newPoints;
-      _activeNotes = newPacenotes.map((n) => n.copyWith(spoken: false)).toList();
+      _activeNotes = newPacenotes
+          .map((n) => n.copyWith(spoken: false))
+          .toList();
       _visibleRoadWarnings = [];
       _visibleSpeedLimitSegments = [];
 
@@ -949,7 +992,10 @@ class DrivingSessionController extends ChangeNotifier {
       _enrichRecalculatedRoute(newPoints);
     } catch (e) {
       debugPrint('Rerouting failed: $e');
-      _speechService.speak('Recalculating route failed. Please check internet connection.', () {});
+      _speechService.speak(
+        'Recalculating route failed. Please check internet connection.',
+        () {},
+      );
     } finally {
       _isRerouting = false;
     }
@@ -958,8 +1004,13 @@ class DrivingSessionController extends ChangeNotifier {
   Future<void> _enrichRecalculatedRoute(List<RoutePoint> newPoints) async {
     try {
       final enrichment = await OverpassService().enrichRoute(newPoints);
-      _visibleRoadWarnings = filterRoadWarnings(enrichment.roadWarnings, _settings);
-      _visibleSpeedLimitSegments = _settings.showSpeedLimits ? enrichment.speedLimitSegments : const [];
+      _visibleRoadWarnings = filterRoadWarnings(
+        enrichment.roadWarnings,
+        _settings,
+      );
+      _visibleSpeedLimitSegments = _settings.showSpeedLimits
+          ? enrichment.speedLimitSegments
+          : const [];
 
       _scheduler.reset();
       _scheduler.loadRouteData(

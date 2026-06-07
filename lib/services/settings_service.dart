@@ -189,16 +189,19 @@ class SettingsService extends ChangeNotifier {
   }
 
   bool get autoRecordNavigation => _getBool('auto_record_navigation', true);
-  Future<void> setAutoRecordNavigation(bool value) => _setBool('auto_record_navigation', value);
+  Future<void> setAutoRecordNavigation(bool value) =>
+      _setBool('auto_record_navigation', value);
 
-  String get defaultTripPrivacy => _box?.get('default_trip_privacy') as String? ?? 'private';
+  String get defaultTripPrivacy =>
+      _box?.get('default_trip_privacy') as String? ?? 'private';
   Future<void> setDefaultTripPrivacy(String value) async {
     await _box?.put('default_trip_privacy', value);
     notifyListeners();
   }
 
   bool get wakeLockEnabled => _getBool('wake_lock_enabled', true);
-  Future<void> setWakeLockEnabled(bool value) => _setBool('wake_lock_enabled', value);
+  Future<void> setWakeLockEnabled(bool value) =>
+      _setBool('wake_lock_enabled', value);
 
   Future<void> _loadAndMigrateSecureCredentials() async {
     final secureOrsKey = await _secureCredentials.readString(

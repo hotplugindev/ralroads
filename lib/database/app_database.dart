@@ -493,21 +493,6 @@ class LocalValidationResults extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
-class ValidatorAttestations extends Table {
-  TextColumn get id => text()();
-  TextColumn get attemptId => text().references(SegmentAttempts, #id)();
-  TextColumn get validatorId => text()();
-  TextColumn get validatorPublicKey => text()();
-  TextColumn get status => text()();
-  TextColumn get engineVersion => text()();
-  TextColumn get resultHash => text()();
-  TextColumn get signature => text()();
-  DateTimeColumn get createdAt => dateTime()();
-
-  @override
-  Set<Column<Object>> get primaryKey => {id};
-}
-
 class Challenges extends Table {
   TextColumn get id => text()();
   TextColumn get segmentId => text().references(ChallengeSegments, #id)();
@@ -695,7 +680,6 @@ class BlockedUsers extends Table {
     SegmentAttempts,
     AttemptPoints,
     LocalValidationResults,
-    ValidatorAttestations,
     Challenges,
     ChallengeParticipants,
     LocalNotifications,

@@ -161,7 +161,6 @@ class TripRepository {
     });
   }
 
-
   Future<void> appendTripPoints(
     String tripId,
     List<TripRecordingPoint> points,
@@ -180,12 +179,14 @@ class TripRepository {
           final dLon = (zone.lon - lon) * 3.141592653589793 / 180.0;
           final rLat1 = lat * 3.141592653589793 / 180.0;
           final rLat2 = zone.lat * 3.141592653589793 / 180.0;
-          final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+          final a =
+              math.sin(dLat / 2) * math.sin(dLat / 2) +
               math.cos(rLat1) *
                   math.cos(rLat2) *
                   math.sin(dLon / 2) *
                   math.sin(dLon / 2);
-          final distance = earthRadius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+          final distance =
+              earthRadius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
           if (distance <= zone.radiusMeters) {
             return true;
           }
@@ -193,7 +194,9 @@ class TripRepository {
         return false;
       }
 
-      final filteredPoints = points.where((p) => !isInZone(p.lat, p.lon)).toList();
+      final filteredPoints = points
+          .where((p) => !isInZone(p.lat, p.lon))
+          .toList();
       if (filteredPoints.isEmpty) {
         return;
       }
@@ -320,6 +323,10 @@ class TripRepository {
 
   Future<TripPointStats> pointStats(String tripId) async {
     final points = await pointsForTrip(tripId);
+    return statsForPoints(points);
+  }
+
+  TripPointStats statsForPoints(List<TripPoint> points) {
     final accuracyValues = points
         .map((point) => point.accuracyMeters)
         .whereType<double>()
@@ -334,6 +341,13 @@ class TripRepository {
           : accuracyValues.reduce((a, b) => a + b) / accuracyValues.length,
       speedLimitCoverage: points.isEmpty ? 0 : speedLimitPoints / points.length,
     );
+  }
+
+  Stream<List<TripPoint>> watchPointsForTrip(String tripId) {
+    final query = database.select(database.tripPoints)
+      ..where((point) => point.tripId.equals(tripId))
+      ..orderBy([(point) => OrderingTerm.asc(point.pointIndex)]);
+    return query.watch();
   }
 
   Future<TripStats> stats() async {
@@ -351,24 +365,24 @@ class TripRepository {
   Stream<List<TripSummary>> watchTrips({int limit = 50}) {
     final query = database.select(database.trips)
       ..orderBy([
-        (row) => OrderingTerm(
-              expression: row.startedAt,
-              mode: OrderingMode.desc,
-            ),
+        (row) =>
+            OrderingTerm(expression: row.startedAt, mode: OrderingMode.desc),
       ])
       ..limit(limit);
-    return query.watch().map((rows) => [
-          for (final row in rows)
-            TripSummary(
-              id: row.id,
-              name: row.name,
-              startedAt: row.startedAt,
-              endedAt: row.endedAt,
-              distanceMeters: row.distanceMeters,
-              status: row.status,
-              cleanEligible: row.cleanEligible,
-            ),
-        ]);
+    return query.watch().map(
+      (rows) => [
+        for (final row in rows)
+          TripSummary(
+            id: row.id,
+            name: row.name,
+            startedAt: row.startedAt,
+            endedAt: row.endedAt,
+            distanceMeters: row.distanceMeters,
+            status: row.status,
+            cleanEligible: row.cleanEligible,
+          ),
+      ],
+    );
   }
 
   Stream<TripSummary?> watchTrip(String tripId) {

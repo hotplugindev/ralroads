@@ -64,12 +64,14 @@ class SocialRepository {
             : await _friends.listPendingRequests(profile.id);
         final groups = await _groups.listCachedGroups();
         if (!controller.isClosed) {
-          controller.add(SocialSnapshot(
-            profile: profile,
-            friends: friends,
-            pendingRequests: requests,
-            groups: groups,
-          ));
+          controller.add(
+            SocialSnapshot(
+              profile: profile,
+              friends: friends,
+              pendingRequests: requests,
+              groups: groups,
+            ),
+          );
         }
       } catch (e) {
         // Ignored
@@ -78,10 +80,22 @@ class SocialRepository {
 
     controller = StreamController<SocialSnapshot>(
       onListen: () {
-        profileSub = _profiles.database.select(_profiles.database.profiles).watch().listen((_) => update());
-        friendsSub = _friends.database.select(_friends.database.friendships).watch().listen((_) => update());
-        requestSub = _friends.database.select(_friends.database.friendRequests).watch().listen((_) => update());
-        groupsSub = _groups.database.select(_groups.database.groups).watch().listen((_) => update());
+        profileSub = _profiles.database
+            .select(_profiles.database.profiles)
+            .watch()
+            .listen((_) => update());
+        friendsSub = _friends.database
+            .select(_friends.database.friendships)
+            .watch()
+            .listen((_) => update());
+        requestSub = _friends.database
+            .select(_friends.database.friendRequests)
+            .watch()
+            .listen((_) => update());
+        groupsSub = _groups.database
+            .select(_groups.database.groups)
+            .watch()
+            .listen((_) => update());
         update();
       },
       onCancel: () {

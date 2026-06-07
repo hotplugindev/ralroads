@@ -54,7 +54,7 @@ class SectionHeader extends StatelessWidget {
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
         ),
-        if (trailing != null) trailing!,
+        ?trailing,
       ],
     );
   }
@@ -356,12 +356,14 @@ class AttemptStatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (status) {
-      'valid_clean' || 'finished' => Colors.green,
-      'invalid_speed_limit' || 'invalid_route_mismatch' => Colors.red,
-      'suspicious' => Colors.orange,
-      _ => Theme.of(context).colorScheme.primary,
+    final (label, color) = switch (status) {
+      'valid_clean' => ('Locally validated', Colors.green),
+      'finished' => ('Local', Colors.green),
+      'invalid_speed_limit' ||
+      'invalid_route_mismatch' => (status.replaceAll('_', ' '), Colors.red),
+      'suspicious' => ('Needs review', Colors.orange),
+      _ => (status.replaceAll('_', ' '), Theme.of(context).colorScheme.primary),
     };
-    return StatusChip(label: status.replaceAll('_', ' '), color: color);
+    return StatusChip(label: label, color: color);
   }
 }

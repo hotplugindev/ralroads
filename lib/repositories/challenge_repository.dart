@@ -72,25 +72,25 @@ class ChallengeRepository {
   Future<void> evaluateDeadlines() async {
     final now = DateTime.now();
     // 1. Transition draft -> active if startsAt <= now
-    final toActive = await (database.select(database.challenges)
-          ..where(
-            (row) =>
-                row.status.equals('draft') &
-                row.startsAt.isSmallerOrEqualValue(now),
-          ))
-        .get();
+    final toActive =
+        await (database.select(database.challenges)..where(
+              (row) =>
+                  row.status.equals('draft') &
+                  row.startsAt.isSmallerOrEqualValue(now),
+            ))
+            .get();
     for (final c in toActive) {
       await updateState(c.id, 'active');
     }
 
     // 2. Transition active -> ended if endsAt <= now
-    final toEnded = await (database.select(database.challenges)
-          ..where(
-            (row) =>
-                row.status.equals('active') &
-                row.endsAt.isSmallerOrEqualValue(now),
-          ))
-        .get();
+    final toEnded =
+        await (database.select(database.challenges)..where(
+              (row) =>
+                  row.status.equals('active') &
+                  row.endsAt.isSmallerOrEqualValue(now),
+            ))
+            .get();
     for (final c in toEnded) {
       await updateState(c.id, 'ended');
     }

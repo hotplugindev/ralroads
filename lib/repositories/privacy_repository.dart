@@ -15,17 +15,19 @@ class PrivacyRepository {
     required double radiusMeters,
   }) {
     final now = DateTime.now();
-    return database.into(database.privateZones).insertOnConflictUpdate(
-      PrivateZonesCompanion(
-        id: Value(id),
-        name: Value(name),
-        lat: Value(lat),
-        lon: Value(lon),
-        radiusMeters: Value(radiusMeters),
-        createdAt: Value(now),
-        updatedAt: Value(now),
-      ),
-    );
+    return database
+        .into(database.privateZones)
+        .insertOnConflictUpdate(
+          PrivateZonesCompanion(
+            id: Value(id),
+            name: Value(name),
+            lat: Value(lat),
+            lon: Value(lon),
+            radiusMeters: Value(radiusMeters),
+            createdAt: Value(now),
+            updatedAt: Value(now),
+          ),
+        );
   }
 
   Future<List<PrivateZone>> getPrivateZones() {
@@ -33,7 +35,9 @@ class PrivacyRepository {
   }
 
   Future<void> deletePrivateZone(String id) {
-    return (database.delete(database.privateZones)..where((row) => row.id.equals(id))).go();
+    return (database.delete(
+      database.privateZones,
+    )..where((row) => row.id.equals(id))).go();
   }
 
   /// Checks if a coordinate falls within any active privacy zone.
@@ -55,7 +59,8 @@ class PrivacyRepository {
     final dLon = (lon2 - lon1) * math.pi / 180.0;
     final rLat1 = lat1 * math.pi / 180.0;
     final rLat2 = lat2 * math.pi / 180.0;
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(rLat1) *
             math.cos(rLat2) *
             math.sin(dLon / 2) *

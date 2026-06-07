@@ -36,9 +36,7 @@ void main() {
           distanceMeters: 1000,
           safetyStatus: 'suitable',
           contentHash: 'hash-1',
-          geometry: [
-            RoutePoint(lat: 46.0, lon: 11.0, distanceFromStart: 0),
-          ],
+          geometry: [RoutePoint(lat: 46.0, lon: 11.0, distanceFromStart: 0)],
         ),
       );
 
@@ -64,15 +62,24 @@ void main() {
 
       // 2. Check points
       // Lat 46.0, Lon 11.0 is exactly the center (0m away -> inside)
-      final insideCenter = await repositories.privacy.isPointInPrivacyZone(46.0, 11.0);
+      final insideCenter = await repositories.privacy.isPointInPrivacyZone(
+        46.0,
+        11.0,
+      );
       // Lat 46.1, Lon 11.1 is ~13km away -> outside
-      final outsideFar = await repositories.privacy.isPointInPrivacyZone(46.1, 11.1);
+      final outsideFar = await repositories.privacy.isPointInPrivacyZone(
+        46.1,
+        11.1,
+      );
 
       expect(insideCenter, isTrue);
       expect(outsideFar, isFalse);
 
       // 3. Insert Trip points
-      await repositories.trips.startTrip(id: 'trip-1', startedAt: DateTime.now());
+      await repositories.trips.startTrip(
+        id: 'trip-1',
+        startedAt: DateTime.now(),
+      );
       await repositories.trips.appendTripPoints('trip-1', [
         TripRecordingPoint(
           recordedAt: DateTime.now(),
@@ -86,9 +93,9 @@ void main() {
         ),
       ]);
 
-      final tripPoints = await (database.select(database.tripPoints)
-            ..where((row) => row.tripId.equals('trip-1')))
-          .get();
+      final tripPoints = await (database.select(
+        database.tripPoints,
+      )..where((row) => row.tripId.equals('trip-1'))).get();
 
       // Only the outside point should be stored
       expect(tripPoints, hasLength(1));
@@ -96,46 +103,70 @@ void main() {
       expect(tripPoints.first.lon, 11.1);
     });
 
-    test('Moderation: Handles reports, user blocking, and content moderation', () async {
-      // 1. Content Reporting
-      await repositories.moderation.reportContent(
-        id: 'rep-1',
-        targetType: 'attempt',
-        targetId: 'att-123',
-        reason: 'Cheating',
-        reporterProfileId: 'prof-1',
-      );
+    test(
+      'Moderation: Handles reports, user blocking, and content moderation',
+      () async {
+        // 1. Content Reporting
+        await repositories.moderation.reportContent(
+          id: 'rep-1',
+          targetType: 'attempt',
+          targetId: 'att-123',
+          reason: 'Cheating',
+          reporterProfileId: 'prof-1',
+        );
 
-      final reports = await database.select(database.reports).get();
-      expect(reports, hasLength(1));
-      expect(reports.first.targetId, 'att-123');
-      expect(reports.first.reason, 'Cheating');
+        final reports = await database.select(database.reports).get();
+        expect(reports, hasLength(1));
+        expect(reports.first.targetId, 'att-123');
+        expect(reports.first.reason, 'Cheating');
 
-      // 2. User Blocking
-      expect(await repositories.moderation.isUserBlocked('@baduser:matrix.org'), isFalse);
+        // 2. User Blocking
+        expect(
+          await repositories.moderation.isUserBlocked('@baduser:matrix.org'),
+          isFalse,
+        );
 
-      await repositories.moderation.blockUser(
-        id: 'block-1',
-        matrixUserId: '@baduser:matrix.org',
-        reason: 'Spamming',
-      );
-      expect(await repositories.moderation.isUserBlocked('@baduser:matrix.org'), isTrue);
+        await repositories.moderation.blockUser(
+          id: 'block-1',
+          matrixUserId: '@baduser:matrix.org',
+          reason: 'Spamming',
+        );
+        expect(
+          await repositories.moderation.isUserBlocked('@baduser:matrix.org'),
+          isTrue,
+        );
 
-      await repositories.moderation.unblockUser('@baduser:matrix.org');
-      expect(await repositories.moderation.isUserBlocked('@baduser:matrix.org'), isFalse);
+        await repositories.moderation.unblockUser('@baduser:matrix.org');
+        expect(
+          await repositories.moderation.isUserBlocked('@baduser:matrix.org'),
+          isFalse,
+        );
 
-      // 3. Action State
-      expect(await repositories.moderation.isContentModerated('attempt', 'att-123'), isFalse);
+        // 3. Action State
+        expect(
+          await repositories.moderation.isContentModerated(
+            'attempt',
+            'att-123',
+          ),
+          isFalse,
+        );
 
-      await repositories.moderation.applyModerationAction(
-        id: 'action-1',
-        targetType: 'attempt',
-        targetId: 'att-123',
-        action: 'banned',
-        reason: 'Confirmed GPS spoofing',
-      );
-      expect(await repositories.moderation.isContentModerated('attempt', 'att-123'), isTrue);
-    });
+        await repositories.moderation.applyModerationAction(
+          id: 'action-1',
+          targetType: 'attempt',
+          targetId: 'att-123',
+          action: 'banned',
+          reason: 'Confirmed GPS spoofing',
+        );
+        expect(
+          await repositories.moderation.isContentModerated(
+            'attempt',
+            'att-123',
+          ),
+          isTrue,
+        );
+      },
+    );
 
     test('Notifications: CRUD local notifications', () async {
       // Create notification
@@ -152,13 +183,17 @@ void main() {
 
       // Mark read
       await repositories.notifications.markAsRead('notif-1');
-      final unreadAfter = await repositories.notifications.getUnreadNotifications();
+      final unreadAfter = await repositories.notifications
+          .getUnreadNotifications();
       expect(unreadAfter, isEmpty);
     });
 
     test('BadgeService: Awards badges based on achievements', () async {
       // Initially, no notifications
-      expect(await repositories.notifications.getUnreadNotifications(), isEmpty);
+      expect(
+        await repositories.notifications.getUnreadNotifications(),
+        isEmpty,
+      );
 
       // 1. Create a non-clean attempt
       await repositories.attempts.createAttempt(
@@ -169,7 +204,10 @@ void main() {
       );
       await badgeService.checkAndAwardBadges('prof-1');
       // No clean attempts yet -> no badges
-      expect(await repositories.notifications.getUnreadNotifications(), isEmpty);
+      expect(
+        await repositories.notifications.getUnreadNotifications(),
+        isEmpty,
+      );
 
       // 2. Add a clean attempt
       await repositories.attempts.persistValidationResult(
@@ -190,7 +228,8 @@ void main() {
       );
 
       await badgeService.checkAndAwardBadges('prof-1');
-      final unreadAfterClean = await repositories.notifications.getUnreadNotifications();
+      final unreadAfterClean = await repositories.notifications
+          .getUnreadNotifications();
       expect(unreadAfterClean, hasLength(1));
       expect(unreadAfterClean.first.id, 'badge_first_clean');
 
@@ -213,7 +252,8 @@ void main() {
       }
 
       await badgeService.checkAndAwardBadges('prof-1');
-      final unreadAfter5 = await repositories.notifications.getUnreadNotifications();
+      final unreadAfter5 = await repositories.notifications
+          .getUnreadNotifications();
       expect(unreadAfter5, hasLength(1));
       expect(unreadAfter5.first.id, 'badge_frequent_flyer');
     });

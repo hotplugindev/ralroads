@@ -214,8 +214,8 @@ class SegmentRepository {
   }
 
   Future<SegmentRule?> getRulesForVersion(String versionId) {
-    return (database.select(database.segmentRules)
-          ..where((row) => row.versionId.equals(versionId)))
-        .getSingleOrNull();
+    return (database.select(
+      database.segmentRules,
+    )..where((row) => row.versionId.equals(versionId))).getSingleOrNull();
   }
 }

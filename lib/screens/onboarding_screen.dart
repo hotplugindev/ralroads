@@ -162,8 +162,8 @@ class _OnboardingProgress extends StatelessWidget {
             color: done
                 ? scheme.primary
                 : active
-                    ? scheme.primary
-                    : scheme.outlineVariant,
+                ? scheme.primary
+                : scheme.outlineVariant,
           ),
         );
       }),
@@ -203,10 +203,7 @@ class _OnboardingNav extends StatelessWidget {
           else
             const SizedBox.shrink(),
           if (onSkip != null)
-            TextButton(
-              onPressed: onSkip,
-              child: const Text('Skip setup'),
-            ),
+            TextButton(onPressed: onSkip, child: const Text('Skip setup')),
         ],
       ),
     );
@@ -428,14 +425,14 @@ class _OrsKeyPageState extends State<_OrsKeyPage> {
                   _statusOk == true
                       ? Icons.check_circle
                       : _statusOk == false
-                          ? Icons.error_outline
-                          : Icons.info_outline,
+                      ? Icons.error_outline
+                      : Icons.info_outline,
                   size: 16,
                   color: _statusOk == true
                       ? Colors.green
                       : _statusOk == false
-                          ? scheme.error
-                          : scheme.primary,
+                      ? scheme.error
+                      : scheme.primary,
                 ),
                 const SizedBox(width: 6),
                 Text(
@@ -446,8 +443,8 @@ class _OrsKeyPageState extends State<_OrsKeyPage> {
                     color: _statusOk == true
                         ? Colors.green
                         : _statusOk == false
-                            ? scheme.error
-                            : scheme.primary,
+                        ? scheme.error
+                        : scheme.primary,
                   ),
                 ),
               ],
@@ -548,7 +545,11 @@ class _ProfilePageState extends State<_ProfilePage> {
     await widget.repositories.profiles.createOrUpdateLocalProfile(
       LocalProfileInput(id: 'local-profile', displayName: name),
     );
-    if (mounted) setState(() { _saving = false; _saved = true; });
+    if (mounted)
+      setState(() {
+        _saving = false;
+        _saved = true;
+      });
   }
 
   @override
@@ -598,7 +599,10 @@ class _ProfilePageState extends State<_ProfilePage> {
                     height: 14,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Icon(_saved ? Icons.check_circle : Icons.save_outlined, size: 18),
+                : Icon(
+                    _saved ? Icons.check_circle : Icons.save_outlined,
+                    size: 18,
+                  ),
             label: Text(_saved ? 'Saved!' : 'Save profile'),
             style: OutlinedButton.styleFrom(
               shape: RoundedRectangleBorder(
@@ -666,15 +670,22 @@ class _MatrixPage extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           _FeatureBullet(icon: Icons.people_outline, label: 'Friends & groups'),
-          _FeatureBullet(icon: Icons.emoji_events_outlined, label: 'Shared challenges'),
+          _FeatureBullet(
+            icon: Icons.emoji_events_outlined,
+            label: 'Shared challenges',
+          ),
           _FeatureBullet(icon: Icons.sync, label: 'Cross-device trip sync'),
-          _FeatureBullet(icon: Icons.leaderboard_outlined, label: 'Federated leaderboards'),
+          _FeatureBullet(
+            icon: Icons.leaderboard_outlined,
+            label: 'Federated leaderboards',
+          ),
           const Spacer(),
           ListenableBuilder(
             listenable: session,
             builder: (context, _) {
               final connected =
-                  session.snapshot.matrixStatus == MatrixConnectionStatus.connected;
+                  session.snapshot.matrixStatus ==
+                  MatrixConnectionStatus.connected;
               if (connected) {
                 return _ConnectedBanner(onNext: onNext);
               }
@@ -817,7 +828,11 @@ class _ReadyPage extends StatelessWidget {
                 shape: BoxShape.circle,
                 color: Colors.green.withValues(alpha: 0.15),
               ),
-              child: const Icon(Icons.check_circle_outline, size: 60, color: Colors.green),
+              child: const Icon(
+                Icons.check_circle_outline,
+                size: 60,
+                color: Colors.green,
+              ),
             ),
           ),
           const SizedBox(height: 32),

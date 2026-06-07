@@ -81,13 +81,13 @@ class AttemptRecordingController extends ChangeNotifier {
     required AttemptRepository attemptRepository,
     required AttemptValidatorService validatorService,
     required SettingsService settings,
-  })  : _attemptRepository = attemptRepository,
-        _validatorService = validatorService,
-        _segmentPoints = segmentPoints,
-        _fusionService = NavigationFusionService(
-          routePoints: segmentPoints,
-          settings: settings,
-        );
+  }) : _attemptRepository = attemptRepository,
+       _validatorService = validatorService,
+       _segmentPoints = segmentPoints,
+       _fusionService = NavigationFusionService(
+         routePoints: segmentPoints,
+         settings: settings,
+       );
 
   final String segmentId;
   final List<RoutePoint> _segmentPoints;
@@ -287,9 +287,7 @@ class AttemptRecordingController extends ChangeNotifier {
       // Run validator
       await _validatorService.validateAndPersist(attemptId);
     } catch (e) {
-      _snapshot = _snapshot.copyWith(
-        errorMessage: 'Validation failed: $e',
-      );
+      _snapshot = _snapshot.copyWith(errorMessage: 'Validation failed: $e');
       notifyListeners();
     }
   }

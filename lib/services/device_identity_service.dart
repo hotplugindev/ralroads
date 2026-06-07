@@ -3,9 +3,7 @@ import 'package:cryptography/cryptography.dart';
 import 'secure_credential_service.dart';
 
 class DeviceIdentityService {
-  DeviceIdentityService({
-    required this.secureCredentials,
-  });
+  DeviceIdentityService({required this.secureCredentials});
 
   final SecureCredentialService secureCredentials;
   final _algorithm = Ed25519();
@@ -26,18 +24,25 @@ class DeviceIdentityService {
 
   /// Checks if a private key exists. If not, generates a new Ed25519 keypair and writes it to secure storage.
   Future<void> initializeIdentity() async {
-    final existingKey = await secureCredentials.readString(SecureCredentialKey.ralroadsSigningPrivateKey);
+    final existingKey = await secureCredentials.readString(
+      SecureCredentialKey.ralroadsSigningPrivateKey,
+    );
     if (existingKey == null || existingKey.isEmpty) {
       final keyPair = await _algorithm.newKeyPair();
       final privateKeyBytes = await keyPair.extractPrivateKeyBytes();
       final hexKey = _toHex(privateKeyBytes);
-      await secureCredentials.writeString(SecureCredentialKey.ralroadsSigningPrivateKey, hexKey);
+      await secureCredentials.writeString(
+        SecureCredentialKey.ralroadsSigningPrivateKey,
+        hexKey,
+      );
     }
   }
 
   /// Returns the hex-encoded Ed25519 public key.
   Future<String> getPublicKey() async {
-    final hexKey = await secureCredentials.readString(SecureCredentialKey.ralroadsSigningPrivateKey);
+    final hexKey = await secureCredentials.readString(
+      SecureCredentialKey.ralroadsSigningPrivateKey,
+    );
     if (hexKey == null || hexKey.isEmpty) {
       throw StateError('Signing identity not initialized.');
     }
@@ -49,7 +54,9 @@ class DeviceIdentityService {
 
   /// Signs a message string, returning the hex-encoded signature.
   Future<String> signMessage(String message) async {
-    final hexKey = await secureCredentials.readString(SecureCredentialKey.ralroadsSigningPrivateKey);
+    final hexKey = await secureCredentials.readString(
+      SecureCredentialKey.ralroadsSigningPrivateKey,
+    );
     if (hexKey == null || hexKey.isEmpty) {
       throw StateError('Signing identity not initialized.');
     }
@@ -70,12 +77,12 @@ class DeviceIdentityService {
       final messageBytes = utf8.encode(message);
       final signatureBytes = _fromHex(signatureHex);
       final publicKeyBytes = _fromHex(publicKeyHex);
-      
+
       final signatureObj = Signature(
         signatureBytes,
         publicKey: SimplePublicKey(publicKeyBytes, type: KeyPairType.ed25519),
       );
-      
+
       return await _algorithm.verify(messageBytes, signature: signatureObj);
     } catch (_) {
       return false;

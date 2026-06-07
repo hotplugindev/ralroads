@@ -19,7 +19,9 @@ void main() {
     test('generates, saves and restores keypair identity', () async {
       await identityService.initializeIdentity();
 
-      final savedHex = await secureCredentials.readString(SecureCredentialKey.ralroadsSigningPrivateKey);
+      final savedHex = await secureCredentials.readString(
+        SecureCredentialKey.ralroadsSigningPrivateKey,
+      );
       expect(savedHex, isNotNull);
       expect(savedHex!.length, 64); // 32 bytes hex encoded = 64 chars
 
@@ -28,7 +30,9 @@ void main() {
 
       // Re-initialize to ensure it's idempotent
       await identityService.initializeIdentity();
-      final restoredHex = await secureCredentials.readString(SecureCredentialKey.ralroadsSigningPrivateKey);
+      final restoredHex = await secureCredentials.readString(
+        SecureCredentialKey.ralroadsSigningPrivateKey,
+      );
       expect(restoredHex, savedHex);
     });
 

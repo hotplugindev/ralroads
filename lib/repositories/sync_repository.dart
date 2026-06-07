@@ -109,13 +109,16 @@ class SyncRepository {
   }
 
   Future<List<PendingMediaUpload>> listDueMediaUploads(DateTime now) async {
-    final queued = await (database.select(database.pendingMediaUploads)
-          ..where((row) =>
-              row.state.equals('queued') |
-              row.state.equals('failed') |
-              row.state.equals('uploading'))
-          ..orderBy([(row) => OrderingTerm.asc(row.createdAt)]))
-        .get();
+    final queued =
+        await (database.select(database.pendingMediaUploads)
+              ..where(
+                (row) =>
+                    row.state.equals('queued') |
+                    row.state.equals('failed') |
+                    row.state.equals('uploading'),
+              )
+              ..orderBy([(row) => OrderingTerm.asc(row.createdAt)]))
+            .get();
     return [
       for (final media in queued)
         if (media.nextAttemptAt == null || !media.nextAttemptAt!.isAfter(now))
@@ -129,59 +132,63 @@ class SyncRepository {
     String? matrixUri,
     DateTime? nextAttemptAt,
   }) {
-    return (database.update(database.pendingMediaUploads)
-          ..where((row) => row.id.equals(id)))
-        .write(
-          PendingMediaUploadsCompanion(
-            state: Value(state),
-            matrixUri: matrixUri == null ? const Value.absent() : Value(matrixUri),
-            nextAttemptAt: Value(nextAttemptAt),
-            updatedAt: Value(DateTime.now()),
-          ),
-        );
-  }
-
-  Future<void> markMediaFailedWithRetry(String id, Duration delay) async {
-    final media = await (database.select(database.pendingMediaUploads)
-          ..where((row) => row.id.equals(id)))
-        .getSingleOrNull();
-    if (media == null) return;
-    await (database.update(database.pendingMediaUploads)
-          ..where((row) => row.id.equals(id)))
-        .write(
-          PendingMediaUploadsCompanion(
-            state: const Value('failed'),
-            attemptCount: Value(media.attemptCount + 1),
-            nextAttemptAt: Value(DateTime.now().add(delay)),
-            updatedAt: Value(DateTime.now()),
-          ),
-        );
-  }
-
-  Future<void> saveSyncCursor(String scope, String? cursor) {
-    return database.into(database.matrixSyncCursors).insertOnConflictUpdate(
-      MatrixSyncCursorsCompanion(
-        id: Value(scope),
-        scope: Value(scope),
-        cursor: Value(cursor),
+    return (database.update(
+      database.pendingMediaUploads,
+    )..where((row) => row.id.equals(id))).write(
+      PendingMediaUploadsCompanion(
+        state: Value(state),
+        matrixUri: matrixUri == null ? const Value.absent() : Value(matrixUri),
+        nextAttemptAt: Value(nextAttemptAt),
         updatedAt: Value(DateTime.now()),
       ),
     );
   }
 
+  Future<void> markMediaFailedWithRetry(String id, Duration delay) async {
+    final media = await (database.select(
+      database.pendingMediaUploads,
+    )..where((row) => row.id.equals(id))).getSingleOrNull();
+    if (media == null) return;
+    await (database.update(
+      database.pendingMediaUploads,
+    )..where((row) => row.id.equals(id))).write(
+      PendingMediaUploadsCompanion(
+        state: const Value('failed'),
+        attemptCount: Value(media.attemptCount + 1),
+        nextAttemptAt: Value(DateTime.now().add(delay)),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future<void> saveSyncCursor(String scope, String? cursor) {
+    return database
+        .into(database.matrixSyncCursors)
+        .insertOnConflictUpdate(
+          MatrixSyncCursorsCompanion(
+            id: Value(scope),
+            scope: Value(scope),
+            cursor: Value(cursor),
+            updatedAt: Value(DateTime.now()),
+          ),
+        );
+  }
+
   Future<String?> getSyncCursor(String scope) async {
-    final row = await (database.select(database.matrixSyncCursors)
-          ..where((row) => row.scope.equals(scope)))
-        .getSingleOrNull();
+    final row = await (database.select(
+      database.matrixSyncCursors,
+    )..where((row) => row.scope.equals(scope))).getSingleOrNull();
     return row?.cursor;
   }
 
   Stream<int> watchPendingSyncCount() {
     final query = database.select(database.outgoingMatrixEvents)
-      ..where((row) =>
-          row.state.equals('queued') |
-          row.state.equals('failed') |
-          row.state.equals('sending'));
+      ..where(
+        (row) =>
+            row.state.equals('queued') |
+            row.state.equals('failed') |
+            row.state.equals('sending'),
+      );
     return query.watch().map((rows) => rows.length);
   }
 }

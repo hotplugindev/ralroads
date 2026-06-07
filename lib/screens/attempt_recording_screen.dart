@@ -63,7 +63,8 @@ class _AttemptRecordingScreenState extends State<AttemptRecordingScreen> {
         animation: _controller,
         builder: (context, _) {
           final snapshot = _controller.snapshot;
-          final isWaiting = snapshot.state == AttemptRecordingState.waitingToStart;
+          final isWaiting =
+              snapshot.state == AttemptRecordingState.waitingToStart;
           final isRecording = snapshot.state == AttemptRecordingState.recording;
           final isFinished = snapshot.state == AttemptRecordingState.finished;
           final isAborted = snapshot.state == AttemptRecordingState.aborted;
@@ -79,7 +80,9 @@ class _AttemptRecordingScreenState extends State<AttemptRecordingScreen> {
             children: [
               if (isWaiting) ...[
                 Card(
-                  color: theme.colorScheme.primaryContainer.withValues(alpha: 0.2),
+                  color: theme.colorScheme.primaryContainer.withValues(
+                    alpha: 0.2,
+                  ),
                   elevation: 0,
                   child: Padding(
                     padding: const EdgeInsets.all(20),
@@ -206,7 +209,9 @@ class _AttemptRecordingScreenState extends State<AttemptRecordingScreen> {
               ],
               if (isAborted) ...[
                 Card(
-                  color: theme.colorScheme.errorContainer.withValues(alpha: 0.2),
+                  color: theme.colorScheme.errorContainer.withValues(
+                    alpha: 0.2,
+                  ),
                   elevation: 0,
                   child: Padding(
                     padding: const EdgeInsets.all(20),
@@ -226,7 +231,8 @@ class _AttemptRecordingScreenState extends State<AttemptRecordingScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          snapshot.errorMessage ?? 'Driver cancelled the attempt.',
+                          snapshot.errorMessage ??
+                              'Driver cancelled the attempt.',
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 16),
@@ -307,8 +313,14 @@ class _SpeedPanel extends StatelessWidget {
             const SizedBox(height: 16),
             Row(
               children: [
-                Expanded(child: Text('Distance: ${formatDistance(snapshot.distanceMeters)}')),
-                Expanded(child: Text('Time: ${formatDuration(snapshot.elapsed)}')),
+                Expanded(
+                  child: Text(
+                    'Distance: ${formatDistance(snapshot.distanceMeters)}',
+                  ),
+                ),
+                Expanded(
+                  child: Text('Time: ${formatDuration(snapshot.elapsed)}'),
+                ),
               ],
             ),
           ],
@@ -358,19 +370,13 @@ class _ProgressPanel extends StatelessWidget {
             const SizedBox(height: 8),
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 12,
-              ),
+              child: LinearProgressIndicator(value: progress, minHeight: 12),
             ),
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Distance to Finish:',
-                  style: theme.textTheme.bodyMedium,
-                ),
+                Text('Distance to Finish:', style: theme.textTheme.bodyMedium),
                 Text(
                   '${snapshot.distanceToFinish.toStringAsFixed(0)} m',
                   style: theme.textTheme.bodyMedium?.copyWith(

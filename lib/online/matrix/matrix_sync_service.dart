@@ -36,7 +36,10 @@ class MatrixSyncService {
     if (_running) return;
     _running = true;
     _runSyncLoop();
-    _outboxTimer = Timer.periodic(const Duration(seconds: 10), (_) => processOutbox());
+    _outboxTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => processOutbox(),
+    );
   }
 
   void stop() {
@@ -54,18 +57,20 @@ class MatrixSyncService {
           continue;
         }
 
-        final accessToken = await secureCredentials.readString(SecureCredentialKey.matrixAccessToken);
+        final accessToken = await secureCredentials.readString(
+          SecureCredentialKey.matrixAccessToken,
+        );
         if (accessToken == null) {
           await Future<void>.delayed(const Duration(seconds: 5));
           continue;
         }
 
-        final cursor = await repositories.sync.getSyncCursor('matrix-primary-sync');
+        final cursor = await repositories.sync.getSyncCursor(
+          'matrix-primary-sync',
+        );
         final timeoutMs = cursor == null ? 0 : 30000;
 
-        final queryParams = <String, dynamic>{
-          'timeout': timeoutMs,
-        };
+        final queryParams = <String, dynamic>{'timeout': timeoutMs};
         if (cursor != null) {
           queryParams['since'] = cursor;
         }
@@ -87,14 +92,19 @@ class MatrixSyncService {
 
         final nextBatch = data['next_batch'] as String?;
         if (nextBatch != null) {
-          await repositories.sync.saveSyncCursor('matrix-primary-sync', nextBatch);
+          await repositories.sync.saveSyncCursor(
+            'matrix-primary-sync',
+            nextBatch,
+          );
           // Also update matrixSessions table in database
-          await (repositories.sync.database.update(repositories.sync.database.matrixSessions)
-                ..where((row) => row.id.equals(session.id)))
-              .write(MatrixSessionsCompanion(
-                syncCursor: Value(nextBatch),
-                updatedAt: Value(DateTime.now()),
-              ));
+          await (repositories.sync.database.update(
+            repositories.sync.database.matrixSessions,
+          )..where((row) => row.id.equals(session.id))).write(
+            MatrixSessionsCompanion(
+              syncCursor: Value(nextBatch),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
         }
 
         await _processSyncResponse(data, session, accessToken);
@@ -106,7 +116,11 @@ class MatrixSyncService {
     }
   }
 
-  Future<void> _processSyncResponse(Map<String, dynamic> data, MatrixSession session, String accessToken) async {
+  Future<void> _processSyncResponse(
+    Map<String, dynamic> data,
+    MatrixSession session,
+    String accessToken,
+  ) async {
     final rooms = data['rooms'] as Map<String, dynamic>?;
     if (rooms == null) return;
 
@@ -121,15 +135,17 @@ class MatrixSyncService {
           );
           // Cache joined room locally
           final now = DateTime.now();
-          await repositories.sync.database.into(repositories.sync.database.rooms).insertOnConflictUpdate(
-            RoomsCompanion(
-              id: Value(roomId),
-              matrixRoomId: Value(roomId),
-              type: const Value('group'),
-              encrypted: const Value(false),
-              updatedAt: Value(now),
-            ),
-          );
+          await repositories.sync.database
+              .into(repositories.sync.database.rooms)
+              .insertOnConflictUpdate(
+                RoomsCompanion(
+                  id: Value(roomId),
+                  matrixRoomId: Value(roomId),
+                  type: const Value('group'),
+                  encrypted: const Value(false),
+                  updatedAt: Value(now),
+                ),
+              );
         } catch (_) {}
       }
     }
@@ -140,18 +156,20 @@ class MatrixSyncService {
       for (final entry in join.entries) {
         final roomId = entry.key;
         final roomData = entry.value as Map<String, dynamic>;
-        
+
         // Ensure room is in local DB
         final now = DateTime.now();
-        await repositories.sync.database.into(repositories.sync.database.rooms).insertOnConflictUpdate(
-          RoomsCompanion(
-            id: Value(roomId),
-            matrixRoomId: Value(roomId),
-            type: const Value('group'),
-            encrypted: const Value(false),
-            updatedAt: Value(now),
-          ),
-        );
+        await repositories.sync.database
+            .into(repositories.sync.database.rooms)
+            .insertOnConflictUpdate(
+              RoomsCompanion(
+                id: Value(roomId),
+                matrixRoomId: Value(roomId),
+                type: const Value('group'),
+                encrypted: const Value(false),
+                updatedAt: Value(now),
+              ),
+            );
 
         final timeline = roomData['timeline'] as Map<String, dynamic>?;
         if (timeline == null) continue;
@@ -163,14 +181,16 @@ class MatrixSyncService {
           final eventId = event['event_id'] as String?;
           final eventType = event['type'] as String?;
           final content = event['content'] as Map<String, dynamic>?;
-          final originServerTs = event['origin_server_ts'] as int? ?? DateTime.now().millisecondsSinceEpoch;
+          final originServerTs =
+              event['origin_server_ts'] as int? ??
+              DateTime.now().millisecondsSinceEpoch;
 
           if (eventId == null || eventType == null || content == null) continue;
 
           // Check if already processed
-          final exists = await (repositories.sync.database.select(repositories.sync.database.cachedDirectoryEvents)
-                ..where((row) => row.id.equals(eventId)))
-              .getSingleOrNull();
+          final exists = await (repositories.sync.database.select(
+            repositories.sync.database.cachedDirectoryEvents,
+          )..where((row) => row.id.equals(eventId))).getSingleOrNull();
           if (exists != null) continue;
 
           // Process known custom events
@@ -183,27 +203,37 @@ class MatrixSyncService {
           } else if (eventType == 'm.room.name') {
             final name = content['name'] as String?;
             if (name != null) {
-              await (repositories.sync.database.update(repositories.sync.database.rooms)
-                    ..where((row) => row.id.equals(roomId)))
-                  .write(RoomsCompanion(
-                    name: Value(name),
-                    updatedAt: Value(DateTime.now()),
-                  ));
+              await (repositories.sync.database.update(
+                repositories.sync.database.rooms,
+              )..where((row) => row.id.equals(roomId))).write(
+                RoomsCompanion(
+                  name: Value(name),
+                  updatedAt: Value(DateTime.now()),
+                ),
+              );
             }
           }
 
           // Cache the event
-          await repositories.sync.database.into(repositories.sync.database.cachedDirectoryEvents).insertOnConflictUpdate(
-            CachedDirectoryEventsCompanion(
-              id: Value(eventId),
-              roomId: Value(roomId),
-              eventType: Value(eventType),
-              entityId: Value(content['id'] as String? ?? content['segmentId'] as String? ?? 'unknown'),
-              payloadJson: Value(jsonEncode(content)),
-              originTimestamp: Value(DateTime.fromMillisecondsSinceEpoch(originServerTs)),
-              ingestedAt: Value(DateTime.now()),
-            ),
-          );
+          await repositories.sync.database
+              .into(repositories.sync.database.cachedDirectoryEvents)
+              .insertOnConflictUpdate(
+                CachedDirectoryEventsCompanion(
+                  id: Value(eventId),
+                  roomId: Value(roomId),
+                  eventType: Value(eventType),
+                  entityId: Value(
+                    content['id'] as String? ??
+                        content['segmentId'] as String? ??
+                        'unknown',
+                  ),
+                  payloadJson: Value(jsonEncode(content)),
+                  originTimestamp: Value(
+                    DateTime.fromMillisecondsSinceEpoch(originServerTs),
+                  ),
+                  ingestedAt: Value(DateTime.now()),
+                ),
+              );
         }
       }
     }
@@ -221,7 +251,11 @@ class MatrixSyncService {
     } catch (_) {}
   }
 
-  Future<void> _handleSharedPackage(Map<String, dynamic> content, MatrixSession session, String accessToken) async {
+  Future<void> _handleSharedPackage(
+    Map<String, dynamic> content,
+    MatrixSession session,
+    String accessToken,
+  ) async {
     final mxcUri = content['mxc_uri'] as String?;
     final keyBase64 = content['key_base64'] as String?;
     final packageType = content['package_type'] as String?;
@@ -236,7 +270,8 @@ class MatrixSyncService {
       final mediaId = parsed.path.replaceFirst('/', '');
 
       // Download encrypted bytes
-      final downloadUrl = '${session.homeserverUrl}/_matrix/media/v3/download/$serverName/$mediaId';
+      final downloadUrl =
+          '${session.homeserverUrl}/_matrix/media/v3/download/$serverName/$mediaId';
       final response = await _dio.get<List<int>>(
         downloadUrl,
         options: Options(
@@ -249,7 +284,10 @@ class MatrixSyncService {
       final keyBytes = base64.decode(keyBase64);
 
       // Decrypt
-      final jsonStr = MatrixEncryptionHelper.decryptPayload(combinedBytes, keyBytes);
+      final jsonStr = MatrixEncryptionHelper.decryptPayload(
+        combinedBytes,
+        keyBytes,
+      );
       final package = jsonDecode(jsonStr) as Map<String, dynamic>;
 
       if (packageType == 'segment') {
@@ -265,8 +303,9 @@ class MatrixSyncService {
     final versionId = package['currentVersionId'] as String;
     final name = package['name'] as String;
     final visibility = package['visibility'] as String? ?? 'private';
-    
-    final distanceMeters = (package['distanceMeters'] as num?)?.toDouble() ?? 0.0;
+
+    final distanceMeters =
+        (package['distanceMeters'] as num?)?.toDouble() ?? 0.0;
     final safetyStatus = package['safetyStatus'] as String? ?? 'suitable';
     final contentHash = package['contentHash'] as String? ?? '';
     final signature = package['signature'] as String?;
@@ -275,9 +314,12 @@ class MatrixSyncService {
     final rules = SegmentRuleInput(
       policyVersion: rulesData?['policyVersion'] as String? ?? 'local-v1',
       hardSpeedToleranceKmh: rulesData?['hardSpeedToleranceKmh'] as int? ?? 8,
-      hardSpeedDurationSeconds: rulesData?['hardSpeedDurationSeconds'] as int? ?? 2,
-      minRouteMatchScore: (rulesData?['minRouteMatchScore'] as num?)?.toDouble() ?? 0.85,
-      minGpsQualityScore: (rulesData?['minGpsQualityScore'] as num?)?.toDouble() ?? 0.7,
+      hardSpeedDurationSeconds:
+          rulesData?['hardSpeedDurationSeconds'] as int? ?? 2,
+      minRouteMatchScore:
+          (rulesData?['minRouteMatchScore'] as num?)?.toDouble() ?? 0.85,
+      minGpsQualityScore:
+          (rulesData?['minGpsQualityScore'] as num?)?.toDouble() ?? 0.7,
     );
 
     final geomData = package['geometry'] as List<dynamic>? ?? [];
@@ -292,18 +334,20 @@ class MatrixSyncService {
 
     final existing = await repositories.segments.getSegment(segmentId);
     if (existing == null) {
-      await repositories.segments.createLocalSegment(LocalSegmentInput(
-        id: segmentId,
-        versionId: versionId,
-        name: name,
-        geometry: geometry,
-        distanceMeters: distanceMeters,
-        visibility: visibility,
-        safetyStatus: safetyStatus,
-        contentHash: contentHash,
-        signature: signature,
-        rules: rules,
-      ));
+      await repositories.segments.createLocalSegment(
+        LocalSegmentInput(
+          id: segmentId,
+          versionId: versionId,
+          name: name,
+          geometry: geometry,
+          distanceMeters: distanceMeters,
+          visibility: visibility,
+          safetyStatus: safetyStatus,
+          contentHash: contentHash,
+          signature: signature,
+          rules: rules,
+        ),
+      );
     }
   }
 
@@ -318,9 +362,9 @@ class MatrixSyncService {
     final status = package['status'] as String? ?? 'dnf';
     final officialEligible = package['officialEligible'] as bool? ?? false;
 
-    final existing = await (repositories.attempts.database.select(repositories.attempts.database.segmentAttempts)
-          ..where((row) => row.id.equals(attemptId)))
-        .getSingleOrNull();
+    final existing = await (repositories.attempts.database.select(
+      repositories.attempts.database.segmentAttempts,
+    )..where((row) => row.id.equals(attemptId))).getSingleOrNull();
 
     if (existing == null) {
       await repositories.attempts.createAttempt(
@@ -341,7 +385,8 @@ class MatrixSyncService {
             accuracyMeters: (map['accuracyMeters'] as num?)?.toDouble(),
             speedMps: (map['speedMps'] as num?)?.toDouble(),
             headingDegrees: (map['headingDegrees'] as num?)?.toDouble(),
-            distanceFromStart: (map['distanceFromStart'] as num?)?.toDouble() ?? 0.0,
+            distanceFromStart:
+                (map['distanceFromStart'] as num?)?.toDouble() ?? 0.0,
             speedLimitKmh: map['speedLimitKmh'] as int?,
             speedCompliant: map['speedCompliant'] as bool?,
           );
@@ -351,23 +396,28 @@ class MatrixSyncService {
           await repositories.attempts.appendAttemptPoints(attemptId, points);
         }
 
-        final durationSeconds = (package['durationSeconds'] as num?)?.toDouble();
-        final routeMatchScore = (package['routeMatchScore'] as num?)?.toDouble();
-        final gpsQualityScore = (package['gpsQualityScore'] as num?)?.toDouble();
+        final durationSeconds = (package['durationSeconds'] as num?)
+            ?.toDouble();
+        final routeMatchScore = (package['routeMatchScore'] as num?)
+            ?.toDouble();
+        final gpsQualityScore = (package['gpsQualityScore'] as num?)
+            ?.toDouble();
         final resultHash = package['resultHash'] as String? ?? '';
         final reasonsJson = package['reasonsJson'] as String?;
 
-        await repositories.attempts.persistValidationResult(AttemptValidationInput(
-          id: 'val-$attemptId',
-          attemptId: attemptId,
-          engineVersion: '1.0.0',
-          status: status,
-          resultHash: resultHash,
-          durationSeconds: durationSeconds,
-          routeMatchScore: routeMatchScore,
-          gpsQualityScore: gpsQualityScore,
-          reasonsJson: reasonsJson,
-        ));
+        await repositories.attempts.persistValidationResult(
+          AttemptValidationInput(
+            id: 'val-$attemptId',
+            attemptId: attemptId,
+            engineVersion: '1.0.0',
+            status: status,
+            resultHash: resultHash,
+            durationSeconds: durationSeconds,
+            routeMatchScore: routeMatchScore,
+            gpsQualityScore: gpsQualityScore,
+            reasonsJson: reasonsJson,
+          ),
+        );
 
         await repositories.attempts.finishAttempt(
           attemptId: attemptId,
@@ -382,7 +432,9 @@ class MatrixSyncService {
   Future<void> processOutbox() async {
     final session = await matrixAccount.restoreSession();
     if (session == null) return;
-    final accessToken = await secureCredentials.readString(SecureCredentialKey.matrixAccessToken);
+    final accessToken = await secureCredentials.readString(
+      SecureCredentialKey.matrixAccessToken,
+    );
     if (accessToken == null) return;
 
     final now = DateTime.now();
@@ -406,7 +458,10 @@ class MatrixSyncService {
         );
         await repositories.sync.markEventState(event.id, 'sent');
       } catch (e) {
-        await repositories.sync.markEventFailedWithRetry(event.id, const Duration(minutes: 1));
+        await repositories.sync.markEventFailedWithRetry(
+          event.id,
+          const Duration(minutes: 1),
+        );
       }
     }
 
@@ -431,12 +486,22 @@ class MatrixSyncService {
 
         final contentUri = response.data?['content_uri'] as String?;
         if (contentUri != null) {
-          await repositories.sync.markMediaState(upload.id, 'uploaded', matrixUri: contentUri);
+          await repositories.sync.markMediaState(
+            upload.id,
+            'uploaded',
+            matrixUri: contentUri,
+          );
         } else {
-          await repositories.sync.markMediaFailedWithRetry(upload.id, const Duration(minutes: 1));
+          await repositories.sync.markMediaFailedWithRetry(
+            upload.id,
+            const Duration(minutes: 1),
+          );
         }
       } catch (e) {
-        await repositories.sync.markMediaFailedWithRetry(upload.id, const Duration(minutes: 1));
+        await repositories.sync.markMediaFailedWithRetry(
+          upload.id,
+          const Duration(minutes: 1),
+        );
       }
     }
   }

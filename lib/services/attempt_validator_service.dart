@@ -16,50 +16,61 @@ class AttemptValidatorService {
 
   Future<AttemptValidationResult> validateAndPersist(String attemptId) async {
     // 1. Load attempt
-    final attempt = await (attemptRepository.database.select(attemptRepository.database.segmentAttempts)
-          ..where((row) => row.id.equals(attemptId)))
-        .getSingle();
+    final attempt = await (attemptRepository.database.select(
+      attemptRepository.database.segmentAttempts,
+    )..where((row) => row.id.equals(attemptId))).getSingle();
 
     // 2. Load segment geometry
-    final segment = await (segmentRepository.database.select(segmentRepository.database.challengeSegments)
-          ..where((row) => row.id.equals(attempt.segmentId)))
-        .getSingle();
+    final segment = await (segmentRepository.database.select(
+      segmentRepository.database.challengeSegments,
+    )..where((row) => row.id.equals(attempt.segmentId))).getSingle();
     final versionId = segment.currentVersionId;
     if (versionId == null) {
       throw Exception('Segment currentVersionId is null.');
     }
 
-    final segmentGeomList = await (segmentRepository.database.select(segmentRepository.database.segmentGeometry)
-          ..where((row) => row.versionId.equals(versionId))
-          ..orderBy([(row) => OrderingTerm.asc(row.pointIndex)]))
-        .get();
+    final segmentGeomList =
+        await (segmentRepository.database.select(
+                segmentRepository.database.segmentGeometry,
+              )
+              ..where((row) => row.versionId.equals(versionId))
+              ..orderBy([(row) => OrderingTerm.asc(row.pointIndex)]))
+            .get();
 
-    final segmentPoints = segmentGeomList.map((g) => SegmentPoint(
-      lat: g.lat,
-      lon: g.lon,
-      distanceFromStart: g.distanceFromStart,
-    )).toList();
+    final segmentPoints = segmentGeomList
+        .map(
+          (g) => SegmentPoint(
+            lat: g.lat,
+            lon: g.lon,
+            distanceFromStart: g.distanceFromStart,
+          ),
+        )
+        .toList();
 
     // 3. Load attempt points
-    final attemptPointsList = await (attemptRepository.database.select(attemptRepository.database.attemptPoints)
-          ..where((row) => row.attemptId.equals(attemptId))
-          ..orderBy([(row) => OrderingTerm.asc(row.pointIndex)]))
-        .get();
+    final attemptPointsList =
+        await (attemptRepository.database.select(
+                attemptRepository.database.attemptPoints,
+              )
+              ..where((row) => row.attemptId.equals(attemptId))
+              ..orderBy([(row) => OrderingTerm.asc(row.pointIndex)]))
+            .get();
 
-    final trace = attemptPointsList.map((p) => ValidationPoint(
-      timestamp: p.recordedAt,
-      lat: p.lat,
-      lon: p.lon,
-      speedMps: p.speedMps,
-      accuracyMeters: p.accuracyMeters,
-      speedLimitKmh: p.speedLimitKmh,
-    )).toList();
+    final trace = attemptPointsList
+        .map(
+          (p) => ValidationPoint(
+            timestamp: p.recordedAt,
+            lat: p.lat,
+            lon: p.lon,
+            speedMps: p.speedMps,
+            accuracyMeters: p.accuracyMeters,
+            speedLimitKmh: p.speedLimitKmh,
+          ),
+        )
+        .toList();
 
     // 4. Run validator
-    final result = _validator.validate(
-      segment: segmentPoints,
-      trace: trace,
-    );
+    final result = _validator.validate(segment: segmentPoints, trace: trace);
 
     // 5. Mapping status enum to string
     final statusString = switch (result.status) {

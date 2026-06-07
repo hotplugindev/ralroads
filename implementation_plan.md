@@ -1,4 +1,4 @@
-# RalRoads Federated Navigation And Challenge Platform Plan
+# RalRoads Local-First Navigation And Matrix Challenge Platform Plan
 
 ## Baseline Stabilization
 
@@ -8,6 +8,31 @@
 - `flutter build apk --debug`: blocked by environment, not source code. Flutter reports no Android SDK and suggests setting `ANDROID_HOME`.
 - Follow-up baseline on 2026-06-07: `flutter analyze` clean, `flutter test` 40 tests passing, `adb` not found on PATH.
 - Current run baseline on 2026-06-07: `flutter pub get` passed, `flutter analyze` clean, `flutter test` 47 tests passing, `adb` not found on PATH.
+- Scope-correction baseline on 2026-06-07: `flutter pub get` passed and `flutter analyze` passed before validator-removal edits. Initial sandboxed `flutter test` was blocked by loopback binding permissions; elevated test run exposed a Trip Summary stream-cleanup test failure.
+
+## Validator Scope Decision
+
+Independent validator infrastructure is intentionally out of scope for RalRoads.
+
+Removed or excluded:
+
+- Standalone validator tools, daemons, independent validator attestations, validator queues, validator trust settings, N-of-M consensus, and external validation services.
+- Matrix event types or Drift tables whose only purpose is independent validator attestation.
+- UI language that labels shared attempts as simply `Verified`.
+
+Kept:
+
+- Deterministic local validation in `packages/ralroads_validation`.
+- Local validation result storage for attempts.
+- Device identity and signatures for authorship/package integrity.
+- Matrix sharing, group trust policy, and moderation as social trust layers.
+
+Trust labels:
+
+- `Local`: exists only on the current device.
+- `Locally validated`: passed deterministic validation on this device, with no independent verification.
+- `Shared / Unverified`: received through Matrix; authorship and package integrity may be checked, but trace legitimacy is not independently guaranteed.
+- `Group trusted`: accepted by a private Matrix group policy, still not equivalent to independent technical verification.
 
 ## Implementation Ledger
 
@@ -42,6 +67,8 @@ Current checkpoint:
 - Trip summary now reads persisted trip point stats and exposes rename, privacy, delete, and create-segment actions.
 - Pure Dart `packages/ralroads_validation` MVP added with deterministic local attempt validation and SHA-256 result hashes.
 - Validator tests cover clean results, sustained speed-limit invalidation, and deterministic hashes.
+- Trip Summary widget tests now use reactive Drift streams and explicitly unmount the screen before test teardown.
+- Independent validator attestation repository APIs, tests, Drift table, and standalone CLI tool have been removed.
 
 Next checkpoint:
 
@@ -85,6 +112,7 @@ Exact remaining product gaps after this checkpoint:
 - Matrix sync is not yet a full SDK-backed sync loop; current Matrix support is login/session only.
 - Matrix media sharing and signed `.rrsegment` packages are not yet implemented.
 - Challenge detail, segment detail, local leaderboard, and attempt UI remain to be built.
+- Shared leaderboards still need Matrix-derived aggregation using `Local`, `Locally validated`, `Shared / Unverified`, and `Group trusted` labels, without external validator claims.
 
 ## Current Architecture
 
@@ -117,9 +145,9 @@ RalRoads is a local-first Flutter app with a small service layer and mostly scre
 - There is no Drift/SQLite database; durable structured data is stored as Hive maps.
 - Saved routes are stored as large JSON-like blobs, which will not scale to trips, route chunks, traces, attempts, or sync state.
 - Route planning, preview, DriveScreen, and callout systems are partially coupled through screen constructors rather than a canonical persisted route-analysis manifest.
-- There is no trip recorder, segment model, attempt model, validator package, signature model, or package format.
+- Package formats, package signatures, richer segment metadata, and Matrix sharing are incomplete.
 - Offline map management exists as a screen/service shell, but no full offline route package readiness model is persisted.
-- There is no privacy model, private zones, data export/delete flow, or validator trust settings.
+- Privacy zones exist locally; broader privacy defaults, data export/delete flows, and Matrix social trust policy UI are incomplete.
 - There is no product-level primary navigation matching Navigate, Challenges, Trips, Community, Settings.
 
 ## Product Principles
@@ -150,7 +178,7 @@ RalRoads is a local-first Flutter app with a small service layer and mostly scre
 - Implement `SecureCredentialService` as the only API for secrets.
 - Implement `DeviceIdentityService` to create and load a RalRoads Ed25519 device identity.
 - Implement `EventSigningService` and `SignatureVerificationService` for authorship and package integrity.
-- Sign segment packages, attempt packages, validation requests, and device/profile events where appropriate.
+- Sign segment packages, attempt packages, and device/profile events where appropriate.
 - State clearly in code and UI that signatures do not prove GPS authenticity.
 
 ## Local Database Architecture
@@ -165,7 +193,7 @@ Core tables:
 - `route_plans`, `saved_routes`, `route_chunks`, `route_edges`, `route_maneuvers`
 - `semantic_sectors`, `pacenotes`, `road_warnings`, `speed_limit_segments`, `offline_map_regions`
 - `segments`, `segment_versions`, `segment_route_points`, `segment_rules`
-- `segment_attempts`, `attempt_points`, `attempt_validation_results`, `validator_attestations`
+- `segment_attempts`, `attempt_points`, `attempt_validation_results`
 - `challenges`, `challenge_participants`
 - `notifications`, `reports`, `moderation_actions`, `private_zones`
 - `outgoing_events`, `pending_media_uploads`, `sync_state`, `cached_directory_events`, `blocked_users`
@@ -210,12 +238,11 @@ Define strict versioned custom event types:
 - `org.ralroads.segment.published.v1`
 - `org.ralroads.attempt.submitted.v1`
 - `org.ralroads.attempt.result.v1`
-- `org.ralroads.attempt.attestation.v1`
 - `org.ralroads.challenge.created.v1`
 - `org.ralroads.challenge.updated.v1`
+- `org.ralroads.group.trust_policy.v1`
 - `org.ralroads.report.created.v1`
 - `org.ralroads.segment.moderation.v1`
-- `org.ralroads.validation.policy.v1`
 
 Every event includes schema version, stable entity ID, creation timestamp, author Matrix ID, author device key ID, relevant content hash, and RalRoads signature where relevant. Unsupported or malformed events are rejected safely.
 
@@ -326,7 +353,7 @@ Outputs:
 - Violation reasons.
 - Deterministic result hash.
 
-Federated validator attestations include attempt ID, trace hash, status, duration, engine version, validator identity, validator public key, and signature.
+Validation outputs are local evidence only. Matrix-shared attempt packages may include the local validation result hash, engine version, author/device signature, and package hash, but clients must label them `Shared / Unverified` unless a private group explicitly marks them `Group trusted`.
 
 ## Privacy Architecture
 
@@ -336,7 +363,7 @@ Federated validator attestations include attempt ID, trace hash, status, duratio
 - Sharing is explicit per trip, segment, challenge, or attempt.
 - Friend sharing uses Matrix direct/private rooms and avoids fastest-sorted invalid attempts.
 - Public packages use hash and signature verification; private packages encrypt before upload.
-- Settings include privacy defaults, private zones, data export, deletion, storage use, and validator trust.
+- Settings include privacy defaults, private zones, data export, deletion, storage use, and Matrix social trust controls.
 
 ## UI Navigation Redesign
 
@@ -346,7 +373,7 @@ Primary destinations:
 - Challenges: personal segments, imported/shared segments, friend/group challenges, public regional segments, details, attempts, clean leaderboards.
 - Trips: recording, history, summary, speed-limit compliance, matched segments, local attempts, segment creation, privacy controls.
 - Community: Matrix profile, friends, requests, groups, invitations, directories, activity, reports, moderation status.
-- Settings: Matrix, ORS, navigation, callouts, voice, offline maps, privacy, private zones, validators, storage, export/delete, debug tools.
+- Settings: Matrix, ORS, navigation, callouts, voice, offline maps, privacy, private zones, community sync, storage, export/delete, debug tools.
 
 First launch:
 
@@ -375,7 +402,7 @@ First launch:
 16. RalRoads event schemas: strict validation and local ingest; depends on signing and Matrix model tables.
 17. Local-first sync: outgoing queues, media queues, conflict resolution; depends on Matrix services and event schemas.
 18. Friends/groups/challenges UI: Matrix-backed social flows; depends on sync and product shell.
-19. Federated validators: attestations, trust policies, public clean leaderboards; depends on validation package, signing, Matrix media/events.
+19. Shared leaderboards without validators: local, locally validated, shared/unverified, and group-trusted sections; depends on validation package, signing, Matrix media/events, group policy, moderation, and blocked-user state.
 20. Offline package/media formats: `.rrsegment`, `.rrattempt`, verification, encryption; depends on signing, validation, and Matrix media.
 21. Privacy/export/delete hardening; depends on complete local data model.
 

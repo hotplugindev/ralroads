@@ -48,13 +48,18 @@ class _SegmentCreationScreenState extends State<SegmentCreationScreen> {
           _endIdx ??= points.length - 1;
         }
 
-        final selectedPoints = (points.length >= 2 && _startIdx != null && _endIdx != null)
+        final selectedPoints =
+            (points.length >= 2 && _startIdx != null && _endIdx != null)
             ? points.sublist(_startIdx!, _endIdx! + 1)
             : points;
 
         final suitability = _checkSuitability(selectedPoints);
-        final startDist = selectedPoints.isEmpty ? 0.0 : selectedPoints.first.distanceFromStart ?? 0.0;
-        final endDist = selectedPoints.isEmpty ? 0.0 : selectedPoints.last.distanceFromStart ?? 0.0;
+        final startDist = selectedPoints.isEmpty
+            ? 0.0
+            : selectedPoints.first.distanceFromStart ?? 0.0;
+        final endDist = selectedPoints.isEmpty
+            ? 0.0
+            : selectedPoints.last.distanceFromStart ?? 0.0;
         final distance = endDist - startDist;
 
         return Scaffold(
@@ -100,10 +105,7 @@ class _SegmentCreationScreenState extends State<SegmentCreationScreen> {
                   min: 0,
                   max: (points.length - 1).toDouble(),
                   divisions: points.length - 1,
-                  labels: RangeLabels(
-                    'Point $_startIdx',
-                    'Point $_endIdx',
-                  ),
+                  labels: RangeLabels('Point $_startIdx', 'Point $_endIdx'),
                   onChanged: (values) {
                     setState(() {
                       int s = values.start.round();
@@ -129,17 +131,21 @@ class _SegmentCreationScreenState extends State<SegmentCreationScreen> {
                     color: suitability.status == 'Suitable'
                         ? Colors.green
                         : suitability.status == 'Questionable'
-                            ? Colors.orange
-                            : Colors.red,
+                        ? Colors.orange
+                        : Colors.red,
                   ),
                 ],
               ),
               if (suitability.warnings.isNotEmpty)
                 Card(
-                  color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.2),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.errorContainer.withValues(alpha: 0.2),
                   elevation: 0,
                   shape: RoundedRectangleBorder(
-                    side: BorderSide(color: Theme.of(context).colorScheme.error),
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Padding(
@@ -152,15 +158,19 @@ class _SegmentCreationScreenState extends State<SegmentCreationScreen> {
                             padding: const EdgeInsets.only(bottom: 4),
                             child: Row(
                               children: [
-                                Icon(Icons.warning_amber_rounded,
-                                    size: 16,
-                                    color: Theme.of(context).colorScheme.error),
+                                Icon(
+                                  Icons.warning_amber_rounded,
+                                  size: 16,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     w,
                                     style: TextStyle(
-                                      color: Theme.of(context).colorScheme.onErrorContainer,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onErrorContainer,
                                     ),
                                   ),
                                 ),
@@ -178,11 +188,16 @@ class _SegmentCreationScreenState extends State<SegmentCreationScreen> {
                     'Selected length: ${distance.toStringAsFixed(0)} m. Segment creation requires at least 400m, correct GPS geometry, and signed publishing credentials.',
               ),
               FilledButton.icon(
-                onPressed: selectedPoints.length < 2 ||
+                onPressed:
+                    selectedPoints.length < 2 ||
                         suitability.status == 'Unsuitable' ||
                         _saving
                     ? null
-                    : () => _save(selectedPoints, distance, suitability.status.toLowerCase()),
+                    : () => _save(
+                        selectedPoints,
+                        distance,
+                        suitability.status.toLowerCase(),
+                      ),
                 icon: _saving
                     ? const SizedBox.square(
                         dimension: 16,
@@ -211,7 +226,9 @@ class _SegmentCreationScreenState extends State<SegmentCreationScreen> {
     final distance = endDist - startDist;
     final isMinDistanceOk = distance >= 400.0;
 
-    final pointsWithLimit = segmentPoints.where((p) => p.speedLimitKmh != null).length;
+    final pointsWithLimit = segmentPoints
+        .where((p) => p.speedLimitKmh != null)
+        .length;
     final speedLimitRatio = pointsWithLimit / segmentPoints.length;
     final isSpeedLimitSufficient = speedLimitRatio >= 0.5;
 
@@ -240,7 +257,9 @@ class _SegmentCreationScreenState extends State<SegmentCreationScreen> {
       warnings.add('Insufficient speed limit coverage (under 50%).');
     }
     if (isResidential) {
-      warnings.add('Residential zone density warning (mostly speed limit <= 50 km/h).');
+      warnings.add(
+        'Residential zone density warning (mostly speed limit <= 50 km/h).',
+      );
     }
     if (!isGeometrySanityOk) {
       warnings.add('Geometry error: high-speed jumps detected.');
@@ -256,7 +275,11 @@ class _SegmentCreationScreenState extends State<SegmentCreationScreen> {
     return _SuitabilityResult(status: status, warnings: warnings);
   }
 
-  Future<void> _save(List<TripPoint> points, double distance, String safetyStatus) async {
+  Future<void> _save(
+    List<TripPoint> points,
+    double distance,
+    String safetyStatus,
+  ) async {
     if (_visibility != 'private') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -306,7 +329,9 @@ class _SegmentCreationScreenState extends State<SegmentCreationScreen> {
       final hmac = Hmac(sha256, keyBytes);
       final signature = hmac.convert(hashBytes).toString();
 
-      final segmentRepository = SegmentRepository(widget.tripRepository.database);
+      final segmentRepository = SegmentRepository(
+        widget.tripRepository.database,
+      );
       await segmentRepository.createLocalSegment(
         LocalSegmentInput(
           id: 'segment-${now.microsecondsSinceEpoch}',
@@ -328,9 +353,9 @@ class _SegmentCreationScreenState extends State<SegmentCreationScreen> {
       Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save segment: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to save segment: $e')));
       }
     } finally {
       if (mounted) {

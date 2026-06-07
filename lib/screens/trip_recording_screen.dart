@@ -201,12 +201,14 @@ class _SpeedPanel extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Current speed', style: Theme.of(context).textTheme.bodySmall),
+                      Text(
+                        'Current speed',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                       Text(
                         '$speedKmh',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.displayLarge?.copyWith(fontWeight: FontWeight.w700),
+                        style: Theme.of(context).textTheme.displayLarge
+                            ?.copyWith(fontWeight: FontWeight.w700),
                       ),
                       const Text('km/h'),
                     ],

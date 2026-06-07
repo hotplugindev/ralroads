@@ -20,27 +20,33 @@ void main() {
   setUp(() async {
     const ttsChannel = MethodChannel('flutter_tts');
     const geolocatorChannel = MethodChannel('flutter.baseflow.com/geolocator');
-    const sensorsChannel = MethodChannel('dev.fluttercommunity.plus/sensors/method');
+    const sensorsChannel = MethodChannel(
+      'dev.fluttercommunity.plus/sensors/method',
+    );
     const compassChannel = MethodChannel('hedev.flutter.plugins/compass');
 
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(ttsChannel, (methodCall) async {
-      return 1;
-    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(ttsChannel, (methodCall) async {
+          return 1;
+        });
 
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(geolocatorChannel, (methodCall) async {
-      if (methodCall.method == 'isLocationServiceEnabled') return true;
-      if (methodCall.method == 'checkPermission') return 3; // whileInUse
-      if (methodCall.method == 'requestPermission') return 3;
-      return null;
-    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(geolocatorChannel, (methodCall) async {
+          if (methodCall.method == 'isLocationServiceEnabled') return true;
+          if (methodCall.method == 'checkPermission') return 3; // whileInUse
+          if (methodCall.method == 'requestPermission') return 3;
+          return null;
+        });
 
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(sensorsChannel, (methodCall) async {
-      return 1;
-    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(sensorsChannel, (methodCall) async {
+          return 1;
+        });
 
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(compassChannel, (methodCall) async {
-      return 1;
-    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(compassChannel, (methodCall) async {
+          return 1;
+        });
 
     database = AppDatabase(NativeDatabase.memory());
     repositories = AppRepositories(
@@ -89,7 +95,7 @@ void main() {
     // which is the expected robust behavior for mock permission states.
     expect(
       controller.snapshot.state == DrivingSessionState.active ||
-      controller.snapshot.state == DrivingSessionState.error,
+          controller.snapshot.state == DrivingSessionState.error,
       isTrue,
     );
 

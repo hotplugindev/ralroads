@@ -1,20 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../controllers/app_session_controller.dart';
 import '../services/ors_service.dart';
 import '../services/settings_service.dart';
 import '../services/route_storage_service.dart';
+import '../widgets/product_components.dart';
+import 'matrix_connection_screen.dart';
 import 'offline_maps_screen.dart';
+
+typedef OrsApiKeyValidator = Future<bool> Function(String key);
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     required this.storage,
     required this.settings,
+    this.session,
+    this.accountController,
+    this.validateOrsApiKey,
     super.key,
   });
 
   final RouteStorageService storage;
   final SettingsService settings;
+  final AppSessionController? session;
+  final AccountConnectionController? accountController;
+  final OrsApiKeyValidator? validateOrsApiKey;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -28,7 +39,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final OrsService _orsService;
   bool _obscureKey = true;
   bool _testing = false;
-  String _status = 'No API key saved';
+  String? _statusOverride;
 
   @override
   void initState() {
@@ -37,9 +48,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _controller = TextEditingController(
       text: widget.settings.getOrsApiKey() ?? '',
     );
-    _status = widget.settings.hasOrsApiKey()
-        ? 'API key saved'
-        : 'No API key saved';
+    _controller.addListener(() {
+      if (_statusOverride != null && mounted) {
+        setState(() => _statusOverride = null);
+      }
+    });
   }
 
   @override
@@ -56,623 +69,657 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final hasSavedKey = widget.settings.hasOrsApiKey();
         final usingDevelopmentKey = widget.settings.isUsingDevelopmentKey;
         final theme = Theme.of(context);
+        final statusText =
+            _statusOverride ??
+            (_testing
+                ? 'Validating API key...'
+                : hasSavedKey
+                ? 'API key saved'
+                : 'No API key saved');
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Settings',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        elevation: 0,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        children: [
-          Card(
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text(
+              'Settings',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             elevation: 0,
-            color: theme.colorScheme.surfaceContainerLow,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.vpn_key_outlined,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'OPENROUTESERVICE API KEY',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurfaceVariant.withValues(
-                            alpha: 0.8,
-                          ),
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _controller,
-                    obscureText: _obscureKey,
-                    decoration: InputDecoration(
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      prefixIcon: const Icon(Icons.key),
-                      labelText: 'API Key',
-                      suffixIcon: IconButton(
-                        tooltip: _obscureKey ? 'Show key' : 'Hide key',
-                        onPressed: () {
-                          setState(() {
-                            _obscureKey = !_obscureKey;
-                          });
-                        },
-                        icon: Icon(
-                          _obscureKey ? Icons.visibility : Icons.visibility_off,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _status,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                  if (usingDevelopmentKey) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'Using development API key from build configuration.',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: theme.colorScheme.onSurfaceVariant.withValues(
-                          alpha: 0.7,
-                        ),
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: _saveKey,
-                        icon: const Icon(Icons.save, size: 18),
-                        label: const Text('Save'),
-                      ),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: _testing ? null : _testKey,
-                        icon: _testing
-                            ? const SizedBox.square(
-                                dimension: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.check_circle_outline, size: 18),
-                        label: const Text('Test Key'),
-                      ),
-                      if (hasSavedKey)
-                        TextButton.icon(
-                          onPressed: _deleteKey,
-                          icon: const Icon(Icons.delete_outline, size: 18),
-                          label: const Text('Delete Key'),
-                        ),
-                    ],
-                  ),
-                  if (!hasSavedKey) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Need a free API key?',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        style: TextButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(0, 30),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        onPressed: () => _openLink(_signUpUri),
-                        child: const Text('Sign up at openrouteservice.org'),
-                      ),
-                    ),
-                  ],
-                  if (hasSavedKey) ...[
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        style: TextButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          minimumSize: const Size(0, 30),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        onPressed: () => _openLink(_dashboardUri),
-                        icon: const Icon(Icons.open_in_browser, size: 16),
-                        label: const Text('OpenRouteService dashboard'),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
           ),
-          const SizedBox(height: 16),
-          Card(
-            elevation: 0,
-            color: theme.colorScheme.surfaceContainerLow,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.warning_amber_rounded,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'ROAD WARNINGS VISIBILITY',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurfaceVariant.withValues(
-                            alpha: 0.8,
-                          ),
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
+          body: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            children: [
+              Card(
+                elevation: 0,
+                color: theme.colorScheme.surfaceContainerLow,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: 0.5,
+                    ),
                   ),
                 ),
-                _buildSwitchRow(
-                  context,
-                  icon: Icons.speed,
-                  title: 'Show speed limits',
-                  value: widget.settings.showSpeedLimits,
-                  onChanged: (value) => widget.settings.setShowSpeedLimits(value),
-                ),
-                _buildDivider(theme),
-                _buildSwitchRow(
-                  context,
-                  icon: Icons.traffic,
-                  title: 'Show traffic lights',
-                  value: widget.settings.showTrafficLights,
-                  onChanged: (value) => widget.settings.setShowTrafficLights(value),
-                ),
-                _buildDivider(theme),
-                _buildSwitchRow(
-                  context,
-                  icon: Icons.signpost_outlined,
-                  title: 'Show stop/give-way signs',
-                  value: widget.settings.showStopGiveWay,
-                  onChanged: (value) => widget.settings.setShowStopGiveWay(value),
-                ),
-                _buildDivider(theme),
-                _buildSwitchRow(
-                  context,
-                  icon: Icons.waves,
-                  title: 'Show speed bumps',
-                  value: widget.settings.showSpeedBumps,
-                  onChanged: (value) => widget.settings.setShowSpeedBumps(value),
-                ),
-                _buildDivider(theme),
-                _buildSwitchRow(
-                  context,
-                  icon: Icons.category_outlined,
-                  title: 'Show road features',
-                  subtitle: 'Surface, tunnels, bridges, roundabouts',
-                  value: widget.settings.showRoadFeatures,
-                  onChanged: (value) => widget.settings.setShowRoadFeatures(value),
-                ),
-                _buildDivider(theme),
-                _buildSwitchRow(
-                  context,
-                  icon: Icons.camera_alt_outlined,
-                  title: 'Show speed camera warnings',
-                  subtitle: 'Use only where legally permitted',
-                  value: widget.settings.showSpeedCameras,
-                  onChanged: (value) => widget.settings.setShowSpeedCameras(value),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            elevation: 0,
-            color: theme.colorScheme.surfaceContainerLow,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.record_voice_over_outlined,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'PACENOTE DETAIL LEVEL',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurfaceVariant.withValues(
-                            alpha: 0.8,
-                          ),
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SegmentedButton<PacenoteStyle>(
-                        segments: const [
-                          ButtonSegment<PacenoteStyle>(
-                            value: PacenoteStyle.calm,
-                            icon: Icon(Icons.volume_mute),
-                            label: Text('Calm'),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.vpn_key_outlined,
+                            color: theme.colorScheme.primary,
                           ),
-                          ButtonSegment<PacenoteStyle>(
-                            value: PacenoteStyle.balanced,
-                            icon: Icon(Icons.volume_down),
-                            label: Text('Balanced'),
-                          ),
-                          ButtonSegment<PacenoteStyle>(
-                            value: PacenoteStyle.rally,
-                            icon: Icon(Icons.volume_up),
-                            label: Text('Rally'),
+                          const SizedBox(width: 8),
+                          Text(
+                            'OPENROUTESERVICE API KEY',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.8),
+                              letterSpacing: 0.5,
+                            ),
                           ),
                         ],
-                        selected: {widget.settings.pacenoteStyle},
-                        onSelectionChanged: (Set<PacenoteStyle> selection) async {
-                              await widget.settings.setPacenoteStyle(
-                                selection.first,
-                              );
-                            },
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        switch (widget.settings.pacenoteStyle) {
-                          PacenoteStyle.calm =>
-                            'Filters minor curves (only alerts for severe curves). Reduced co-driver verbal warnings for a quieter drive.',
-                          PacenoteStyle.balanced =>
-                            'Standard curve detection. Alerts for all typical turns and hazards.',
-                          PacenoteStyle.rally =>
-                            'Extremely detailed rally-style pacenotes. Alerts for all bends, micro-corners, and slight curves.',
-                        },
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: theme.colorScheme.onSurfaceVariant.withValues(
-                            alpha: 0.8,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            elevation: 0,
-            color: theme.colorScheme.surfaceContainerLow,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.directions_car_filled_outlined,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'ROUTE PLANNING PROFILE',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurfaceVariant.withValues(
-                            alpha: 0.8,
-                          ),
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      DropdownButtonFormField<OrsProfile>(
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _controller,
+                        obscureText: _obscureKey,
                         decoration: InputDecoration(
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
+                          prefixIcon: const Icon(Icons.key),
+                          labelText: 'API Key',
+                          suffixIcon: IconButton(
+                            tooltip: _obscureKey ? 'Show key' : 'Hide key',
+                            onPressed: () {
+                              setState(() {
+                                _obscureKey = !_obscureKey;
+                              });
+                            },
+                            icon: Icon(
+                              _obscureKey
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
                           ),
                         ),
-                        initialValue: widget.settings.orsProfile,
-                        onChanged: (OrsProfile? profile) async {
-                          if (profile != null) {
-                            await widget.settings.setOrsProfile(profile);
-                          }
-                        },
-                        items: const [
-                          DropdownMenuItem(
-                            value: OrsProfile.drivingCar,
-                            child: Row(
-                              children: [
-                                Icon(Icons.directions_car, size: 18),
-                                SizedBox(width: 8),
-                                Text('Driving (Car)'),
-                              ],
-                            ),
-                          ),
-                          DropdownMenuItem(
-                            value: OrsProfile.drivingHgv,
-                            child: Row(
-                              children: [
-                                Icon(Icons.local_shipping, size: 18),
-                                SizedBox(width: 8),
-                                Text('Heavy Goods Vehicle (HGV)'),
-                              ],
-                            ),
-                          ),
-                          DropdownMenuItem(
-                            value: OrsProfile.cyclingRoad,
-                            child: Row(
-                              children: [
-                                Icon(Icons.directions_bike, size: 18),
-                                SizedBox(width: 8),
-                                Text('Cycling (Road)'),
-                              ],
-                            ),
-                          ),
-                          DropdownMenuItem(
-                            value: OrsProfile.footWalking,
-                            child: Row(
-                              children: [
-                                Icon(Icons.directions_walk, size: 18),
-                                SizedBox(width: 8),
-                                Text('Walking'),
-                              ],
-                            ),
-                          ),
-                        ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       Text(
-                        switch (widget.settings.orsProfile) {
-                          OrsProfile.drivingCar =>
-                            'Optimized for standard passenger vehicles. Standard speed limits and road preferences.',
-                          OrsProfile.drivingHgv =>
-                            'Optimized for trucks and large vehicles. Avoids weight and height restricted roads.',
-                          OrsProfile.cyclingRoad =>
-                            'Optimized for road cycling. Prefers paved roads and avoids major highways.',
-                          OrsProfile.footWalking =>
-                            'Optimized for pedestrian routing. Prefers walking paths and sidewalks.',
-                        },
+                        statusText,
                         style: TextStyle(
                           fontSize: 12,
-                          color: theme.colorScheme.onSurfaceVariant.withValues(
-                            alpha: 0.8,
-                          ),
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.primary,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            elevation: 0,
-            color: theme.colorScheme.surfaceContainerLow,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.explore_outlined,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'MAP VIEW SETTINGS',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.onSurfaceVariant.withValues(
-                            alpha: 0.8,
+                      if (usingDevelopmentKey) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Using development API key from build configuration.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: theme.colorScheme.onSurfaceVariant
+                                .withValues(alpha: 0.7),
+                            fontStyle: FontStyle.italic,
                           ),
-                          letterSpacing: 0.5,
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                _buildSwitchRow(
-                  context,
-                  icon: Icons.navigation_outlined,
-                  title: 'Heading-up map orientation',
-                  subtitle:
-                      'Rotate map in driving direction. If disabled, map remains North-up.',
-                  value: widget.settings.mapHeadingUp,
-                  onChanged: (value) => widget.settings.setMapHeadingUp(value),
-                ),
-                _buildDivider(theme),
-                _buildSwitchRow(
-                  context,
-                  icon: Icons.map_outlined,
-                  title: 'Use new black map style',
-                  subtitle: 'If disabled, use the old simple map style',
-                  value: widget.settings.useCleanMap,
-                  onChanged: (value) => widget.settings.setUseCleanMap(value),
-                ),
-                _buildDivider(theme),
-                _buildSwitchRow(
-                  context,
-                  icon: Icons.sensors,
-                  title: 'Sensor-assisted heading',
-                  subtitle: 'Use gyro and compass to stabilize heading',
-                  value: widget.settings.sensorAssistedHeading,
-                  onChanged: (value) => widget.settings.setSensorAssistedHeading(value),
-                ),
-                _buildDivider(theme),
-                _buildSwitchRow(
-                  context,
-                  icon: Icons.blur_on,
-                  title: 'Smooth marker movement',
-                  subtitle: 'Interpolate marker position between GPS updates',
-                  value: widget.settings.smoothMarkerMovement,
-                  onChanged: (value) => widget.settings.setSmoothMarkerMovement(value),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            elevation: 0,
-            color: theme.colorScheme.surfaceContainerLow,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
-              ),
-            ),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => OfflineMapsScreen(
-                      storage: widget.storage,
-                      settings: widget.settings,
-                    ),
-                  ),
-                );
-              },
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.offline_pin_outlined,
-                      color: theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      ],
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          const Text(
-                            'Offline Maps Manager',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onPressed: _saveKey,
+                            icon: const Icon(Icons.save, size: 18),
+                            label: const Text('Save'),
+                          ),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onPressed: _testing ? null : _testKey,
+                            icon: _testing
+                                ? const SizedBox.square(
+                                    dimension: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.check_circle_outline,
+                                    size: 18,
+                                  ),
+                            label: const Text('Test Key'),
+                          ),
+                          if (hasSavedKey)
+                            TextButton.icon(
+                              onPressed: _deleteKey,
+                              icon: const Icon(Icons.delete_outline, size: 18),
+                              label: const Text('Delete Key'),
+                            ),
+                        ],
+                      ),
+                      if (!hasSavedKey) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          'Need a free API key?',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(0, 30),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () => _openLink(_signUpUri),
+                            child: const Text(
+                              'Sign up at openrouteservice.org',
                             ),
                           ),
-                          const SizedBox(height: 2),
+                        ),
+                      ],
+                      if (hasSavedKey) ...[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(0, 30),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () => _openLink(_dashboardUri),
+                            icon: const Icon(Icons.open_in_browser, size: 16),
+                            label: const Text('OpenRouteService dashboard'),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              if (widget.session != null) ...[
+                const SizedBox(height: 16),
+                _buildMatrixCard(context, theme),
+              ],
+              const SizedBox(height: 16),
+              Card(
+                elevation: 0,
+                color: theme.colorScheme.surfaceContainerLow,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: 0.5,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
                           Text(
-                            'Manage cached regions and download maps for saved routes',
+                            'ROAD WARNINGS VISIBILITY',
                             style: TextStyle(
-                              fontSize: 11.5,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
                               color: theme.colorScheme.onSurfaceVariant
-                                  .withValues(alpha: 0.7),
+                                  .withValues(alpha: 0.8),
+                              letterSpacing: 0.5,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    Icon(
-                      Icons.chevron_right,
-                      color: theme.colorScheme.onSurfaceVariant,
+                    _buildSwitchRow(
+                      context,
+                      icon: Icons.speed,
+                      title: 'Show speed limits',
+                      value: widget.settings.showSpeedLimits,
+                      onChanged: (value) =>
+                          widget.settings.setShowSpeedLimits(value),
+                    ),
+                    _buildDivider(theme),
+                    _buildSwitchRow(
+                      context,
+                      icon: Icons.traffic,
+                      title: 'Show traffic lights',
+                      value: widget.settings.showTrafficLights,
+                      onChanged: (value) =>
+                          widget.settings.setShowTrafficLights(value),
+                    ),
+                    _buildDivider(theme),
+                    _buildSwitchRow(
+                      context,
+                      icon: Icons.signpost_outlined,
+                      title: 'Show stop/give-way signs',
+                      value: widget.settings.showStopGiveWay,
+                      onChanged: (value) =>
+                          widget.settings.setShowStopGiveWay(value),
+                    ),
+                    _buildDivider(theme),
+                    _buildSwitchRow(
+                      context,
+                      icon: Icons.waves,
+                      title: 'Show speed bumps',
+                      value: widget.settings.showSpeedBumps,
+                      onChanged: (value) =>
+                          widget.settings.setShowSpeedBumps(value),
+                    ),
+                    _buildDivider(theme),
+                    _buildSwitchRow(
+                      context,
+                      icon: Icons.category_outlined,
+                      title: 'Show road features',
+                      subtitle: 'Surface, tunnels, bridges, roundabouts',
+                      value: widget.settings.showRoadFeatures,
+                      onChanged: (value) =>
+                          widget.settings.setShowRoadFeatures(value),
+                    ),
+                    _buildDivider(theme),
+                    _buildSwitchRow(
+                      context,
+                      icon: Icons.camera_alt_outlined,
+                      title: 'Show speed camera warnings',
+                      subtitle: 'Use only where legally permitted',
+                      value: widget.settings.showSpeedCameras,
+                      onChanged: (value) =>
+                          widget.settings.setShowSpeedCameras(value),
                     ),
                   ],
                 ),
               ),
-            ),
+              const SizedBox(height: 16),
+              Card(
+                elevation: 0,
+                color: theme.colorScheme.surfaceContainerLow,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: 0.5,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.record_voice_over_outlined,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'PACENOTE DETAIL LEVEL',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.8),
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SegmentedButton<PacenoteStyle>(
+                            segments: const [
+                              ButtonSegment<PacenoteStyle>(
+                                value: PacenoteStyle.calm,
+                                icon: Icon(Icons.volume_mute),
+                                label: Text('Calm'),
+                              ),
+                              ButtonSegment<PacenoteStyle>(
+                                value: PacenoteStyle.balanced,
+                                icon: Icon(Icons.volume_down),
+                                label: Text('Balanced'),
+                              ),
+                              ButtonSegment<PacenoteStyle>(
+                                value: PacenoteStyle.rally,
+                                icon: Icon(Icons.volume_up),
+                                label: Text('Rally'),
+                              ),
+                            ],
+                            selected: {widget.settings.pacenoteStyle},
+                            onSelectionChanged:
+                                (Set<PacenoteStyle> selection) async {
+                                  await widget.settings.setPacenoteStyle(
+                                    selection.first,
+                                  );
+                                },
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            switch (widget.settings.pacenoteStyle) {
+                              PacenoteStyle.calm =>
+                                'Filters minor curves (only alerts for severe curves). Reduced co-driver verbal warnings for a quieter drive.',
+                              PacenoteStyle.balanced =>
+                                'Standard curve detection. Alerts for all typical turns and hazards.',
+                              PacenoteStyle.rally =>
+                                'Extremely detailed rally-style pacenotes. Alerts for all bends, micro-corners, and slight curves.',
+                            },
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                elevation: 0,
+                color: theme.colorScheme.surfaceContainerLow,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: 0.5,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.directions_car_filled_outlined,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'ROUTE PLANNING PROFILE',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.8),
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          DropdownButtonFormField<OrsProfile>(
+                            decoration: InputDecoration(
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
+                            initialValue: widget.settings.orsProfile,
+                            onChanged: (OrsProfile? profile) async {
+                              if (profile != null) {
+                                await widget.settings.setOrsProfile(profile);
+                              }
+                            },
+                            items: const [
+                              DropdownMenuItem(
+                                value: OrsProfile.drivingCar,
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.directions_car, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('Driving (Car)'),
+                                  ],
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: OrsProfile.drivingHgv,
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.local_shipping, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('Heavy Goods Vehicle (HGV)'),
+                                  ],
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: OrsProfile.cyclingRoad,
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.directions_bike, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('Cycling (Road)'),
+                                  ],
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: OrsProfile.footWalking,
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.directions_walk, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('Walking'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            switch (widget.settings.orsProfile) {
+                              OrsProfile.drivingCar =>
+                                'Optimized for standard passenger vehicles. Standard speed limits and road preferences.',
+                              OrsProfile.drivingHgv =>
+                                'Optimized for trucks and large vehicles. Avoids weight and height restricted roads.',
+                              OrsProfile.cyclingRoad =>
+                                'Optimized for road cycling. Prefers paved roads and avoids major highways.',
+                              OrsProfile.footWalking =>
+                                'Optimized for pedestrian routing. Prefers walking paths and sidewalks.',
+                            },
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                elevation: 0,
+                color: theme.colorScheme.surfaceContainerLow,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: 0.5,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.explore_outlined,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'MAP VIEW SETTINGS',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.8),
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _buildSwitchRow(
+                      context,
+                      icon: Icons.navigation_outlined,
+                      title: 'Heading-up map orientation',
+                      subtitle:
+                          'Rotate map in driving direction. If disabled, map remains North-up.',
+                      value: widget.settings.mapHeadingUp,
+                      onChanged: (value) =>
+                          widget.settings.setMapHeadingUp(value),
+                    ),
+                    _buildDivider(theme),
+                    _buildSwitchRow(
+                      context,
+                      icon: Icons.map_outlined,
+                      title: 'Use new black map style',
+                      subtitle: 'If disabled, use the old simple map style',
+                      value: widget.settings.useCleanMap,
+                      onChanged: (value) =>
+                          widget.settings.setUseCleanMap(value),
+                    ),
+                    _buildDivider(theme),
+                    _buildSwitchRow(
+                      context,
+                      icon: Icons.sensors,
+                      title: 'Sensor-assisted heading',
+                      subtitle: 'Use gyro and compass to stabilize heading',
+                      value: widget.settings.sensorAssistedHeading,
+                      onChanged: (value) =>
+                          widget.settings.setSensorAssistedHeading(value),
+                    ),
+                    _buildDivider(theme),
+                    _buildSwitchRow(
+                      context,
+                      icon: Icons.blur_on,
+                      title: 'Smooth marker movement',
+                      subtitle:
+                          'Interpolate marker position between GPS updates',
+                      value: widget.settings.smoothMarkerMovement,
+                      onChanged: (value) =>
+                          widget.settings.setSmoothMarkerMovement(value),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                elevation: 0,
+                color: theme.colorScheme.surfaceContainerLow,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: 0.5,
+                    ),
+                  ),
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => OfflineMapsScreen(
+                          storage: widget.storage,
+                          settings: widget.settings,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.offline_pin_outlined,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Offline Maps Manager',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Manage cached regions and download maps for saved routes',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: theme.colorScheme.onSurfaceVariant
+                                      .withValues(alpha: 0.7),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          Icons.chevron_right,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-      ); // end Scaffold
+        ); // end Scaffold
       }, // end builder
     ); // end ListenableBuilder
   }
@@ -743,12 +790,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _saveKey() async {
-    await widget.settings.saveOrsApiKey(_controller.text);
-    _refreshStatus(
-      status: widget.settings.hasOrsApiKey()
-          ? 'API key saved'
-          : 'No API key saved',
-    );
+    final key = _controller.text.trim();
+    if (key.isEmpty) {
+      await widget.settings.deleteOrsApiKey();
+      _refreshStatus(status: 'No API key saved');
+      return;
+    }
+
+    setState(() => _testing = true);
+    try {
+      final works = await _validateKey(key);
+      if (!works) {
+        _refreshStatus(status: 'API key rejected');
+        return;
+      }
+      await widget.settings.saveOrsApiKey(key);
+      _refreshStatus(status: 'API key saved');
+    } on OrsNetworkException {
+      _refreshStatus(status: 'Network error while testing key');
+    } catch (_) {
+      _refreshStatus(status: 'API key rejected');
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
   }
 
   Future<void> _testKey() async {
@@ -764,7 +828,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _testing = true);
 
     try {
-      final works = await _orsService.validateApiKey(key);
+      final works = await _validateKey(key);
       _refreshStatus(status: works ? 'API key works' : 'API key rejected');
     } on OrsNetworkException {
       _refreshStatus(status: 'Network error while testing key');
@@ -787,12 +851,121 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _refreshStatus({String? status}) {
     setState(() {
-      _status =
-          status ??
-          (widget.settings.hasOrsApiKey()
-              ? 'API key saved'
-              : 'No API key saved');
+      _statusOverride = status;
     });
   }
-}
 
+  Future<bool> _validateKey(String key) {
+    final validator = widget.validateOrsApiKey;
+    if (validator != null) {
+      return validator(key);
+    }
+    return _orsService.validateApiKey(key);
+  }
+
+  Widget _buildMatrixCard(BuildContext context, ThemeData theme) {
+    final session = widget.session!;
+    final accountController = widget.accountController;
+    return ListenableBuilder(
+      listenable: Listenable.merge([session, ?accountController]),
+      builder: (context, _) {
+        final snapshot = session.snapshot;
+        final busy = accountController?.busy ?? false;
+        return Card(
+          elevation: 0,
+          color: theme.colorScheme.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.hub_outlined, color: theme.colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'MATRIX ACCOUNT',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.8,
+                        ),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const Spacer(),
+                    StatusChip(label: snapshot.matrixStatus.name),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  snapshot.matrixSession == null
+                      ? 'Connect Matrix for friends, groups, sharing, and sync.'
+                      : 'Connected as ${snapshot.matrixSession!.matrixUserId}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (accountController?.message != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    accountController!.message!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: busy || accountController == null
+                          ? null
+                          : () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => MatrixConnectionScreen(
+                                  controller: accountController,
+                                ),
+                              ),
+                            ),
+                      icon: busy
+                          ? const SizedBox.square(
+                              dimension: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.login, size: 18),
+                      label: Text(
+                        snapshot.matrixSession == null ? 'Connect' : 'Manage',
+                      ),
+                    ),
+                    if (snapshot.matrixSession != null &&
+                        accountController != null)
+                      OutlinedButton.icon(
+                        onPressed: busy
+                            ? null
+                            : () => accountController.disconnectMatrix(),
+                        icon: const Icon(Icons.logout, size: 18),
+                        label: const Text('Disconnect'),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}

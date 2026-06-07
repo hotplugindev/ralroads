@@ -14,17 +14,19 @@ class DirectoryRepository {
     required String payloadJson,
     required DateTime originTimestamp,
   }) {
-    return database.into(database.cachedDirectoryEvents).insertOnConflictUpdate(
-      CachedDirectoryEventsCompanion(
-        id: Value(id),
-        roomId: Value(roomId),
-        eventType: Value(eventType),
-        entityId: Value(entityId),
-        payloadJson: Value(payloadJson),
-        originTimestamp: Value(originTimestamp),
-        ingestedAt: Value(DateTime.now()),
-      ),
-    );
+    return database
+        .into(database.cachedDirectoryEvents)
+        .insertOnConflictUpdate(
+          CachedDirectoryEventsCompanion(
+            id: Value(id),
+            roomId: Value(roomId),
+            eventType: Value(eventType),
+            entityId: Value(entityId),
+            payloadJson: Value(payloadJson),
+            originTimestamp: Value(originTimestamp),
+            ingestedAt: Value(DateTime.now()),
+          ),
+        );
   }
 
   Future<List<CachedDirectoryEvent>> getEventsForRoom(String roomId) {

@@ -82,11 +82,14 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
   StreamSubscription<List<RoutePoint>>? _reroutedSubscription;
   bool _showDebugOverlay = false;
 
-  List<RoutePoint> get _activeRoutePoints => widget.drivingSession.activeRoutePoints;
+  List<RoutePoint> get _activeRoutePoints =>
+      widget.drivingSession.activeRoutePoints;
   List<PaceNote> get _notes => widget.drivingSession.activeNotes;
-  List<RoadWarning> get _visibleRoadWarnings => widget.drivingSession.visibleRoadWarnings;
+  List<RoadWarning> get _visibleRoadWarnings =>
+      widget.drivingSession.visibleRoadWarnings;
 
-  NavigationFusionService? get _fusionService => widget.drivingSession.fusionService;
+  NavigationFusionService? get _fusionService =>
+      widget.drivingSession.fusionService;
 
   bool _isRerouting = false;
   maplibre.MapLibreMapController? _controller;
@@ -778,10 +781,15 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                                 child: ListenableBuilder(
                                   listenable: widget.drivingSession,
                                   builder: (context, _) {
-                                    final recording = widget.drivingSession.snapshot.recording;
+                                    final recording = widget
+                                        .drivingSession
+                                        .snapshot
+                                        .recording;
                                     return OutlinedButton.icon(
                                       onPressed: () {
-                                        widget.drivingSession.toggleRecording(!recording);
+                                        widget.drivingSession.toggleRecording(
+                                          !recording,
+                                        );
                                       },
                                       icon: Icon(
                                         recording
@@ -796,11 +804,15 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                                         ),
                                       ),
                                       style: OutlinedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
                                         side: BorderSide(
                                           color: recording
                                               ? Colors.red
-                                              : Theme.of(context).colorScheme.outline,
+                                              : Theme.of(
+                                                  context,
+                                                ).colorScheme.outline,
                                         ),
                                       ),
                                     );
@@ -812,8 +824,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                                 child: ListenableBuilder(
                                   listenable: widget.drivingSession,
                                   builder: (context, _) {
-                                    final stateVal = widget.drivingSession.snapshot.state;
-                                    final isPaused = stateVal == DrivingSessionState.paused;
+                                    final stateVal =
+                                        widget.drivingSession.snapshot.state;
+                                    final isPaused =
+                                        stateVal == DrivingSessionState.paused;
                                     return ElevatedButton.icon(
                                       onPressed: () {
                                         if (isPaused) {
@@ -823,11 +837,17 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                                         }
                                       },
                                       icon: Icon(
-                                        isPaused ? Icons.play_arrow : Icons.pause,
+                                        isPaused
+                                            ? Icons.play_arrow
+                                            : Icons.pause,
                                       ),
-                                      label: Text(isPaused ? 'Resume' : 'Pause'),
+                                      label: Text(
+                                        isPaused ? 'Resume' : 'Pause',
+                                      ),
                                       style: ElevatedButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
                                       ),
                                     );
                                   },
@@ -839,8 +859,12 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                                 icon: const Icon(Icons.check),
                                 tooltip: 'Finish Session',
                                 style: IconButton.styleFrom(
-                                  backgroundColor: Theme.of(context).colorScheme.primary,
-                                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.primary,
+                                  foregroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.onPrimary,
                                   padding: const EdgeInsets.all(12),
                                 ),
                               ),
@@ -850,8 +874,12 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
                                 icon: const Icon(Icons.close),
                                 tooltip: 'Discard Session',
                                 style: IconButton.styleFrom(
-                                  backgroundColor: Theme.of(context).colorScheme.errorContainer,
-                                  foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.errorContainer,
+                                  foregroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.onErrorContainer,
                                   padding: const EdgeInsets.all(12),
                                 ),
                               ),
@@ -891,11 +919,12 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
     final snap = widget.drivingSession.snapshot;
     final state = widget.drivingSession.fusionService?.currentState;
 
-
-
-    _lastMatchedIndex = widget.drivingSession.fusionService?.lastMatchedIndex ?? 0;
-    _distanceAlongRoute = widget.drivingSession.fusionService?.distanceAlongRoute ?? 0.0;
-    _distanceFromRoute = widget.drivingSession.fusionService?.distanceFromRoute ?? 0.0;
+    _lastMatchedIndex =
+        widget.drivingSession.fusionService?.lastMatchedIndex ?? 0;
+    _distanceAlongRoute =
+        widget.drivingSession.fusionService?.distanceAlongRoute ?? 0.0;
+    _distanceFromRoute =
+        widget.drivingSession.fusionService?.distanceFromRoute ?? 0.0;
     _speedMps = snap.speedMps;
     if (state != null) {
       _rawSpeedMps = state.rawSpeedMps;
@@ -964,7 +993,9 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Discard Session?'),
-        content: const Text('This will end the drive and discard the recorded trip data (if any).'),
+        content: const Text(
+          'This will end the drive and discard the recorded trip data (if any).',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -1239,8 +1270,10 @@ class _DriveScreenState extends State<DriveScreen> with WidgetsBindingObserver {
         offRoute: _driveStateNotifier.value.offRoute,
         gpsWeak: _driveStateNotifier.value.gpsWeak,
         permissionMessage: 'Map route drawing failed: $error',
-        remainingDistanceMeters: _driveStateNotifier.value.remainingDistanceMeters,
-        remainingDurationSeconds: _driveStateNotifier.value.remainingDurationSeconds,
+        remainingDistanceMeters:
+            _driveStateNotifier.value.remainingDistanceMeters,
+        remainingDurationSeconds:
+            _driveStateNotifier.value.remainingDurationSeconds,
         etaString: _driveStateNotifier.value.etaString,
         progressPercentage: _driveStateNotifier.value.progressPercentage,
       );

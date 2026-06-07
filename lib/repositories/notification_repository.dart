@@ -12,15 +12,17 @@ class NotificationRepository {
     required String title,
     String? body,
   }) {
-    return database.into(database.localNotifications).insertOnConflictUpdate(
-      LocalNotificationsCompanion(
-        id: Value(id),
-        type: Value(type),
-        title: Value(title),
-        body: Value(body),
-        createdAt: Value(DateTime.now()),
-      ),
-    );
+    return database
+        .into(database.localNotifications)
+        .insertOnConflictUpdate(
+          LocalNotificationsCompanion(
+            id: Value(id),
+            type: Value(type),
+            title: Value(title),
+            body: Value(body),
+            createdAt: Value(DateTime.now()),
+          ),
+        );
   }
 
   Future<List<LocalNotification>> getUnreadNotifications() {
@@ -33,10 +35,6 @@ class NotificationRepository {
   Future<void> markAsRead(String id) {
     return (database.update(database.localNotifications)
           ..where((row) => row.id.equals(id)))
-        .write(
-      LocalNotificationsCompanion(
-        readAt: Value(DateTime.now()),
-      ),
-    );
+        .write(LocalNotificationsCompanion(readAt: Value(DateTime.now())));
   }
 }

@@ -261,8 +261,12 @@ class _NavigateTab extends StatelessWidget {
   void _openSettings(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            SettingsScreen(storage: parent.storage, settings: parent.settings),
+        builder: (_) => SettingsScreen(
+          storage: parent.storage,
+          settings: parent.settings,
+          session: parent.session,
+          accountController: parent.accountController,
+        ),
       ),
     );
   }
@@ -302,8 +306,12 @@ class _TripsTab extends StatelessWidget {
                   runSpacing: 8,
                   children: [
                     StatusChip(label: '${stats.totalTrips} trips'),
-                    StatusChip(label: formatDistance(stats.totalDistanceMeters)),
-                    StatusChip(label: '${stats.cleanEligibleTrips} clean local'),
+                    StatusChip(
+                      label: formatDistance(stats.totalDistanceMeters),
+                    ),
+                    StatusChip(
+                      label: '${stats.cleanEligibleTrips} clean local',
+                    ),
                     const StatusChip(label: 'Private by default'),
                   ],
                 ),
@@ -366,7 +374,8 @@ class _ChallengesTab extends StatelessWidget {
           stream: parent.repositories.segments.watchLocalSegments(limit: 20),
           builder: (context, segmentsSnapshot) {
             final challenges = challengesSnapshot.data ?? const <Challenge>[];
-            final segments = segmentsSnapshot.data ?? const <ChallengeSegment>[];
+            final segments =
+                segmentsSnapshot.data ?? const <ChallengeSegment>[];
             return RalRoadsPage(
               title: 'Challenges',
               children: [
@@ -578,6 +587,8 @@ class _SettingsTab extends StatelessWidget {
               builder: (_) => SettingsScreen(
                 storage: parent.storage,
                 settings: parent.settings,
+                session: parent.session,
+                accountController: parent.accountController,
               ),
             ),
           ),
@@ -656,7 +667,7 @@ class _ActiveSessionBar extends StatelessWidget {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: Theme.of(context).brightness == Brightness.dark
-                    ? [Colors.teal.withOpacity(0.2), Colors.black87]
+                    ? [Colors.teal.withValues(alpha: 0.2), Colors.black87]
                     : [Colors.teal.shade50, Colors.white],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -676,7 +687,8 @@ class _ActiveSessionBar extends StatelessWidget {
                       routePoints: drivingSession.activeRoutePoints,
                       pacenotes: drivingSession.activeNotes,
                       roadWarnings: drivingSession.visibleRoadWarnings,
-                      speedLimitSegments: drivingSession.visibleSpeedLimitSegments,
+                      speedLimitSegments:
+                          drivingSession.visibleSpeedLimitSegments,
                       settings: settings,
                       drivingSession: drivingSession,
                     ),
@@ -715,7 +727,9 @@ class _ActiveSessionBar extends StatelessWidget {
                           subtitle,
                           style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -776,7 +790,8 @@ class _PulsingDot extends StatefulWidget {
   _PulsingDotState createState() => _PulsingDotState();
 }
 
-class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderStateMixin {
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
 
   @override

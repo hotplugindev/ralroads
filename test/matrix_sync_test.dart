@@ -58,9 +58,15 @@ void main() {
     test('encrypts and decrypts segment/attempt JSON payloads', () {
       final keyBytes = MatrixEncryptionHelper.generateRandomKey();
       const payload = '{"id":"seg-123","points":[{"lat":45.0,"lon":10.0}]}';
-      
-      final encrypted = MatrixEncryptionHelper.encryptPayload(payload, keyBytes);
-      final decrypted = MatrixEncryptionHelper.decryptPayload(encrypted, keyBytes);
+
+      final encrypted = MatrixEncryptionHelper.encryptPayload(
+        payload,
+        keyBytes,
+      );
+      final decrypted = MatrixEncryptionHelper.decryptPayload(
+        encrypted,
+        keyBytes,
+      );
 
       expect(decrypted, payload);
     });
@@ -102,7 +108,7 @@ void main() {
         'geometry': [
           {'lat': 46.0, 'lon': 11.0, 'distanceFromStart': 0.0},
           {'lat': 46.01, 'lon': 11.01, 'distanceFromStart': 1420.5},
-        ]
+        ],
       };
 
       await syncService.importSegment(segmentPayload);
@@ -142,7 +148,7 @@ void main() {
         'distanceMeters': 1420.5,
         'geometry': [
           {'lat': 46.0, 'lon': 11.0, 'distanceFromStart': 0.0},
-        ]
+        ],
       });
 
       // Create test profile to satisfy foreign key constraint
@@ -173,24 +179,24 @@ void main() {
             'headingDegrees': 90.0,
             'distanceFromStart': 0.0,
             'speedLimitKmh': 50,
-            'speedCompliant': true
-          }
-        ]
+            'speedCompliant': true,
+          },
+        ],
       };
 
       await syncService.importAttempt(attemptPayload);
 
-      final attempt = await (database.select(database.segmentAttempts)
-            ..where((row) => row.id.equals('att-test')))
-          .getSingleOrNull();
+      final attempt = await (database.select(
+        database.segmentAttempts,
+      )..where((row) => row.id.equals('att-test'))).getSingleOrNull();
 
       expect(attempt, isNotNull);
       expect(attempt!.status, 'valid_clean');
       expect(attempt.officialEligible, isTrue);
 
-      final validation = await (database.select(database.localValidationResults)
-            ..where((row) => row.attemptId.equals('att-test')))
-          .getSingleOrNull();
+      final validation = await (database.select(
+        database.localValidationResults,
+      )..where((row) => row.attemptId.equals('att-test'))).getSingleOrNull();
       expect(validation, isNotNull);
       expect(validation!.routeMatchScore, 0.98);
     });
@@ -198,23 +204,34 @@ void main() {
     test('processes outbox events successfully', () async {
       // Setup active session
       final now = DateTime.now();
-      await database.into(database.localAccounts).insert(LocalAccountsCompanion(
-        id: const Value('matrix-primary'),
-        mode: const Value('matrix'),
-        createdAt: Value(now),
-        updatedAt: Value(now),
-      ));
-      await database.into(database.matrixSessions).insert(MatrixSessionsCompanion(
-        id: const Value('matrix-primary-session'),
-        accountId: const Value('matrix-primary'),
-        matrixUserId: const Value('@user:matrix.org'),
-        homeserverUrl: const Value('https://matrix.org'),
-        deviceId: const Value('device-1'),
-        isActive: const Value(true),
-        createdAt: Value(now),
-        updatedAt: Value(now),
-      ));
-      await secureCredentials.writeString(SecureCredentialKey.matrixAccessToken, 'test-access-token');
+      await database
+          .into(database.localAccounts)
+          .insert(
+            LocalAccountsCompanion(
+              id: const Value('matrix-primary'),
+              mode: const Value('matrix'),
+              createdAt: Value(now),
+              updatedAt: Value(now),
+            ),
+          );
+      await database
+          .into(database.matrixSessions)
+          .insert(
+            MatrixSessionsCompanion(
+              id: const Value('matrix-primary-session'),
+              accountId: const Value('matrix-primary'),
+              matrixUserId: const Value('@user:matrix.org'),
+              homeserverUrl: const Value('https://matrix.org'),
+              deviceId: const Value('device-1'),
+              isActive: const Value(true),
+              createdAt: Value(now),
+              updatedAt: Value(now),
+            ),
+          );
+      await secureCredentials.writeString(
+        SecureCredentialKey.matrixAccessToken,
+        'test-access-token',
+      );
 
       // Enqueue outbox event
       await repositories.sync.enqueueOutgoingEvent(
@@ -228,7 +245,8 @@ void main() {
       var putCalled = false;
       final dio = Dio();
       dio.httpClientAdapter = MockHttpClientAdapter((options) async {
-        if (options.path.contains('!room-abc') && options.path.contains('evt-out-1')) {
+        if (options.path.contains('!room-abc') &&
+            options.path.contains('evt-out-1')) {
           putCalled = true;
           final data = options.data as Map<String, dynamic>;
           expect(data['id'], 'seg-1');
@@ -254,9 +272,9 @@ void main() {
 
       expect(putCalled, isTrue);
 
-      final event = await (database.select(database.outgoingMatrixEvents)
-            ..where((row) => row.id.equals('evt-out-1')))
-          .getSingleOrNull();
+      final event = await (database.select(
+        database.outgoingMatrixEvents,
+      )..where((row) => row.id.equals('evt-out-1'))).getSingleOrNull();
       expect(event!.state, 'sent');
     });
   });
