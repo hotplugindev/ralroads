@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
-import 'package:drift/drift.dart';
 
 import '../../database/app_database.dart';
 import '../../models/route_point.dart';
 import '../../repositories/app_repositories.dart';
+import '../../repositories/challenge_repository.dart';
 import '../../repositories/friend_repository.dart';
 import '../../repositories/profile_repository.dart';
 import '../../repositories/segment_repository.dart';
@@ -14,10 +15,8 @@ import '../../repositories/trip_repository.dart';
 import 'matrix_encryption_helper.dart';
 
 class MatrixEventIngestor {
-  MatrixEventIngestor({
-    required this.repositories,
-    Dio? dio,
-  }) : _dio = dio ?? Dio();
+  MatrixEventIngestor({required this.repositories, Dio? dio})
+    : _dio = dio ?? Dio();
 
   final AppRepositories repositories;
   final Dio _dio;
@@ -34,10 +33,7 @@ class MatrixEventIngestor {
     required String accessToken,
   }) async {
     // 1. Check if already processed
-    final exists = await (repositories.sync.database.select(
-      repositories.sync.database.cachedDirectoryEvents,
-    )..where((row) => row.id.equals(eventId))).getSingleOrNull();
-    if (exists != null) return;
+    if (await repositories.sync.hasCachedMatrixEvent(eventId)) return;
 
     // 2. Process based on eventType
     if (eventType == 'org.ralroads.profile.v1') {
@@ -68,7 +64,8 @@ class MatrixEventIngestor {
         id: eventId,
         roomId: roomId,
         eventType: eventType,
-        entityId: content['segmentId'] as String? ??
+        entityId:
+            content['segmentId'] as String? ??
             content['id'] as String? ??
             eventId,
         payloadJson: jsonEncode(content),
@@ -80,6 +77,14 @@ class MatrixEventIngestor {
         homeserverUrl: homeserverUrl,
         accessToken: accessToken,
       );
+    } else if (_isChallengeEventType(eventType)) {
+      await importChallengeEvent(
+        content,
+        roomId: roomId,
+        eventType: eventType,
+        originTimestamp: DateTime.fromMillisecondsSinceEpoch(originServerTs),
+        sender: sender,
+      );
     } else if (eventType == 'org.ralroads.segment.v1') {
       await _handlePlainSegment(content);
     } else if (eventType == 'org.ralroads.attempt.result.v1') {
@@ -87,37 +92,24 @@ class MatrixEventIngestor {
     } else if (eventType == 'm.room.name') {
       final name = content['name'] as String?;
       if (name != null) {
-        await (repositories.sync.database.update(
-          repositories.sync.database.rooms,
-        )..where((row) => row.id.equals(roomId))).write(
-          RoomsCompanion(
-            name: Value(name),
-            updatedAt: Value(DateTime.now()),
-          ),
-        );
+        await repositories.sync.updateRoomName(roomId, name);
       }
     }
 
     // 3. Cache the event
-    await repositories.sync.database
-        .into(repositories.sync.database.cachedDirectoryEvents)
-        .insertOnConflictUpdate(
-          CachedDirectoryEventsCompanion(
-            id: Value(eventId),
-            roomId: Value(roomId),
-            eventType: Value(eventType),
-            entityId: Value(
-              content['id'] as String? ??
-                  content['segmentId'] as String? ??
-                  'unknown',
-            ),
-            payloadJson: Value(jsonEncode(content)),
-            originTimestamp: Value(
-              DateTime.fromMillisecondsSinceEpoch(originServerTs),
-            ),
-            ingestedAt: Value(DateTime.now()),
-          ),
-        );
+    await repositories.sync.cacheMatrixEvent(
+      id: eventId,
+      roomId: roomId,
+      eventType: eventType,
+      entityId:
+          content['id'] as String? ??
+          content['challengeId'] as String? ??
+          content['entityId'] as String? ??
+          content['segmentId'] as String? ??
+          'unknown',
+      payloadJson: jsonEncode(content),
+      originTimestamp: DateTime.fromMillisecondsSinceEpoch(originServerTs),
+    );
   }
 
   Future<void> _handlePlainSegment(Map<String, dynamic> content) async {
@@ -138,12 +130,14 @@ class MatrixEventIngestor {
   }) async {
     if (!_payloadAllowed(content)) return;
     final payload = _payload(content);
-    final matrixUserId = payload['matrixUserId'] as String? ??
+    final matrixUserId =
+        payload['matrixUserId'] as String? ??
         payload['matrix_user_id'] as String? ??
         payload['authorMatrixId'] as String? ??
         sender;
     if (matrixUserId == null || !_isMatrixId(matrixUserId)) return;
-    final displayName = payload['displayName'] as String? ??
+    final displayName =
+        payload['displayName'] as String? ??
         payload['display_name'] as String? ??
         matrixUserId;
     await repositories.profiles.createOrUpdateLocalProfile(
@@ -168,10 +162,12 @@ class MatrixEventIngestor {
     if (activeUserId == null) return;
     if (!_payloadAllowed(content)) return;
     final payload = _payload(content);
-    final fromMatrixId = payload['fromMatrixId'] as String? ??
+    final fromMatrixId =
+        payload['fromMatrixId'] as String? ??
         payload['from'] as String? ??
         payload['authorMatrixId'] as String?;
-    final toMatrixId = payload['toMatrixId'] as String? ??
+    final toMatrixId =
+        payload['toMatrixId'] as String? ??
         payload['to'] as String? ??
         payload['targetMatrixId'] as String?;
     if (!_isMatrixId(fromMatrixId) || !_isMatrixId(toMatrixId)) return;
@@ -189,7 +185,8 @@ class MatrixEventIngestor {
     await _ensureMatrixProfile(fromId, fromProfileId);
     await _ensureMatrixProfile(toId, toProfileId);
 
-    final requestId = payload['id'] as String? ??
+    final requestId =
+        payload['id'] as String? ??
         payload['requestId'] as String? ??
         'friend-$fromProfileId-$toProfileId';
     if (state == 'pending') {
@@ -219,10 +216,12 @@ class MatrixEventIngestor {
   }) async {
     if (!_payloadAllowed(content)) return;
     final payload = _payload(content);
-    final groupId = payload['id'] as String? ??
+    final groupId =
+        payload['id'] as String? ??
         payload['groupId'] as String? ??
         'group-$roomId';
-    final name = payload['name'] as String? ??
+    final name =
+        payload['name'] as String? ??
         payload['displayName'] as String? ??
         'Matrix group';
     await repositories.groups.upsertMatrixGroup(
@@ -235,10 +234,72 @@ class MatrixEventIngestor {
     );
   }
 
+  Future<void> importChallengeEvent(
+    Map<String, dynamic> content, {
+    required String roomId,
+    required String eventType,
+    required DateTime originTimestamp,
+    String? sender,
+  }) async {
+    if (!_payloadAllowed(content)) return;
+    final schemaVersion = content['schemaVersion'];
+    if (schemaVersion != null && schemaVersion != 1) return;
+
+    final embeddedSegment = content['segment'];
+    if (embeddedSegment is Map<String, dynamic>) {
+      await importSegment(embeddedSegment);
+    }
+
+    final payload = _payload(content);
+    final challengeId =
+        payload['challengeId'] as String? ??
+        payload['id'] as String? ??
+        content['entityId'] as String?;
+    final segmentId = payload['segmentId'] as String?;
+    if (challengeId == null || challengeId.isEmpty) return;
+    if (segmentId == null || segmentId.isEmpty) return;
+
+    final payloadHash = content['payloadHash'] as String?;
+    if (payloadHash != null && payloadHash.isNotEmpty) {
+      final actual = sha256String(jsonEncode(payload));
+      if (actual != payloadHash) return;
+    }
+
+    final status = _statusFromChallengeEvent(eventType, payload['status']);
+    if (status == null) return;
+    final authorMatrixId =
+        payload['authorMatrixId'] as String? ??
+        content['authorMatrixId'] as String? ??
+        sender;
+    if (authorMatrixId != null && !_isMatrixId(authorMatrixId)) return;
+    final name = payload['name'] as String?;
+    final existing = await repositories.challenges.getChallenge(challengeId);
+    if ((name == null || name.trim().isEmpty) && existing == null) return;
+
+    final startsAt = _parseOptionalDate(payload['startsAt']);
+    final endsAt = _parseOptionalDate(payload['deadline'] ?? payload['endsAt']);
+    final sourceRoomId = payload['sourceRoomId'] as String? ?? roomId;
+
+    await repositories.challenges.ingestMatrixChallenge(
+      MatrixChallengeInput(
+        challengeId: challengeId,
+        segmentId: segmentId,
+        name: name?.trim().isNotEmpty == true ? name!.trim() : existing!.name,
+        status: status,
+        sourceRoomId: sourceRoomId,
+        authorMatrixId: authorMatrixId ?? '',
+        originTimestamp: originTimestamp,
+        revision:
+            payload['revision'] as int? ?? content['revision'] as int? ?? 1,
+        visibility: _visibilityFromString(payload['visibility'] as String?),
+        startsAt: startsAt,
+        endsAt: endsAt,
+      ),
+    );
+  }
+
   Future<void> _ensureMatrixProfile(String matrixUserId, String id) async {
-    final existing = await (repositories.profiles.database.select(
-      repositories.profiles.database.profiles,
-    )..where((row) => row.id.equals(id))).getSingleOrNull();
+    final existing = await repositories.profiles.getProfile(id);
     if (existing != null) return;
     await repositories.profiles.createOrUpdateLocalProfile(
       LocalProfileInput(
@@ -263,6 +324,46 @@ class MatrixEventIngestor {
   bool _isMatrixId(String? value) {
     if (value == null) return false;
     return value.startsWith('@') && value.contains(':');
+  }
+
+  bool _isChallengeEventType(String eventType) {
+    return eventType == 'org.ralroads.challenge.created.v1' ||
+        eventType == 'org.ralroads.challenge.updated.v1' ||
+        eventType == 'org.ralroads.challenge.cancelled.v1' ||
+        eventType == 'org.ralroads.challenge.deleted.v1';
+  }
+
+  ChallengeStatus? _statusFromChallengeEvent(
+    String eventType,
+    Object? payloadStatus,
+  ) {
+    if (eventType == 'org.ralroads.challenge.cancelled.v1') {
+      return ChallengeStatus.cancelled;
+    }
+    if (eventType == 'org.ralroads.challenge.deleted.v1') {
+      return ChallengeStatus.deleted;
+    }
+    final status = payloadStatus as String? ?? 'active';
+    for (final value in ChallengeStatus.values) {
+      if (value.name == status) return value;
+    }
+    return null;
+  }
+
+  ChallengeVisibility _visibilityFromString(String? visibility) {
+    for (final value in ChallengeVisibility.values) {
+      if (value.name == visibility) return value;
+    }
+    return ChallengeVisibility.group;
+  }
+
+  DateTime? _parseOptionalDate(Object? value) {
+    if (value is! String || value.isEmpty) return null;
+    return DateTime.tryParse(value);
+  }
+
+  String sha256String(String value) {
+    return sha256.convert(utf8.encode(value)).toString();
   }
 
   String _profileIdForMatrix(String matrixUserId) {

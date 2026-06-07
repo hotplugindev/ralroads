@@ -224,7 +224,8 @@ class _NavigateScreenState extends State<NavigateScreen> {
     final scheme = theme.colorScheme;
     final start = route.startName?.trim();
     final dest = route.destinationName?.trim();
-    final hasEndpoints = start != null && start.isNotEmpty && dest != null && dest.isNotEmpty;
+    final hasEndpoints =
+        start != null && start.isNotEmpty && dest != null && dest.isNotEmpty;
     final endpointsLabel = hasEndpoints ? '$start to $dest' : null;
 
     return Card(
@@ -262,7 +263,11 @@ class _NavigateScreenState extends State<NavigateScreen> {
                   color: scheme.primaryContainer,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(Icons.route_outlined, color: scheme.onPrimaryContainer, size: 24),
+                child: Icon(
+                  Icons.route_outlined,
+                  color: scheme.onPrimaryContainer,
+                  size: 24,
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -330,7 +335,10 @@ class _NavigateScreenState extends State<NavigateScreen> {
                     child: ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(Icons.delete_outline, color: Colors.red),
-                      title: Text('Delete', style: TextStyle(color: Colors.red)),
+                      title: Text(
+                        'Delete',
+                        style: TextStyle(color: Colors.red),
+                      ),
                     ),
                   ),
                 ],
@@ -384,9 +392,14 @@ class _NavigateScreenState extends State<NavigateScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete route?'),
-        content: Text('Are you sure you want to delete "${route.name}"? This cannot be undone.'),
+        content: Text(
+          'Are you sure you want to delete "${route.name}"? This cannot be undone.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
@@ -399,9 +412,9 @@ class _NavigateScreenState extends State<NavigateScreen> {
     if (confirm == true) {
       await widget.repositories.navigation.deleteRoute(route.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Route deleted.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Route deleted.')));
       }
     }
   }
@@ -421,11 +434,14 @@ class _NavigateScreenState extends State<NavigateScreen> {
     }
 
     if (newName != null && newName.trim().isNotEmpty && mounted) {
-      await widget.repositories.navigation.renameRoute(route.id, newName.trim());
+      await widget.repositories.navigation.renameRoute(
+        route.id,
+        newName.trim(),
+      );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Route renamed.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Route renamed.')));
       }
     }
   }

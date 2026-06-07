@@ -53,6 +53,12 @@ class ProfileRepository {
         .getSingleOrNull();
   }
 
+  Future<Profile?> getProfile(String id) {
+    return (database.select(
+      database.profiles,
+    )..where((row) => row.id.equals(id))).getSingleOrNull();
+  }
+
   Stream<Profile?> watchCurrentLocalProfile() {
     return (database.select(database.profiles)
           ..where((row) => row.matrixUserId.isNull())

@@ -5,10 +5,8 @@ import 'package:dio/dio.dart';
 import '../../repositories/app_repositories.dart';
 
 class MatrixOutboxWorker {
-  MatrixOutboxWorker({
-    required this.repositories,
-    Dio? dio,
-  }) : _dio = dio ?? Dio();
+  MatrixOutboxWorker({required this.repositories, Dio? dio})
+    : _dio = dio ?? Dio();
 
   final AppRepositories repositories;
   final Dio _dio;
@@ -23,7 +21,7 @@ class MatrixOutboxWorker {
     final events = await repositories.sync.listDueEvents(now);
     for (final event in events) {
       if (event.roomId == null) continue;
-      
+
       try {
         var payload = jsonDecode(event.payloadJson) as Map<String, dynamic>;
         final mxcUri = payload['mxc_uri'] as String?;
@@ -31,8 +29,10 @@ class MatrixOutboxWorker {
           final mediaUpload = await (repositories.sync.database.select(
             repositories.sync.database.pendingMediaUploads,
           )..where((row) => row.id.equals(mxcUri))).getSingleOrNull();
-          
-          if (mediaUpload == null || mediaUpload.state != 'uploaded' || mediaUpload.matrixUri == null) {
+
+          if (mediaUpload == null ||
+              mediaUpload.state != 'uploaded' ||
+              mediaUpload.matrixUri == null) {
             // Media not uploaded yet, skip this event for now
             continue;
           }

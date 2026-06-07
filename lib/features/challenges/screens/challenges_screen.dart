@@ -42,17 +42,26 @@ class ChallengesScreen extends StatelessWidget {
               stream: repositories.segments.watchLocalSegments(limit: 20),
               builder: (context, segmentsSnapshot) {
                 return StreamBuilder<List<SegmentAttempt>>(
-                  stream: repositories.attempts.database.select(repositories.attempts.database.segmentAttempts).watch(),
+                  stream: repositories.attempts.database
+                      .select(repositories.attempts.database.segmentAttempts)
+                      .watch(),
                   builder: (context, attemptsSnapshot) {
-                    final activeChallenges = activeSnapshot.data ?? const <Challenge>[];
-                    final pastChallenges = pastSnapshot.data ?? const <Challenge>[];
-                    final segments = segmentsSnapshot.data ?? const <ChallengeSegment>[];
-                    final totalAttempts = attemptsSnapshot.data ?? const <SegmentAttempt>[];
+                    final activeChallenges =
+                        activeSnapshot.data ?? const <Challenge>[];
+                    final pastChallenges =
+                        pastSnapshot.data ?? const <Challenge>[];
+                    final segments =
+                        segmentsSnapshot.data ?? const <ChallengeSegment>[];
+                    final totalAttempts =
+                        attemptsSnapshot.data ?? const <SegmentAttempt>[];
 
                     final matrixStatus = session.snapshot.matrixStatus;
                     final matrixSession = session.snapshot.matrixSession;
-                    final isConnected = matrixStatus == MatrixConnectionStatus.connected || matrixStatus == MatrixConnectionStatus.syncing;
-                    final matrixUsername = matrixSession?.matrixUserId ?? 'Offline';
+                    final isConnected =
+                        matrixStatus == MatrixConnectionStatus.connected ||
+                        matrixStatus == MatrixConnectionStatus.syncing;
+                    final matrixUsername =
+                        matrixSession?.matrixUserId ?? 'Offline';
 
                     return RalRoadsPage(
                       title: 'Challenges',
@@ -60,7 +69,8 @@ class ChallengesScreen extends StatelessWidget {
                         // 1. Primary Create Challenge CTA Card
                         PrimaryActionCard(
                           title: 'Create a Rally Challenge',
-                          subtitle: 'Select a saved segment, configure a duration, and invite group members or run locally.',
+                          subtitle:
+                              'Select a saved segment, configure a duration, and invite group members or run locally.',
                           icon: Icons.emoji_events_outlined,
                           actionLabel: 'Configure',
                           onPressed: () => _createChallenge(context, segments),
@@ -101,10 +111,18 @@ class ChallengesScreen extends StatelessWidget {
                                 ),
                                 _buildStatCard(
                                   context,
-                                  label: isConnected ? 'Matrix Connected' : 'Matrix Offline',
-                                  value: isConnected ? matrixUsername.split(':').first : 'Local Only',
-                                  icon: isConnected ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
-                                  color: isConnected ? Colors.blue : Colors.orange,
+                                  label: isConnected
+                                      ? 'Matrix Connected'
+                                      : 'Matrix Offline',
+                                  value: isConnected
+                                      ? matrixUsername.split(':').first
+                                      : 'Local Only',
+                                  icon: isConnected
+                                      ? Icons.cloud_done_outlined
+                                      : Icons.cloud_off_outlined,
+                                  color: isConnected
+                                      ? Colors.blue
+                                      : Colors.orange,
                                   onTap: () => _connectMatrix(context),
                                 ),
                               ],
@@ -117,7 +135,8 @@ class ChallengesScreen extends StatelessWidget {
                         if (activeChallenges.isEmpty)
                           EmptyState(
                             title: 'No active challenges',
-                            message: 'Create a local challenge from a segment or connect Matrix to federate and compete with others.',
+                            message:
+                                'Create a local challenge from a segment or connect Matrix to federate and compete with others.',
                             action: !isConnected
                                 ? OutlinedButton.icon(
                                     onPressed: () => _connectMatrix(context),
@@ -162,7 +181,8 @@ class ChallengesScreen extends StatelessWidget {
                         if (segments.isEmpty)
                           const EmptyState(
                             title: 'No segments created yet',
-                            message: 'Open a completed trip summary and crop it to save your first private segment.',
+                            message:
+                                'Open a completed trip summary and crop it to save your first private segment.',
                           )
                         else
                           ListView.builder(
@@ -175,7 +195,8 @@ class ChallengesScreen extends StatelessWidget {
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: SegmentCard(
                                   title: segment.name,
-                                  subtitle: '${segment.visibility.toUpperCase()} • Local segment',
+                                  subtitle:
+                                      '${segment.visibility.toUpperCase()} • Local segment',
                                   onTap: () => Navigator.of(context).push(
                                     MaterialPageRoute<void>(
                                       builder: (_) => SegmentDetailScreen(
@@ -239,8 +260,8 @@ class ChallengesScreen extends StatelessWidget {
                     Text(
                       value,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                        fontWeight: FontWeight.bold,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -248,9 +269,9 @@ class ChallengesScreen extends StatelessWidget {
                     Text(
                       label,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            fontSize: 10,
-                          ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 10,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -267,10 +288,15 @@ class ChallengesScreen extends StatelessWidget {
   Widget _buildChallengeItem(BuildContext context, Challenge challenge) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final starts = challenge.startsAt != null ? formatDate(challenge.startsAt!) : 'Immediate';
-    final ends = challenge.endsAt != null ? formatDate(challenge.endsAt!) : 'No deadline';
+    final starts = challenge.startsAt != null
+        ? formatDate(challenge.startsAt!)
+        : 'Immediate';
+    final ends = challenge.endsAt != null
+        ? formatDate(challenge.endsAt!)
+        : 'No deadline';
 
-    final isActive = challenge.status == 'active' || challenge.status == 'draft';
+    final isActive =
+        challenge.status == 'active' || challenge.status == 'draft';
     final statusColor = isActive ? Colors.green : Colors.grey;
 
     return Card(
@@ -306,8 +332,8 @@ class ChallengesScreen extends StatelessWidget {
                     child: Text(
                       challenge.name,
                       style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   StatusChip(
@@ -319,13 +345,17 @@ class ChallengesScreen extends StatelessWidget {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Icon(Icons.calendar_today_outlined, size: 14, color: scheme.onSurfaceVariant),
+                  Icon(
+                    Icons.calendar_today_outlined,
+                    size: 14,
+                    color: scheme.onSurfaceVariant,
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     'Active: $starts ➔ $ends',
                     style: theme.textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -335,41 +365,53 @@ class ChallengesScreen extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.emoji_events_outlined, size: 16, color: scheme.primary),
+                      Icon(
+                        Icons.emoji_events_outlined,
+                        size: 16,
+                        color: scheme.primary,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         'View Leaderboard',
                         style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.primary,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          color: scheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ),
                   if (challenge.roomId != null && challenge.roomId!.isNotEmpty)
                     Row(
                       children: [
-                        Icon(Icons.groups_outlined, size: 16, color: scheme.secondary),
+                        Icon(
+                          Icons.groups_outlined,
+                          size: 16,
+                          color: scheme.secondary,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'Shared with group',
                           style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.secondary,
-                                fontWeight: FontWeight.bold,
-                              ),
+                            color: scheme.secondary,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ],
                     )
                   else
                     Row(
                       children: [
-                        Icon(Icons.lock_outline, size: 16, color: scheme.onSurfaceVariant),
+                        Icon(
+                          Icons.lock_outline,
+                          size: 16,
+                          color: scheme.onSurfaceVariant,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           'Private / Local',
                           style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                              ),
+                            color: scheme.onSurfaceVariant,
+                          ),
                         ),
                       ],
                     ),
@@ -397,6 +439,7 @@ class ChallengesScreen extends StatelessWidget {
       context: context,
       builder: (ctx) => _CreateChallengeDialog(
         repositories: repositories,
+        session: session,
         segments: segments,
       ),
     );
@@ -413,10 +456,12 @@ class ChallengesScreen extends StatelessWidget {
 
 class _CreateChallengeDialog extends StatefulWidget {
   final AppRepositories repositories;
+  final AppSessionController session;
   final List<ChallengeSegment> segments;
 
   const _CreateChallengeDialog({
     required this.repositories,
+    required this.session,
     required this.segments,
   });
 
@@ -483,29 +528,28 @@ class _CreateChallengeDialogState extends State<_CreateChallengeDialog> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _selectedSegmentId,
+              initialValue: _selectedSegmentId,
               decoration: const InputDecoration(
                 labelText: 'Select Segment',
                 border: OutlineInputBorder(),
               ),
               items: widget.segments.map((seg) {
-                return DropdownMenuItem(
-                  value: seg.id,
-                  child: Text(seg.name),
-                );
+                return DropdownMenuItem(value: seg.id, child: Text(seg.name));
               }).toList(),
               onChanged: (val) {
                 if (val == null) return;
                 setState(() {
                   _selectedSegmentId = val;
-                  final selectedSeg = widget.segments.firstWhere((s) => s.id == val);
+                  final selectedSeg = widget.segments.firstWhere(
+                    (s) => s.id == val,
+                  );
                   _nameController.text = 'Challenge: ${selectedSeg.name}';
                 });
               },
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
-              value: _durationDays,
+              initialValue: _durationDays,
               decoration: const InputDecoration(
                 labelText: 'Duration',
                 border: OutlineInputBorder(),
@@ -527,7 +571,7 @@ class _CreateChallengeDialogState extends State<_CreateChallengeDialog> {
               const Center(child: CircularProgressIndicator())
             else
               DropdownButtonFormField<String?>(
-                value: _selectedRoomId,
+                initialValue: _selectedRoomId,
                 decoration: const InputDecoration(
                   labelText: 'Target Group (Optional)',
                   border: OutlineInputBorder(),
@@ -572,12 +616,16 @@ class _CreateChallengeDialogState extends State<_CreateChallengeDialog> {
               roomId: _selectedRoomId,
               startsAt: now,
               endsAt: endsAt,
+              ownerMatrixId:
+                  widget.session.snapshot.matrixSession?.matrixUserId,
             );
 
             if (context.mounted) {
               Navigator.of(context).pop();
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Rally challenge created successfully!')),
+                const SnackBar(
+                  content: Text('Rally challenge created successfully!'),
+                ),
               );
             }
           },

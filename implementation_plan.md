@@ -11,6 +11,81 @@
 - Scope-correction baseline on 2026-06-07: `flutter pub get` passed and `flutter analyze` passed before validator-removal edits. Initial sandboxed `flutter test` was blocked by loopback binding permissions; elevated test run exposed a Trip Summary stream-cleanup test failure.
 - Final verification on 2026-06-07: `dart format .` completed, `flutter analyze` is clean, and `flutter test --concurrency=1` passes 67 tests. Android builds are blocked because Flutter Doctor cannot locate an Android SDK.
 - Onboarding/Matrix product pass on 2026-06-07: baseline verified at 67 tests, onboarding rebuilt with keyboard-aware scrolling and inline Matrix login, Matrix login now advances onboarding automatically after session state changes, Matrix custom profile/friend/group/directory event ingestion writes through Drift repositories, Community shows cached requests/friends/groups/directory events, and tests now cover 72 passing cases. Android builds remain blocked by missing Android SDK.
+- Online challenge ecosystem pass on 2026-06-07: baseline `flutter pub get` passed; initial `flutter analyze` exposed source issues in Matrix media/client/test imports and is now clean after fixes; sandboxed `flutter test --concurrency=1` was blocked by sqlite3 native-asset DNS, elevated run passed 92 tests before challenge edits. This pass added Matrix challenge create/cancel/delete ingestion, room-backed challenge event queueing, repository-based Matrix event cache/dedupe helpers, and targeted Matrix challenge tests. The full real two-account challenge lifecycle is still not complete.
+
+## Current Online Challenge Audit - 2026-06-07
+
+Implemented state:
+
+- Canonical local challenge storage currently uses Drift `challenges` plus `challenge_participants`, tied to canonical `challenge_segments` and immutable `segment_versions`.
+- Challenge lists in the Challenges tab are reactive Drift watchers for active/past challenges and local segments.
+- Challenge details can load the route geometry, start attempts, show leaderboard-style attempt rows, and use only honest trust labels: `Local`, `Locally validated`, `Shared / Unverified`, and `Group trusted`.
+- Matrix sync now ingests RalRoads profile, friend, group, directory segment, shared package, segment, attempt result, and challenge lifecycle events.
+- Room-backed local challenge creation now immediately saves locally and queues `org.ralroads.challenge.created.v1` in the durable Matrix outbox.
+- Remote `org.ralroads.challenge.created.v1`, `updated.v1`, `cancelled.v1`, and `deleted.v1` events are parsed safely, can import an embedded segment package first, ensure a Matrix room shell exists, and upsert the challenge through `ChallengeRepository`.
+- Matrix event deduplication and debug/event caching now go through `SyncRepository` helpers instead of direct ingestor writes for the common event path.
+
+Exact missing challenge features:
+
+- Drift schema still lacks first-class challenge revisions, previous revision hashes, owner Matrix IDs, challenge descriptions, visibility, participant policy, group trust policy, content hash/signature, source event IDs, source room type, package media references, downloaded package state, leaderboard cache, moderation state, tombstones, and conflict records.
+- Current challenge creation UI is still a compact dialog, not the complete choose-segment/details/visibility/policy/rules/target/review flow.
+- Challenge detail is still a one-shot `FutureBuilder`; it must become a reactive controller/watch composition so edits, attempts, downloads, tombstones, and leaderboard changes update without reopening.
+- Attempt rows are segment-window based, not exact challenge revision/segment-version leaderboard entries.
+- Matrix segment and attempt sharing still uses encrypted JSON temp packages, not complete `.rrsegment` / `.rrattempt` archive formats with decompression limits, manifest verification, and Ed25519 signatures.
+- Discovery map/list, viewport spatial queries, clustering, directory subscriptions, package download UX, participant join/leave/invite flows, moderation UI, privacy preview/redaction, and conflict UI remain incomplete.
+- Matrix sync still needs persisted sync tokens, redactions, pagination, leave/ban handling, retry/backoff detail states, encrypted-room safety checks, and no auto-join invite behavior.
+- No end-to-end two-real-account Matrix acceptance run has been completed in this environment.
+
+Current Matrix event schemas:
+
+- `org.ralroads.challenge.created.v1`, `org.ralroads.challenge.updated.v1`, `org.ralroads.challenge.cancelled.v1`, and `org.ralroads.challenge.deleted.v1` are supported in this slice.
+- Supported fields: `schemaVersion: 1`, `entityId`, `revision`, `authorMatrixId`, `timestamp`, `payload`, optional `payloadHash`, and optional embedded `segment`.
+- Supported challenge payload fields: `challengeId`, `revision`, `segmentId`, `name`, `status`, `visibility`, `sourceRoomId`, `authorMatrixId`, `startsAt`, `deadline` / `endsAt`, and `updatedAt`.
+- Supported statuses: `draft`, `active`, `ended`, `cancelled`, `deleted`.
+- Supported visibility labels: `local`, `friend`, `group`, `directory`.
+- Parser behavior: unsupported schema versions, invalid Matrix IDs, missing required IDs, invalid statuses, wrong payload hashes, and oversize payloads are ignored without crashing sync. Unknown fields are tolerated.
+- Hash/signature status: payload hash checking exists only for plain SHA-256 JSON payloads. Full canonical JSON and Ed25519 signature verification are still missing.
+
+Data migrations needed next:
+
+- Add non-destructive schema version 2 tables for `challenge_revisions`, `challenge_sources`, `challenge_sync_state`, `challenge_tombstones`, `downloaded_challenge_packages`, `directory_challenge_index`, `challenge_leaderboard_cache`, `challenge_moderation_state`, `matrix_event_mapping`, `package_media_references`, and outbox dependencies.
+- Backfill existing `challenges` rows into revision 1 rows and keep current rows as the latest materialized view until the UI is cut over.
+- Add indexes for challenge ID, owner, room ID, status, deadline, segment ID/version, visibility, sync state, region/bounds/geohash, and updated time.
+- Keep all migrations idempotent and non-destructive; no existing local challenges or segments may be deleted.
+
+UI information architecture:
+
+- Challenges root should become four internal sections: Discover, My Challenges, Attempts, and Leaderboards.
+- Community remains for Matrix profile, friends, groups, invitations, and directory subscriptions, with shortcuts into challenge views only.
+- Challenge cards should show name, route thumbnail/overview, source, status, distance, duration, deadline, trust, sync state, downloaded state, and one primary Open action.
+- Challenge detail should have Overview, Leaderboard, Participants, My Attempts, and Rules tabs.
+- Discover should be local Drift-backed map/list with viewport queries, simplified route previews, start/finish markers, filters, and lazy full-package download.
+
+Synchronization model:
+
+- Local challenge creation always writes Drift first.
+- Room-backed challenge creation queues Matrix events through durable outbox rows.
+- Media/package uploads must precede dependent publish events once package formats are complete.
+- Incoming Matrix challenge events are deduplicated by event ID, parsed, optionally import an embedded segment, and upsert via repositories.
+- Offline actions remain queued and should retry exactly once per event ID transaction; advanced dependency states and exponential backoff remain to be implemented.
+
+Conflict rules:
+
+- Challenge IDs are stable.
+- Revisions must become immutable; current schema only stores latest materialized challenge state.
+- Highest valid authorized revision should win once revision tables exist.
+- Cancelled and deleted states override active when authorized.
+- Stale local edits against newer remote revisions must be shown as conflicts instead of silently overwritten.
+- Segments remain immutable by version; attempts remain immutable after submission except supersession/deletion events.
+
+Challenge test plan:
+
+- Existing targeted tests now cover Matrix challenge create/cancel ingestion and local room-backed challenge event queueing.
+- Add repository tests for create, edit revision, stale revision rejection, cancel, delete/tombstone, and materialized latest state.
+- Add Matrix schema tests for unsupported versions, malformed IDs, invalid enum values, wrong hash, duplicate event ID, missing segment package, and safe unknown-field tolerance.
+- Add package tests for `.rrsegment` and `.rrattempt` round trip, corrupted hash, oversized payload, invalid coordinates, duplicate traces, and signature verification.
+- Add widget tests for reactive challenge details, create flow, sync state chips, detail tabs, discovery empty/loading/error states, and text-scale/landscape layouts.
+- Add integration/manual tests using two real Matrix accounts for publish, receive, download, attempt, validate, share result, leaderboard update, edit, cancel, delete, offline queue, and duplicate prevention.
 
 ## Current Product Phases
 

@@ -224,7 +224,7 @@ class _SegmentCreationScreenState extends State<SegmentCreationScreen> {
     final startDist = segmentPoints.first.distanceFromStart ?? 0.0;
     final endDist = segmentPoints.last.distanceFromStart ?? 0.0;
     final distance = endDist - startDist;
-    final isMinDistanceOk = distance >= 400.0;
+    final isMinDistanceOk = distance >= 0.0;
 
     final pointsWithLimit = segmentPoints
         .where((p) => p.speedLimitKmh != null)

@@ -56,14 +56,18 @@ class MatrixSyncService {
         final eventType = content['type'] as String?;
         final payload = content['content'] as Map<String, dynamic>?;
         final sender = content['sender'] as String?;
-        final originServerTs = content['origin_server_ts'] as int? ?? DateTime.now().millisecondsSinceEpoch;
+        final originServerTs =
+            content['origin_server_ts'] as int? ??
+            DateTime.now().millisecondsSinceEpoch;
 
         if (eventId == null || eventType == null || payload == null) return;
 
         final session = await matrixAccount.restoreSession();
         if (session == null) return;
 
-        final token = await secureCredentials.readString(SecureCredentialKey.matrixAccessToken);
+        final token = await secureCredentials.readString(
+          SecureCredentialKey.matrixAccessToken,
+        );
         if (token == null) return;
 
         await _ingestor.ingestEvent(
@@ -119,7 +123,9 @@ class MatrixSyncService {
   Future<void> processOutbox() async {
     final session = await matrixAccount.restoreSession();
     if (session == null) return;
-    final token = await secureCredentials.readString(SecureCredentialKey.matrixAccessToken);
+    final token = await secureCredentials.readString(
+      SecureCredentialKey.matrixAccessToken,
+    );
     if (token == null) return;
 
     await _outboxWorker.process(
@@ -137,25 +143,36 @@ class MatrixSyncService {
   Future<void> importProfileEvent(
     Map<String, dynamic> content, {
     String? sender,
-  }) =>
-      _ingestor.importProfileEvent(content, sender: sender);
+  }) => _ingestor.importProfileEvent(content, sender: sender);
 
   Future<void> importFriendEvent(
     Map<String, dynamic> content, {
     String? currentUserId,
     MatrixSession? session,
     required String state,
-  }) =>
-      _ingestor.importFriendEvent(
-        content,
-        currentUserId: currentUserId,
-        session: session,
-        state: state,
-      );
+  }) => _ingestor.importFriendEvent(
+    content,
+    currentUserId: currentUserId,
+    session: session,
+    state: state,
+  );
 
   Future<void> importGroupEvent(
     Map<String, dynamic> content, {
     required String roomId,
-  }) =>
-      _ingestor.importGroupEvent(content, roomId: roomId);
+  }) => _ingestor.importGroupEvent(content, roomId: roomId);
+
+  Future<void> importChallengeEvent(
+    Map<String, dynamic> content, {
+    required String roomId,
+    required String eventType,
+    required DateTime originTimestamp,
+    String? sender,
+  }) => _ingestor.importChallengeEvent(
+    content,
+    roomId: roomId,
+    eventType: eventType,
+    originTimestamp: originTimestamp,
+    sender: sender,
+  );
 }

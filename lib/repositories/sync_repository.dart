@@ -84,6 +84,44 @@ class SyncRepository {
     ];
   }
 
+  Future<bool> hasCachedMatrixEvent(String id) async {
+    final event = await (database.select(
+      database.cachedDirectoryEvents,
+    )..where((row) => row.id.equals(id))).getSingleOrNull();
+    return event != null;
+  }
+
+  Future<void> cacheMatrixEvent({
+    required String id,
+    required String roomId,
+    required String eventType,
+    required String entityId,
+    required String payloadJson,
+    required DateTime originTimestamp,
+  }) {
+    return database
+        .into(database.cachedDirectoryEvents)
+        .insertOnConflictUpdate(
+          CachedDirectoryEventsCompanion(
+            id: Value(id),
+            roomId: Value(roomId),
+            eventType: Value(eventType),
+            entityId: Value(entityId),
+            payloadJson: Value(payloadJson),
+            originTimestamp: Value(originTimestamp),
+            ingestedAt: Value(DateTime.now()),
+          ),
+        );
+  }
+
+  Future<void> updateRoomName(String matrixRoomId, String name) {
+    return (database.update(
+      database.rooms,
+    )..where((row) => row.matrixRoomId.equals(matrixRoomId))).write(
+      RoomsCompanion(name: Value(name), updatedAt: Value(DateTime.now())),
+    );
+  }
+
   Future<void> enqueuePendingMediaUpload({
     required String id,
     required String localPath,

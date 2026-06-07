@@ -191,7 +191,11 @@ class AccountConnectionController extends ChangeNotifier {
       _message = error.message;
     } on MatrixAccountException catch (error) {
       final msg = error.message;
-      if (msg.contains('M_FORBIDDEN') || msg.contains('forbidden') || msg.contains('credentials') || msg.contains('password') || msg.contains('rejected')) {
+      if (msg.contains('M_FORBIDDEN') ||
+          msg.contains('forbidden') ||
+          msg.contains('credentials') ||
+          msg.contains('password') ||
+          msg.contains('rejected')) {
         _message = 'Matrix rejected those credentials.';
       } else {
         _message = msg;

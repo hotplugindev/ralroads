@@ -6,8 +6,10 @@ import 'package:ralroads/database/app_database.dart';
 import 'package:ralroads/online/matrix/matrix_account_service.dart';
 import 'package:ralroads/online/matrix/matrix_sync_service.dart';
 import 'package:ralroads/online/matrix/matrix_encryption_helper.dart';
+import 'package:ralroads/models/route_point.dart';
 import 'package:ralroads/repositories/app_repositories.dart';
 import 'package:ralroads/repositories/profile_repository.dart';
+import 'package:ralroads/repositories/segment_repository.dart';
 import 'package:ralroads/services/route_storage_service.dart';
 import 'package:ralroads/services/secure_credential_service.dart';
 
@@ -304,6 +306,115 @@ void main() {
         expect(directoryEvents.single.entityId, 'seg-1');
       },
     );
+
+    test('imports Matrix challenge lifecycle events', () async {
+      final syncService = MatrixSyncService(
+        repositories: repositories,
+        secureCredentials: secureCredentials,
+        matrixAccount: matrixAccount,
+        dio: Dio(),
+      );
+      final origin = DateTime(2026, 6, 7, 12);
+
+      await syncService.importChallengeEvent(
+        {
+          'schemaVersion': 1,
+          'entityId': 'challenge-remote-1',
+          'revision': 1,
+          'authorMatrixId': '@alice:matrix.org',
+          'timestamp': origin.toIso8601String(),
+          'segment': {
+            'id': 'seg-challenge-1',
+            'currentVersionId': 'seg-challenge-v1',
+            'name': 'Hill road',
+            'distanceMeters': 900.0,
+            'geometry': [
+              {'lat': 46.0, 'lon': 11.0, 'distanceFromStart': 0.0},
+              {'lat': 46.01, 'lon': 11.01, 'distanceFromStart': 900.0},
+            ],
+          },
+          'payload': {
+            'challengeId': 'challenge-remote-1',
+            'revision': 1,
+            'segmentId': 'seg-challenge-1',
+            'name': 'Sunday hill climb',
+            'status': 'active',
+            'visibility': 'group',
+            'sourceRoomId': '!group:matrix.org',
+            'authorMatrixId': '@alice:matrix.org',
+            'startsAt': origin.toIso8601String(),
+            'deadline': origin.add(const Duration(days: 7)).toIso8601String(),
+          },
+        },
+        roomId: '!group:matrix.org',
+        eventType: 'org.ralroads.challenge.created.v1',
+        originTimestamp: origin,
+        sender: '@alice:matrix.org',
+      );
+
+      final challenge = await repositories.challenges.getChallenge(
+        'challenge-remote-1',
+      );
+      expect(challenge, isNotNull);
+      expect(challenge!.name, 'Sunday hill climb');
+      expect(challenge.status, 'active');
+      expect(challenge.roomId, '!group:matrix.org');
+
+      await syncService.importChallengeEvent(
+        {
+          'schemaVersion': 1,
+          'entityId': 'challenge-remote-1',
+          'revision': 2,
+          'authorMatrixId': '@alice:matrix.org',
+          'payload': {
+            'challengeId': 'challenge-remote-1',
+            'revision': 2,
+            'segmentId': 'seg-challenge-1',
+            'status': 'cancelled',
+            'authorMatrixId': '@alice:matrix.org',
+          },
+        },
+        roomId: '!group:matrix.org',
+        eventType: 'org.ralroads.challenge.cancelled.v1',
+        originTimestamp: origin.add(const Duration(minutes: 5)),
+        sender: '@alice:matrix.org',
+      );
+
+      final cancelled = await repositories.challenges.getChallenge(
+        'challenge-remote-1',
+      );
+      expect(cancelled!.status, 'cancelled');
+    });
+
+    test('local room-backed challenge creation queues Matrix event', () async {
+      await repositories.segments.createLocalSegment(
+        const LocalSegmentInput(
+          id: 'seg-local-challenge',
+          versionId: 'seg-local-challenge-v1',
+          name: 'Local route',
+          distanceMeters: 1000,
+          geometry: [RoutePoint(lat: 46.0, lon: 11.0, distanceFromStart: 0.0)],
+        ),
+      );
+
+      final now = DateTime(2026, 6, 7, 12);
+      await repositories.challenges.createLocalChallenge(
+        id: 'challenge-local-queued',
+        segmentId: 'seg-local-challenge',
+        name: 'Queued challenge',
+        roomId: '!group:matrix.org',
+        ownerMatrixId: '@me:matrix.org',
+        startsAt: now,
+        endsAt: now.add(const Duration(days: 1)),
+      );
+
+      final queued = await database.select(database.outgoingMatrixEvents).get();
+      expect(queued, hasLength(1));
+      expect(queued.single.eventType, 'org.ralroads.challenge.created.v1');
+      expect(queued.single.roomId, '!group:matrix.org');
+      expect(queued.single.entityId, 'challenge-local-queued');
+      expect(queued.single.payloadJson, contains('Queued challenge'));
+    });
 
     test('processes outbox events successfully', () async {
       // Setup active session

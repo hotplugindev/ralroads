@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../database/app_database.dart';
 import '../../../repositories/app_repositories.dart';
 import '../../../repositories/trip_repository.dart';
 import '../../../services/settings_service.dart';
@@ -139,8 +138,8 @@ class TripsScreen extends StatelessWidget {
                   Text(
                     value,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -148,8 +147,8 @@ class TripsScreen extends StatelessWidget {
                   Text(
                     label,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                      color: scheme.onSurfaceVariant,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -195,8 +194,8 @@ class TripsScreen extends StatelessWidget {
                     child: Text(
                       trip.name ?? 'Unnamed Run',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   AttemptStatusBadge(
@@ -207,9 +206,9 @@ class TripsScreen extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 'Started on $dateStr',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
               ),
               const Divider(height: 24),
               Row(
@@ -259,15 +258,15 @@ class TripsScreen extends StatelessWidget {
           children: [
             Text(
               value,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             Text(
               label,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
         ),

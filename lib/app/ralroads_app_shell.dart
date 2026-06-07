@@ -26,10 +26,10 @@ class RalRoadsAppShell extends StatefulWidget {
     required this.drivingSession,
     super.key,
   }) : socialController = MatrixSocialController(
-          repositories: repositories,
-          clientService: session.syncService.matrixAccount.clientService,
-          syncService: session.syncService,
-        );
+         repositories: repositories,
+         clientService: session.syncService.matrixAccount.clientService,
+         syncService: session.syncService,
+       );
 
   final RouteStorageService storage;
   final SettingsService settings;
@@ -187,10 +187,7 @@ class _RalRoadsAppShellState extends State<RalRoadsAppShell> {
                   body: Column(
                     children: [
                       Expanded(
-                        child: IndexedStack(
-                          index: index,
-                          children: tabs,
-                        ),
+                        child: IndexedStack(index: index, children: tabs),
                       ),
                       ActiveSessionBar(
                         drivingSession: widget.drivingSession,

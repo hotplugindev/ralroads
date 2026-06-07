@@ -13,9 +13,7 @@ import '../online/matrix/matrix_encryption_helper.dart';
 import '../online/matrix/matrix_sync_service.dart';
 import '../repositories/app_repositories.dart';
 import '../repositories/friend_repository.dart';
-import '../repositories/group_repository.dart';
 import '../repositories/profile_repository.dart';
-import '../repositories/trip_repository.dart';
 
 class MatrixSocialController extends ChangeNotifier {
   MatrixSocialController({
@@ -145,10 +143,14 @@ class MatrixSocialController extends ChangeNotifier {
       await _client.joinRoom(roomId);
 
       // 2. Resolve target matrix user ID from request profile IDs
-      final fromProfile = await (_repositories.profiles.database.select(
-        _repositories.profiles.database.profiles,
-      )..where((row) => row.id.equals(request.fromProfileId))).getSingleOrNull();
-      final targetMatrixId = fromProfile?.matrixUserId ?? request.fromProfileId.replaceFirst('matrix-', '');
+      final fromProfile =
+          await (_repositories.profiles.database.select(
+                _repositories.profiles.database.profiles,
+              )..where((row) => row.id.equals(request.fromProfileId)))
+              .getSingleOrNull();
+      final targetMatrixId =
+          fromProfile?.matrixUserId ??
+          request.fromProfileId.replaceFirst('matrix-', '');
 
       // 3. Upsert friendship locally
       await _repositories.friends.upsertFriend(
@@ -216,10 +218,14 @@ class MatrixSocialController extends ChangeNotifier {
       );
 
       if (roomId != null) {
-        final fromProfile = await (_repositories.profiles.database.select(
-          _repositories.profiles.database.profiles,
-        )..where((row) => row.id.equals(request.fromProfileId))).getSingleOrNull();
-        final targetMatrixId = fromProfile?.matrixUserId ?? request.fromProfileId.replaceFirst('matrix-', '');
+        final fromProfile =
+            await (_repositories.profiles.database.select(
+                  _repositories.profiles.database.profiles,
+                )..where((row) => row.id.equals(request.fromProfileId)))
+                .getSingleOrNull();
+        final targetMatrixId =
+            fromProfile?.matrixUserId ??
+            request.fromProfileId.replaceFirst('matrix-', '');
 
         final rejectEventId = 'friend-rejected-${request.id}';
         final payload = {
@@ -249,7 +255,11 @@ class MatrixSocialController extends ChangeNotifier {
 
   // ─── Group Management ───────────────────────────────────────────────────────
 
-  Future<void> createGroup(String name, String? description, bool encrypted) async {
+  Future<void> createGroup(
+    String name,
+    String? description,
+    bool encrypted,
+  ) async {
     if (_client.userID == null) {
       throw Exception('Matrix is not connected.');
     }
@@ -264,12 +274,9 @@ class MatrixSocialController extends ChangeNotifier {
 
       // 2. Set encryption if requested
       if (encrypted) {
-        await _client.setRoomStateWithKey(
-          roomId,
-          'm.room.encryption',
-          '',
-          {'algorithm': 'm.megolm.v1.aes-sha2'},
-        );
+        await _client.setRoomStateWithKey(roomId, 'm.room.encryption', '', {
+          'algorithm': 'm.megolm.v1.aes-sha2',
+        });
       }
 
       // 3. Upsert Group locally
@@ -317,7 +324,7 @@ class MatrixSocialController extends ChangeNotifier {
     _setBusy(true);
     try {
       final roomId = await _client.joinRoom(roomIdOrAlias);
-      
+
       // Upsert room/group basic info (will be fully synced by ingestor/versions)
       final groupId = 'group-$roomId';
       await _repositories.groups.upsertMatrixGroup(
@@ -386,7 +393,7 @@ class MatrixSocialController extends ChangeNotifier {
     try {
       final id = 'report-${DateTime.now().microsecondsSinceEpoch}';
       final myProfile = await _repositories.profiles.getCurrentLocalProfile();
-      
+
       await _repositories.moderation.reportContent(
         id: id,
         targetType: targetType,
@@ -419,16 +426,23 @@ class MatrixSocialController extends ChangeNotifier {
         _repositories.segments.database.segmentVersions,
       )..where((row) => row.id.equals(versionId))).getSingle();
 
-      final geomList = await (_repositories.segments.database.select(
-        _repositories.segments.database.segmentGeometry,
-      )..where((row) => row.versionId.equals(versionId))
-       ..orderBy([(row) => drift.OrderingTerm.asc(row.pointIndex)])).get();
+      final geomList =
+          await (_repositories.segments.database.select(
+                  _repositories.segments.database.segmentGeometry,
+                )
+                ..where((row) => row.versionId.equals(versionId))
+                ..orderBy([(row) => drift.OrderingTerm.asc(row.pointIndex)]))
+              .get();
 
-      final geometry = geomList.map((g) => RoutePoint(
-        lat: g.lat,
-        lon: g.lon,
-        distanceFromStart: g.distanceFromStart,
-      )).toList();
+      final geometry = geomList
+          .map(
+            (g) => RoutePoint(
+              lat: g.lat,
+              lon: g.lon,
+              distanceFromStart: g.distanceFromStart,
+            ),
+          )
+          .toList();
 
       final rules = await _repositories.segments.getRulesForVersion(versionId);
 
@@ -455,7 +469,7 @@ class MatrixSocialController extends ChangeNotifier {
               'lat': pt.lat,
               'lon': pt.lon,
               'distanceFromStart': pt.distanceFromStart,
-            }
+            },
         ],
       };
 
@@ -517,10 +531,13 @@ class MatrixSocialController extends ChangeNotifier {
       )..where((row) => row.id.equals(attemptId))).getSingleOrNull();
       if (attempt == null) throw Exception('Attempt not found.');
 
-      final pointsList = await (_repositories.attempts.database.select(
-        _repositories.attempts.database.attemptPoints,
-      )..where((row) => row.attemptId.equals(attemptId))
-       ..orderBy([(row) => drift.OrderingTerm.asc(row.pointIndex)])).get();
+      final pointsList =
+          await (_repositories.attempts.database.select(
+                  _repositories.attempts.database.attemptPoints,
+                )
+                ..where((row) => row.attemptId.equals(attemptId))
+                ..orderBy([(row) => drift.OrderingTerm.asc(row.pointIndex)]))
+              .get();
 
       final validation = await (_repositories.attempts.database.select(
         _repositories.attempts.database.localValidationResults,
@@ -550,7 +567,7 @@ class MatrixSocialController extends ChangeNotifier {
               'speedMps': pt.speedMps,
               'speedLimitKmh': pt.speedLimitKmh,
               'speedCompliant': pt.speedCompliant,
-            }
+            },
         ],
       };
 

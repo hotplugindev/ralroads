@@ -81,7 +81,10 @@ void main() {
       );
 
       expect(fakeClientService.loginCalled, isTrue);
-      expect(fakeClientService.lastServer?.canonicalBaseUrl, 'https://matrix.org');
+      expect(
+        fakeClientService.lastServer?.canonicalBaseUrl,
+        'https://matrix.org',
+      );
       expect(result.userId, '@alice:matrix.org');
       expect(result.deviceId, 'DEVICE_ID');
 

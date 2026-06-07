@@ -120,9 +120,9 @@ class AttemptValidatorService {
   Future<void> checkAndAwardBadges(String profileId) async {
     try {
       final db = attemptRepository.database;
-      final attempts = await (db.select(db.segmentAttempts)
-            ..where((row) => row.profileId.equals(profileId)))
-          .get();
+      final attempts = await (db.select(
+        db.segmentAttempts,
+      )..where((row) => row.profileId.equals(profileId))).get();
 
       final cleanAttempts = attempts
           .where((a) => a.status == 'validClean' || a.status == 'valid_clean')
@@ -134,12 +134,14 @@ class AttemptValidatorService {
         required String title,
         required String body,
       }) async {
-        final exists = await (db.select(db.localNotifications)
-              ..where((row) => row.id.equals(id)))
-            .getSingleOrNull();
+        final exists = await (db.select(
+          db.localNotifications,
+        )..where((row) => row.id.equals(id))).getSingleOrNull();
 
         if (exists == null) {
-          await db.into(db.localNotifications).insertOnConflictUpdate(
+          await db
+              .into(db.localNotifications)
+              .insertOnConflictUpdate(
                 LocalNotificationsCompanion(
                   id: Value(id),
                   type: const Value('badge_earned'),
@@ -156,7 +158,8 @@ class AttemptValidatorService {
         await awardBadge(
           id: 'badge_first_clean',
           title: 'First Clean Run',
-          body: 'Congratulations! You completed your first clean segment attempt.',
+          body:
+              'Congratulations! You completed your first clean segment attempt.',
         );
       }
 

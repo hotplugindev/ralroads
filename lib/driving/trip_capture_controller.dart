@@ -1,12 +1,10 @@
 import 'dart:async';
-import '../models/route_point.dart';
 import '../repositories/trip_repository.dart';
 import '../utils/geo_math.dart';
 
 class TripCaptureController {
-  TripCaptureController({
-    required TripRepository tripRepository,
-  }) : _tripRepository = tripRepository;
+  TripCaptureController({required TripRepository tripRepository})
+    : _tripRepository = tripRepository;
 
   final TripRepository _tripRepository;
 
@@ -66,12 +64,7 @@ class TripCaptureController {
   }) {
     // 1. Accumulate distance
     if (_lastLat != null && _lastLon != null) {
-      final delta = haversineDistanceMeters(
-        _lastLat!,
-        _lastLon!,
-        lat,
-        lon,
-      );
+      final delta = haversineDistanceMeters(_lastLat!, _lastLon!, lat, lon);
       if (delta.isFinite && delta < 120.0) {
         _distanceMeters += delta;
       }
@@ -84,7 +77,8 @@ class TripCaptureController {
         now.difference(_lastPointAt!).inMilliseconds >= 700) {
       _lastPointAt = now;
       final speedKmh = rawSpeedMps * 3.6;
-      final speedCompliant = speedLimitKmh == null || speedKmh <= speedLimitKmh + 8;
+      final speedCompliant =
+          speedLimitKmh == null || speedKmh <= speedLimitKmh + 8;
 
       _pendingTripPoints.add(
         TripRecordingPoint(

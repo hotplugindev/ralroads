@@ -32,7 +32,8 @@ class CommunityScreen extends StatelessWidget {
       listenable: Listenable.merge([session, socialController]),
       builder: (context, _) {
         final snap = session.snapshot;
-        final isConnected = snap.matrixStatus == MatrixConnectionStatus.connected;
+        final isConnected =
+            snap.matrixStatus == MatrixConnectionStatus.connected;
 
         return StreamBuilder<SocialSnapshot>(
           stream: repositories.social.watchLocalSnapshot(),
@@ -43,19 +44,22 @@ class CommunityScreen extends StatelessWidget {
             return StreamBuilder<List<CachedDirectoryEvent>>(
               stream: repositories.directories.watchRecentEvents(),
               builder: (context, directorySnap) {
-                final directories = directorySnap.data ?? const <CachedDirectoryEvent>[];
+                final directories =
+                    directorySnap.data ?? const <CachedDirectoryEvent>[];
 
                 return StreamBuilder<List<LocalNotification>>(
                   stream: repositories.notifications.watchUnreadNotifications(),
                   builder: (context, notifSnap) {
-                    final unreadNotifs = notifSnap.data ?? const <LocalNotification>[];
+                    final unreadNotifs =
+                        notifSnap.data ?? const <LocalNotification>[];
 
                     return StreamBuilder<List<BlockedUser>>(
                       stream: repositories.friends.database
                           .select(repositories.friends.database.blockedUsers)
                           .watch(),
                       builder: (context, blockedSnap) {
-                        final blockedUsers = blockedSnap.data ?? const <BlockedUser>[];
+                        final blockedUsers =
+                            blockedSnap.data ?? const <BlockedUser>[];
 
                         return RalRoadsPage(
                           title: 'Community',
@@ -65,7 +69,9 @@ class CommunityScreen extends StatelessWidget {
                                 padding: EdgeInsets.symmetric(horizontal: 16),
                                 child: SizedBox.square(
                                   dimension: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 ),
                               ),
                           ],
@@ -74,11 +80,21 @@ class CommunityScreen extends StatelessWidget {
                             _buildConnectionHeader(context, snap, scheme),
 
                             // 2. Profile Card
-                            _buildProfileSection(context, localProfile, scheme, theme),
+                            _buildProfileSection(
+                              context,
+                              localProfile,
+                              scheme,
+                              theme,
+                            ),
 
                             // 3. Status Stats Row
                             if (isConnected)
-                              _buildStatsRow(social, directories, unreadNotifs, blockedUsers),
+                              _buildStatsRow(
+                                social,
+                                directories,
+                                unreadNotifs,
+                                blockedUsers,
+                              ),
 
                             // 4. Quick Actions
                             if (isConnected) ...[
@@ -96,7 +112,12 @@ class CommunityScreen extends StatelessWidget {
                                 ),
                               ),
                               for (final notif in unreadNotifs)
-                                _buildNotificationTile(context, notif, scheme, theme),
+                                _buildNotificationTile(
+                                  context,
+                                  notif,
+                                  scheme,
+                                  theme,
+                                ),
                             ],
 
                             // 6. Friend Requests Section
@@ -104,17 +125,25 @@ class CommunityScreen extends StatelessWidget {
                               SectionHeader(
                                 title: 'Friend Requests',
                                 trailing: StatusChip(
-                                  label: '${social?.pendingRequests.length ?? 0}',
+                                  label:
+                                      '${social?.pendingRequests.length ?? 0}',
                                 ),
                               ),
                               if ((social?.pendingRequests ?? const []).isEmpty)
                                 const EmptyState(
                                   title: 'No pending requests',
-                                  message: 'Send requests or invite people by their Matrix User ID.',
+                                  message:
+                                      'Send requests or invite people by their Matrix User ID.',
                                 )
                               else
                                 for (final request in social!.pendingRequests)
-                                  _buildRequestCard(context, request, localProfile, scheme, theme),
+                                  _buildRequestCard(
+                                    context,
+                                    request,
+                                    localProfile,
+                                    scheme,
+                                    theme,
+                                  ),
                             ],
 
                             // 7. Friends Section
@@ -128,11 +157,18 @@ class CommunityScreen extends StatelessWidget {
                               if ((social?.friends ?? const []).isEmpty)
                                 const EmptyState(
                                   title: 'No friends yet',
-                                  message: 'Connect with other drivers to share segments and challenge attempts.',
+                                  message:
+                                      'Connect with other drivers to share segments and challenge attempts.',
                                 )
                               else
                                 for (final friendship in social!.friends)
-                                  _buildFriendCard(context, friendship, localProfile, scheme, theme),
+                                  _buildFriendCard(
+                                    context,
+                                    friendship,
+                                    localProfile,
+                                    scheme,
+                                    theme,
+                                  ),
                             ],
 
                             // 8. Groups Section
@@ -146,11 +182,17 @@ class CommunityScreen extends StatelessWidget {
                               if ((social?.groups ?? const []).isEmpty)
                                 const EmptyState(
                                   title: 'No active groups',
-                                  message: 'Create or join private groups to validate attempts and sync leaderboards.',
+                                  message:
+                                      'Create or join private groups to validate attempts and sync leaderboards.',
                                 )
                               else
                                 for (final group in social!.groups)
-                                  _buildGroupCard(context, group, scheme, theme),
+                                  _buildGroupCard(
+                                    context,
+                                    group,
+                                    scheme,
+                                    theme,
+                                  ),
                             ],
 
                             // 9. Blocked Users Section
@@ -167,11 +209,17 @@ class CommunityScreen extends StatelessWidget {
                                   elevation: 0,
                                   color: scheme.surfaceContainerLow,
                                   child: ListTile(
-                                    leading: const Icon(Icons.block, color: Colors.grey),
+                                    leading: const Icon(
+                                      Icons.block,
+                                      color: Colors.grey,
+                                    ),
                                     title: Text(blocked.matrixUserId),
-                                    subtitle: Text(blocked.reason ?? 'No reason provided'),
+                                    subtitle: Text(
+                                      blocked.reason ?? 'No reason provided',
+                                    ),
                                     trailing: TextButton(
-                                      onPressed: () => socialController.unblockUser(blocked.matrixUserId),
+                                      onPressed: () => socialController
+                                          .unblockUser(blocked.matrixUserId),
                                       child: const Text('Unblock'),
                                     ),
                                   ),
@@ -179,17 +227,21 @@ class CommunityScreen extends StatelessWidget {
                             ],
 
                             // 10. Subscribed Directories
-                            const SectionHeader(title: 'Subscribed Directories'),
+                            const SectionHeader(
+                              title: 'Subscribed Directories',
+                            ),
                             if (directories.isEmpty)
                               const EmptyState(
                                 title: 'No directory subscriptions',
-                                message: 'Subscribed regional directory events appear here after Matrix sync.',
+                                message:
+                                    'Subscribed regional directory events appear here after Matrix sync.',
                               )
                             else
                               for (final event in directories)
                                 FeatureCard(
                                   title: event.eventType,
-                                  subtitle: '${event.entityId} • Room: ${event.roomId}',
+                                  subtitle:
+                                      '${event.entityId} • Room: ${event.roomId}',
                                   icon: Icons.travel_explore_outlined,
                                 ),
                           ],
@@ -216,14 +268,19 @@ class CommunityScreen extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: isConnected
-              ? [scheme.primaryContainer, scheme.secondaryContainer.withValues(alpha: 0.5)]
+              ? [
+                  scheme.primaryContainer,
+                  scheme.secondaryContainer.withValues(alpha: 0.5),
+                ]
               : [scheme.surfaceContainerHigh, scheme.surfaceContainer],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isConnected ? scheme.primary.withValues(alpha: 0.3) : scheme.outlineVariant,
+          color: isConnected
+              ? scheme.primary.withValues(alpha: 0.3)
+              : scheme.outlineVariant,
         ),
       ),
       padding: const EdgeInsets.all(16),
@@ -244,7 +301,9 @@ class CommunityScreen extends StatelessWidget {
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
-                    color: isConnected ? scheme.onPrimaryContainer : scheme.onSurface,
+                    color: isConnected
+                        ? scheme.onPrimaryContainer
+                        : scheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -254,7 +313,9 @@ class CommunityScreen extends StatelessWidget {
                       : 'Matrix powers friends, groups, shared challenges, and E2EE.',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isConnected ? scheme.onPrimaryContainer.withValues(alpha: 0.8) : scheme.onSurfaceVariant,
+                    color: isConnected
+                        ? scheme.onPrimaryContainer.withValues(alpha: 0.8)
+                        : scheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -264,9 +325,8 @@ class CommunityScreen extends StatelessWidget {
           FilledButton(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => MatrixConnectionScreen(
-                  controller: accountController,
-                ),
+                builder: (_) =>
+                    MatrixConnectionScreen(controller: accountController),
               ),
             ),
             style: FilledButton.styleFrom(
@@ -291,10 +351,14 @@ class CommunityScreen extends StatelessWidget {
       color: scheme.surfaceContainerLow,
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: hasProfile ? scheme.secondaryContainer : scheme.surfaceContainerHigh,
+          backgroundColor: hasProfile
+              ? scheme.secondaryContainer
+              : scheme.surfaceContainerHigh,
           child: Icon(
             Icons.person_outline,
-            color: hasProfile ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
+            color: hasProfile
+                ? scheme.onSecondaryContainer
+                : scheme.onSurfaceVariant,
           ),
         ),
         title: Text(
@@ -331,10 +395,7 @@ class CommunityScreen extends StatelessWidget {
           StatusChip(label: '${directories.length} Directories'),
           const SizedBox(width: 8),
           if (blocked.isNotEmpty)
-            StatusChip(
-              label: '${blocked.length} Blocked',
-              color: Colors.grey,
-            ),
+            StatusChip(label: '${blocked.length} Blocked', color: Colors.grey),
         ],
       ),
     );
@@ -426,7 +487,9 @@ class CommunityScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    isIncoming ? 'Incoming Friend Request' : 'Outgoing Friend Request',
+                    isIncoming
+                        ? 'Incoming Friend Request'
+                        : 'Outgoing Friend Request',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   Text(
@@ -450,10 +513,7 @@ class CommunityScreen extends StatelessWidget {
                 onPressed: () => socialController.rejectFriendRequest(request),
               ),
             ] else
-              StatusChip(
-                label: 'Pending',
-                color: scheme.outline,
-              ),
+              StatusChip(label: 'Pending', color: scheme.outline),
           ],
         ),
       ),
@@ -490,7 +550,10 @@ class CommunityScreen extends StatelessWidget {
             trailing: IconButton(
               icon: const Icon(Icons.block_outlined, color: Colors.grey),
               tooltip: 'Block User',
-              onPressed: () => _showBlockUserDialog(context, profile?.matrixUserId ?? friendId),
+              onPressed: () => _showBlockUserDialog(
+                context,
+                profile?.matrixUserId ?? friendId,
+              ),
             ),
           ),
         );
@@ -509,8 +572,12 @@ class CommunityScreen extends StatelessWidget {
       color: scheme.surfaceContainerLow,
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: group.visibility == 'private' ? scheme.tertiaryContainer : scheme.primaryContainer,
-          child: Icon(group.visibility == 'private' ? Icons.lock_outline : Icons.public),
+          backgroundColor: group.visibility == 'private'
+              ? scheme.tertiaryContainer
+              : scheme.primaryContainer,
+          child: Icon(
+            group.visibility == 'private' ? Icons.lock_outline : Icons.public,
+          ),
         ),
         title: Text(group.name),
         subtitle: Text(group.description ?? 'Matrix Group Room'),
@@ -530,44 +597,42 @@ class CommunityScreen extends StatelessWidget {
 
   // ─── Dialog Helpers ─────────────────────────────────────────────────────────
 
-  Future<void> _showProfileDialog(BuildContext context, Profile? profile) async {
+  Future<void> _showProfileDialog(
+    BuildContext context,
+    Profile? profile,
+  ) async {
     await showDialog<void>(
       context: context,
-      builder: (ctx) => _ProfileDialog(
-        profile: profile,
-        repositories: repositories,
-      ),
+      builder: (ctx) =>
+          _ProfileDialog(profile: profile, repositories: repositories),
     );
   }
 
   Future<void> _showAddFriendDialog(BuildContext context) async {
     await showDialog<void>(
       context: context,
-      builder: (ctx) => _AddFriendDialog(
-        socialController: socialController,
-      ),
+      builder: (ctx) => _AddFriendDialog(socialController: socialController),
     );
   }
 
   Future<void> _showCreateGroupDialog(BuildContext context) async {
     await showDialog<void>(
       context: context,
-      builder: (ctx) => _CreateGroupDialog(
-        socialController: socialController,
-      ),
+      builder: (ctx) => _CreateGroupDialog(socialController: socialController),
     );
   }
 
   Future<void> _showJoinGroupDialog(BuildContext context) async {
     await showDialog<void>(
       context: context,
-      builder: (ctx) => _JoinGroupDialog(
-        socialController: socialController,
-      ),
+      builder: (ctx) => _JoinGroupDialog(socialController: socialController),
     );
   }
 
-  Future<void> _showInviteMemberDialog(BuildContext context, String roomId) async {
+  Future<void> _showInviteMemberDialog(
+    BuildContext context,
+    String roomId,
+  ) async {
     await showDialog<void>(
       context: context,
       builder: (ctx) => _InviteMemberDialog(
@@ -577,7 +642,10 @@ class CommunityScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _showBlockUserDialog(BuildContext context, String matrixUserId) async {
+  Future<void> _showBlockUserDialog(
+    BuildContext context,
+    String matrixUserId,
+  ) async {
     await showDialog<void>(
       context: context,
       builder: (ctx) => _BlockUserDialog(
@@ -607,8 +675,12 @@ class _ProfileDialogState extends State<_ProfileDialog> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.profile?.displayName ?? '');
-    _regionController = TextEditingController(text: widget.profile?.homeRegion ?? '');
+    _nameController = TextEditingController(
+      text: widget.profile?.displayName ?? '',
+    );
+    _regionController = TextEditingController(
+      text: widget.profile?.homeRegion ?? '',
+    );
   }
 
   @override
@@ -763,7 +835,9 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
             ),
             CheckboxListTile(
               title: const Text('Enable E2EE Encryption'),
-              subtitle: const Text('Secure all shared segment & attempt events'),
+              subtitle: const Text(
+                'Secure all shared segment & attempt events',
+              ),
               value: _encrypted,
               onChanged: (val) => setState(() => _encrypted = val ?? true),
             ),
@@ -780,7 +854,9 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
               if (name.isNotEmpty) {
                 await widget.socialController.createGroup(
                   name,
-                  _descController.text.trim().isEmpty ? null : _descController.text.trim(),
+                  _descController.text.trim().isEmpty
+                      ? null
+                      : _descController.text.trim(),
                   _encrypted,
                 );
               }
@@ -853,7 +929,10 @@ class _JoinGroupDialogState extends State<_JoinGroupDialog> {
 class _InviteMemberDialog extends StatefulWidget {
   final String roomId;
   final MatrixSocialController socialController;
-  const _InviteMemberDialog({required this.roomId, required this.socialController});
+  const _InviteMemberDialog({
+    required this.roomId,
+    required this.socialController,
+  });
 
   @override
   State<_InviteMemberDialog> createState() => _InviteMemberDialogState();
@@ -896,7 +975,10 @@ class _InviteMemberDialogState extends State<_InviteMemberDialog> {
           onPressed: () async {
             final target = _controller.text.trim();
             if (target.isNotEmpty) {
-              await widget.socialController.inviteToGroup(widget.roomId, target);
+              await widget.socialController.inviteToGroup(
+                widget.roomId,
+                target,
+              );
             }
             if (context.mounted) Navigator.of(context).pop();
           },
@@ -910,7 +992,10 @@ class _InviteMemberDialogState extends State<_InviteMemberDialog> {
 class _BlockUserDialog extends StatefulWidget {
   final String matrixUserId;
   final MatrixSocialController socialController;
-  const _BlockUserDialog({required this.matrixUserId, required this.socialController});
+  const _BlockUserDialog({
+    required this.matrixUserId,
+    required this.socialController,
+  });
 
   @override
   State<_BlockUserDialog> createState() => _BlockUserDialogState();
@@ -952,7 +1037,9 @@ class _BlockUserDialogState extends State<_BlockUserDialog> {
           onPressed: () async {
             await widget.socialController.blockUser(
               widget.matrixUserId,
-              reason: _controller.text.trim().isEmpty ? null : _controller.text.trim(),
+              reason: _controller.text.trim().isEmpty
+                  ? null
+                  : _controller.text.trim(),
             );
             if (context.mounted) Navigator.of(context).pop();
           },

@@ -66,10 +66,8 @@ class SettingsTab extends StatelessWidget {
           icon: Icons.map_outlined,
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) => OfflineMapsScreen(
-                storage: storage,
-                settings: settings,
-              ),
+              builder: (_) =>
+                  OfflineMapsScreen(storage: storage, settings: settings),
             ),
           ),
         ),

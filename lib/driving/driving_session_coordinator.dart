@@ -155,7 +155,8 @@ class DrivingSessionSnapshot {
       elapsed: elapsed ?? this.elapsed,
       distanceMeters: distanceMeters ?? this.distanceMeters,
       recording: recording ?? this.recording,
-      attemptRecordingState: attemptRecordingState ?? this.attemptRecordingState,
+      attemptRecordingState:
+          attemptRecordingState ?? this.attemptRecordingState,
       tripId: clearTripId ? null : (tripId ?? this.tripId),
       attemptId: clearAttemptId ? null : (attemptId ?? this.attemptId),
       speedMps: speedMps ?? this.speedMps,
@@ -172,8 +173,10 @@ class DrivingSessionSnapshot {
       offRoute: offRoute ?? this.offRoute,
       gpsWeak: gpsWeak ?? this.gpsWeak,
       progressPercentage: progressPercentage ?? this.progressPercentage,
-      remainingDistanceMeters: remainingDistanceMeters ?? this.remainingDistanceMeters,
-      remainingDurationSeconds: remainingDurationSeconds ?? this.remainingDurationSeconds,
+      remainingDistanceMeters:
+          remainingDistanceMeters ?? this.remainingDistanceMeters,
+      remainingDurationSeconds:
+          remainingDurationSeconds ?? this.remainingDurationSeconds,
       etaString: etaString ?? this.etaString,
       errorMessage: errorMessage ?? this.errorMessage,
     );
@@ -226,13 +229,17 @@ class DrivingSessionCoordinator extends ChangeNotifier {
 
   CalloutSpeechService get speechService => _calloutController.speechService;
   CalloutScheduler get scheduler => _calloutController.scheduler;
-  NavigationFusionService? get fusionService => _navigationRuntime.fusionService;
+  NavigationFusionService? get fusionService =>
+      _navigationRuntime.fusionService;
   TripRepository get tripRepository => _tripRepository;
 
-  List<RoutePoint> get activeRoutePoints => _navigationRuntime.activeRoutePoints;
+  List<RoutePoint> get activeRoutePoints =>
+      _navigationRuntime.activeRoutePoints;
   List<PaceNote> get activeNotes => _navigationRuntime.activeNotes;
-  List<RoadWarning> get visibleRoadWarnings => _navigationRuntime.visibleRoadWarnings;
-  List<SpeedLimitSegment> get visibleSpeedLimitSegments => _navigationRuntime.visibleSpeedLimitSegments;
+  List<RoadWarning> get visibleRoadWarnings =>
+      _navigationRuntime.visibleRoadWarnings;
+  List<SpeedLimitSegment> get visibleSpeedLimitSegments =>
+      _navigationRuntime.visibleSpeedLimitSegments;
   bool get isRerouting => _navigationRuntime.isRerouting;
   Stream<List<RoutePoint>> get onRerouted => _navigationRuntime.onRerouted;
 
@@ -304,7 +311,8 @@ class DrivingSessionCoordinator extends ChangeNotifier {
       await _tripCapture.startTrip(
         tripId: tripId,
         startedAt: now,
-        name: 'Trip ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
+        name:
+            'Trip ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
       );
     }
 
@@ -376,7 +384,8 @@ class DrivingSessionCoordinator extends ChangeNotifier {
       await _tripCapture.startTrip(
         tripId: tripId,
         startedAt: now,
-        name: 'Trip ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
+        name:
+            'Trip ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
       );
       _tripCapture.reset(
         _navigationRuntime.currentState?.rawLat,
@@ -469,7 +478,8 @@ class DrivingSessionCoordinator extends ChangeNotifier {
 
   Future<void> abortAttempt() async {
     if (_snapshot.attemptRecordingState == AttemptRecordingState.recording ||
-        _snapshot.attemptRecordingState == AttemptRecordingState.waitingToStart) {
+        _snapshot.attemptRecordingState ==
+            AttemptRecordingState.waitingToStart) {
       await _attemptRuntime.deleteAttempt();
       _snapshot = _snapshot.copyWith(
         attemptRecordingState: AttemptRecordingState.aborted,
@@ -533,23 +543,27 @@ class DrivingSessionCoordinator extends ChangeNotifier {
         finishPoint.lon,
       );
 
-      if (_snapshot.attemptRecordingState == AttemptRecordingState.waitingToStart &&
+      if (_snapshot.attemptRecordingState ==
+              AttemptRecordingState.waitingToStart &&
           distanceToStart <= 35.0) {
         final attId = 'attempt-${now.microsecondsSinceEpoch}';
-        _attemptRuntime.startAttempt(
-          attemptId: attId,
-          segmentId: config.segmentId!,
-          lat: state.rawLat,
-          lon: state.rawLon,
-          timestamp: state.timestamp,
-        ).then((_) {
-          _snapshot = _snapshot.copyWith(
-            attemptRecordingState: _attemptRuntime.recordingState,
-            attemptId: _attemptRuntime.attemptId,
-          );
-          notifyListeners();
-        });
-      } else if (_snapshot.attemptRecordingState == AttemptRecordingState.recording) {
+        _attemptRuntime
+            .startAttempt(
+              attemptId: attId,
+              segmentId: config.segmentId!,
+              lat: state.rawLat,
+              lon: state.rawLon,
+              timestamp: state.timestamp,
+            )
+            .then((_) {
+              _snapshot = _snapshot.copyWith(
+                attemptRecordingState: _attemptRuntime.recordingState,
+                attemptId: _attemptRuntime.attemptId,
+              );
+              notifyListeners();
+            });
+      } else if (_snapshot.attemptRecordingState ==
+          AttemptRecordingState.recording) {
         _attemptRuntime.updateAttemptRecording(
           lat: state.rawLat,
           lon: state.rawLon,
@@ -560,7 +574,9 @@ class DrivingSessionCoordinator extends ChangeNotifier {
           timestamp: state.timestamp,
         );
 
-        final elapsed = state.timestamp.difference(_attemptRuntime.attemptStartedAt ?? now);
+        final elapsed = state.timestamp.difference(
+          _attemptRuntime.attemptStartedAt ?? now,
+        );
         if (distanceToFinish <= 35.0 && elapsed.inSeconds >= 2) {
           _attemptRuntime.finishAttempt().then((_) {
             _snapshot = _snapshot.copyWith(
@@ -609,7 +625,10 @@ class DrivingSessionCoordinator extends ChangeNotifier {
         : math.max(0.0, nextWarning.distanceFromStart - distanceAlong);
 
     final remainingDistanceMeters = activeRoutePoints.isNotEmpty
-        ? math.max(0.0, activeRoutePoints.last.distanceFromStart - distanceAlong)
+        ? math.max(
+            0.0,
+            activeRoutePoints.last.distanceFromStart - distanceAlong,
+          )
         : 0.0;
 
     double remainingDurationSeconds = 0.0;
@@ -620,7 +639,9 @@ class DrivingSessionCoordinator extends ChangeNotifier {
       final segmentLength = p.distanceFromStart - prevDist;
       if (segmentLength <= 0) continue;
       final limitSegment = visibleSpeedLimitSegments.firstWhere(
-        (s) => p.distanceFromStart >= s.startDistance && p.distanceFromStart <= s.endDistance,
+        (s) =>
+            p.distanceFromStart >= s.startDistance &&
+            p.distanceFromStart <= s.endDistance,
         orElse: () => const SpeedLimitSegment(
           id: 'default',
           startDistance: 0.0,
@@ -634,8 +655,11 @@ class DrivingSessionCoordinator extends ChangeNotifier {
       prevDist = p.distanceFromStart;
     }
 
-    final etaTime = now.add(Duration(seconds: remainingDurationSeconds.round()));
-    final etaString = "${etaTime.hour.toString().padLeft(2, '0')}:${etaTime.minute.toString().padLeft(2, '0')}";
+    final etaTime = now.add(
+      Duration(seconds: remainingDurationSeconds.round()),
+    );
+    final etaString =
+        "${etaTime.hour.toString().padLeft(2, '0')}:${etaTime.minute.toString().padLeft(2, '0')}";
 
     final totalDistance = activeRoutePoints.isNotEmpty
         ? activeRoutePoints.last.distanceFromStart
@@ -660,7 +684,9 @@ class DrivingSessionCoordinator extends ChangeNotifier {
     }
 
     _snapshot = _snapshot.copyWith(
-      elapsed: _sessionStartedAt != null ? now.difference(_sessionStartedAt!) : Duration.zero,
+      elapsed: _sessionStartedAt != null
+          ? now.difference(_sessionStartedAt!)
+          : Duration.zero,
       distanceMeters: _tripCapture.distanceMeters,
       speedMps: state.rawSpeedMps,
       headingDegrees: state.headingDegrees,
@@ -672,7 +698,9 @@ class DrivingSessionCoordinator extends ChangeNotifier {
       nextWarning: nextWarning,
       distanceToWarning: distanceToWarning,
       currentLimit: currentLimit,
-      offRoute: _navigationRuntime.isRerouting || _navigationRuntime.distanceFromRoute > 60.0,
+      offRoute:
+          _navigationRuntime.isRerouting ||
+          _navigationRuntime.distanceFromRoute > 60.0,
       gpsWeak: state.gpsAccuracyMeters > 20.0,
       progressPercentage: progressPercentage,
       remainingDistanceMeters: remainingDistanceMeters,
@@ -688,7 +716,8 @@ class DrivingSessionCoordinator extends ChangeNotifier {
 
   int? _getCurrentSpeedLimit(double distance) {
     if (activeRoutePoints.isEmpty) {
-      final speedKmh = (_navigationRuntime.currentState?.rawSpeedMps ?? 0) * 3.6;
+      final speedKmh =
+          (_navigationRuntime.currentState?.rawSpeedMps ?? 0) * 3.6;
       if (speedKmh > 100) return 110;
       if (speedKmh > 80) return 90;
       if (speedKmh > 50) return 70;

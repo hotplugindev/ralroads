@@ -23,9 +23,7 @@ class AttemptRuntimeController {
   final AttemptRepository _attemptRepository;
   final AttemptValidatorService _validatorService;
 
-  AttemptRecordingState _recordingState = AttemptRecordingState.idle;
-  AttemptRecordingState get recordingState => _recordingState;
-  set recordingState(AttemptRecordingState val) => _recordingState = val;
+  var recordingState = AttemptRecordingState.idle;
 
   String? _attemptId;
   String? get attemptId => _attemptId;
@@ -42,7 +40,7 @@ class AttemptRuntimeController {
   bool _flushingAttempt = false;
 
   void reset() {
-    _recordingState = AttemptRecordingState.idle;
+    recordingState = AttemptRecordingState.idle;
     _attemptId = null;
     _attemptStartedAt = null;
     _lastAttemptPointAt = null;
@@ -68,7 +66,7 @@ class AttemptRuntimeController {
     _lastAttemptLon = lon;
     _attemptDistanceMeters = 0.0;
     _attemptCleanEligible = true;
-    _recordingState = AttemptRecordingState.recording;
+    recordingState = AttemptRecordingState.recording;
 
     await _attemptRepository.createAttempt(
       id: attemptId,
@@ -112,7 +110,8 @@ class AttemptRuntimeController {
     }
 
     final speedKmh = rawSpeedMps * 3.6;
-    final speedCompliant = speedLimitKmh == null || speedKmh <= speedLimitKmh + 8;
+    final speedCompliant =
+        speedLimitKmh == null || speedKmh <= speedLimitKmh + 8;
 
     _pendingAttemptPoints.add(
       TripRecordingPoint(
@@ -137,7 +136,7 @@ class AttemptRuntimeController {
     final attId = _attemptId;
     if (attId == null) return;
 
-    _recordingState = AttemptRecordingState.finished;
+    recordingState = AttemptRecordingState.finished;
 
     await _flushAttemptPoints();
     await _attemptRepository.finishAttempt(

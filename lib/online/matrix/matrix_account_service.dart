@@ -32,10 +32,12 @@ class MatrixAccountService {
     MatrixClientService? clientService,
   }) : _database = database,
        _secureCredentials = secureCredentials,
-       _clientService = clientService ?? MatrixClientService(
-         database: database,
-         secureCredentials: secureCredentials,
-       );
+       _clientService =
+           clientService ??
+           MatrixClientService(
+             database: database,
+             secureCredentials: secureCredentials,
+           );
 
   final AppDatabase _database;
   final SecureCredentialService _secureCredentials;

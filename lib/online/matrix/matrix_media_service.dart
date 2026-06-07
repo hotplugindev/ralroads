@@ -1,17 +1,20 @@
-import 'dart:typed_list';
+import 'dart:typed_data';
 import 'package:matrix/matrix.dart';
 import 'matrix_client_service.dart';
 
 class MatrixMediaService {
-  MatrixMediaService({
-    required MatrixClientService clientService,
-  }) : _clientService = clientService;
+  MatrixMediaService({required MatrixClientService clientService})
+    : _clientService = clientService;
 
   final MatrixClientService _clientService;
 
   Client get _client => _clientService.client;
 
-  Future<Uri> uploadMedia(Uint8List bytes, {String? filename, String? contentType}) async {
+  Future<Uri> uploadMedia(
+    Uint8List bytes, {
+    String? filename,
+    String? contentType,
+  }) async {
     final mxcUri = await _client.uploadContent(
       bytes,
       filename: filename,
@@ -21,6 +24,6 @@ class MatrixMediaService {
   }
 
   Uri getDownloadUrl(Uri mxcUri) {
-    return _client.getDownloadUri(mxcUri);
+    return mxcUri.getDownloadLink(_client);
   }
 }

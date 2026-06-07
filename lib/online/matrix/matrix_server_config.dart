@@ -13,7 +13,8 @@ class MatrixServerConfig {
   });
 
   @override
-  String toString() => 'MatrixServerConfig(baseUri: $baseUri, canonicalBaseUrl: $canonicalBaseUrl, serverName: $serverName)';
+  String toString() =>
+      'MatrixServerConfig(baseUri: $baseUri, canonicalBaseUrl: $canonicalBaseUrl, serverName: $serverName)';
 }
 
 MatrixServerConfig parseMatrixServer({
@@ -68,9 +69,15 @@ MatrixServerConfig parseMatrixServer({
   }
 
   // Preserve localhost HTTP for development, reject HTTP for other hosts
-  final isLocalhost = host == 'localhost' || host == '127.0.0.1' || host.startsWith('192.168.') || host.startsWith('10.');
+  final isLocalhost =
+      host == 'localhost' ||
+      host == '127.0.0.1' ||
+      host.startsWith('192.168.') ||
+      host.startsWith('10.');
   if (scheme == 'http' && !isLocalhost) {
-    throw const FormatException('TLS/certificate error: secure connection required');
+    throw const FormatException(
+      'TLS/certificate error: secure connection required',
+    );
   }
 
   // Remove unnecessary trailing slash on path but keep intentional reverse proxy prefixes
@@ -97,16 +104,25 @@ Future<MatrixServerConfig> discoverHomeserver({
   String? matrixUserId,
   Dio? dio,
 }) async {
-  final initialConfig = parseMatrixServer(input: input, matrixUserId: matrixUserId);
-  final client = dio ?? Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 4),
-    receiveTimeout: const Duration(seconds: 4),
-  ));
+  final initialConfig = parseMatrixServer(
+    input: input,
+    matrixUserId: matrixUserId,
+  );
+  final client =
+      dio ??
+      Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 4),
+          receiveTimeout: const Duration(seconds: 4),
+        ),
+      );
 
   final host = initialConfig.serverName;
   MatrixServerConfig resolvedConfig = initialConfig;
 
-  if (host.isNotEmpty && !host.contains('localhost') && !host.contains('127.0.0.1')) {
+  if (host.isNotEmpty &&
+      !host.contains('localhost') &&
+      !host.contains('127.0.0.1')) {
     try {
       final wellKnownUrl = 'https://$host/.well-known/matrix/client';
       final response = await client.get<Map<String, dynamic>>(wellKnownUrl);
@@ -115,7 +131,10 @@ Future<MatrixServerConfig> discoverHomeserver({
         if (homeserver is Map<String, dynamic>) {
           final baseUrl = homeserver['base_url'] as String?;
           if (baseUrl != null && baseUrl.isNotEmpty) {
-            resolvedConfig = parseMatrixServer(input: baseUrl, matrixUserId: matrixUserId);
+            resolvedConfig = parseMatrixServer(
+              input: baseUrl,
+              matrixUserId: matrixUserId,
+            );
           }
         }
       }
@@ -126,7 +145,8 @@ Future<MatrixServerConfig> discoverHomeserver({
 
   // Verify the homeserver
   try {
-    final verifyUrl = '${resolvedConfig.canonicalBaseUrl}/_matrix/client/versions';
+    final verifyUrl =
+        '${resolvedConfig.canonicalBaseUrl}/_matrix/client/versions';
     final response = await client.get<Map<String, dynamic>>(verifyUrl);
     if (response.statusCode != 200 || response.data == null) {
       throw const FormatException('Matrix endpoint unavailable');
@@ -136,7 +156,8 @@ Future<MatrixServerConfig> discoverHomeserver({
       throw const FormatException('Login unsupported');
     }
   } on DioException catch (e) {
-    if (e.type == DioExceptionType.connectionTimeout || e.type == DioExceptionType.receiveTimeout) {
+    if (e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.receiveTimeout) {
       throw const FormatException('Timeout');
     }
     final errorMsg = e.message?.toLowerCase() ?? '';

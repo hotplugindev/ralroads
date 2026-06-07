@@ -6,42 +6,53 @@ class MockInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     final path = options.path;
-    if (path.contains('custom-derived.org/.well-known/matrix/client') || path.contains('custom-derived.org/well-known')) {
-      handler.resolve(Response(
-        requestOptions: options,
-        statusCode: 200,
-        data: {
-          'm.homeserver': {'base_url': 'https://custom-derived.org'}
-        },
-      ));
+    if (path.contains('custom-derived.org/.well-known/matrix/client') ||
+        path.contains('custom-derived.org/well-known')) {
+      handler.resolve(
+        Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'm.homeserver': {'base_url': 'https://custom-derived.org'},
+          },
+        ),
+      );
     } else if (path.contains('custom-derived.org/_matrix/client/versions')) {
-      handler.resolve(Response(
-        requestOptions: options,
-        statusCode: 200,
-        data: {
-          'versions': ['v1.1']
-        },
-      ));
+      handler.resolve(
+        Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'versions': ['v1.1'],
+          },
+        ),
+      );
     } else if (path.contains('matrix.org/_matrix/client/versions')) {
-      handler.resolve(Response(
-        requestOptions: options,
-        statusCode: 200,
-        data: {
-          'versions': ['r0.6.0']
-        },
-      ));
+      handler.resolve(
+        Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'versions': ['r0.6.0'],
+          },
+        ),
+      );
     } else if (path.contains('.well-known/matrix/client')) {
-      handler.reject(DioException(
-        requestOptions: options,
-        response: Response(requestOptions: options, statusCode: 404),
-        type: DioExceptionType.badResponse,
-      ));
+      handler.reject(
+        DioException(
+          requestOptions: options,
+          response: Response(requestOptions: options, statusCode: 404),
+          type: DioExceptionType.badResponse,
+        ),
+      );
     } else {
-      handler.reject(DioException(
-        requestOptions: options,
-        type: DioExceptionType.connectionError,
-        message: 'Connection refused',
-      ));
+      handler.reject(
+        DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+          message: 'Connection refused',
+        ),
+      );
     }
   }
 }
@@ -49,8 +60,14 @@ class MockInterceptor extends Interceptor {
 void main() {
   group('MatrixServerConfig Parser Tests', () {
     test('Empty input throws exception', () {
-      expect(() => parseMatrixServer(input: ''), throwsA(isA<FormatException>()));
-      expect(() => parseMatrixServer(input: '   '), throwsA(isA<FormatException>()));
+      expect(
+        () => parseMatrixServer(input: ''),
+        throwsA(isA<FormatException>()),
+      );
+      expect(
+        () => parseMatrixServer(input: '   '),
+        throwsA(isA<FormatException>()),
+      );
     });
 
     test('Bare domain is converted to https', () {
@@ -78,7 +95,10 @@ void main() {
     });
 
     test('Inference from username and separate matrixUserId', () {
-      final config = parseMatrixServer(input: 'matrix.org', matrixUserId: '@user:matrix.org');
+      final config = parseMatrixServer(
+        input: 'matrix.org',
+        matrixUserId: '@user:matrix.org',
+      );
       expect(config.canonicalBaseUrl, 'https://matrix.org');
       expect(config.serverName, 'matrix.org');
     });
@@ -96,15 +116,23 @@ void main() {
     });
 
     test('Invalid scheme throws exception', () {
-      expect(() => parseMatrixServer(input: 'ftp://matrix.org'), throwsA(isA<FormatException>()));
+      expect(
+        () => parseMatrixServer(input: 'ftp://matrix.org'),
+        throwsA(isA<FormatException>()),
+      );
     });
 
     test('HTTP on non-localhost throws exception', () {
-      expect(() => parseMatrixServer(input: 'http://matrix.org'), throwsA(isA<FormatException>()));
+      expect(
+        () => parseMatrixServer(input: 'http://matrix.org'),
+        throwsA(isA<FormatException>()),
+      );
     });
 
     test('Reverse-proxy path is preserved but trailing slash is removed', () {
-      final config = parseMatrixServer(input: 'https://matrix.org/matrix-proxy/');
+      final config = parseMatrixServer(
+        input: 'https://matrix.org/matrix-proxy/',
+      );
       expect(config.canonicalBaseUrl, 'https://matrix.org/matrix-proxy');
       expect(config.serverName, 'matrix.org');
     });
@@ -117,15 +145,21 @@ void main() {
       dio = Dio()..interceptors.add(MockInterceptor());
     });
 
-    test('successful discovery with direct matrix.org versions check', () async {
-      final config = await discoverHomeserver(input: 'matrix.org', dio: dio);
-      expect(config.canonicalBaseUrl, 'https://matrix.org');
-      expect(config.serverName, 'matrix.org');
-    });
+    test(
+      'successful discovery with direct matrix.org versions check',
+      () async {
+        final config = await discoverHomeserver(input: 'matrix.org', dio: dio);
+        expect(config.canonicalBaseUrl, 'https://matrix.org');
+        expect(config.serverName, 'matrix.org');
+      },
+    );
 
     test('successful discovery with well-known redirect', () async {
       // In this test, host is derived as 'custom-derived.org'
-      final config = await discoverHomeserver(input: '@alice:custom-derived.org', dio: dio);
+      final config = await discoverHomeserver(
+        input: '@alice:custom-derived.org',
+        dio: dio,
+      );
       expect(config.canonicalBaseUrl, 'https://custom-derived.org');
       expect(config.serverName, 'custom-derived.org');
     });

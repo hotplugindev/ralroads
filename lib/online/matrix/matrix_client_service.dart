@@ -24,11 +24,14 @@ class MatrixClientService {
   Future<void> init() async {
     if (_initialized) return;
 
-    final token = await _secureCredentials.readString(SecureCredentialKey.matrixAccessToken);
-    final session = await (_database.select(_database.matrixSessions)
-          ..where((row) => row.isActive.equals(true))
-          ..limit(1))
-         .getSingleOrNull();
+    final token = await _secureCredentials.readString(
+      SecureCredentialKey.matrixAccessToken,
+    );
+    final session =
+        await (_database.select(_database.matrixSessions)
+              ..where((row) => row.isActive.equals(true))
+              ..limit(1))
+            .getSingleOrNull();
 
     if (token != null && session != null) {
       _client.homeserver = Uri.parse(session.homeserverUrl);
@@ -62,7 +65,7 @@ class MatrixClientService {
 
     await _secureCredentials.writeString(
       SecureCredentialKey.matrixAccessToken,
-      response.accessToken ?? '',
+      response.accessToken,
     );
     if (response.refreshToken != null) {
       await _secureCredentials.writeString(
@@ -72,7 +75,7 @@ class MatrixClientService {
     }
     await _secureCredentials.writeString(
       SecureCredentialKey.matrixDeviceId,
-      response.deviceId ?? '',
+      response.deviceId,
     );
 
     _client.backgroundSync = true;

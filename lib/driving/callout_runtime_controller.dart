@@ -6,9 +6,8 @@ import '../services/callout_speech_service.dart';
 import '../services/callout_scheduler.dart';
 
 class CalloutRuntimeController {
-  CalloutRuntimeController({
-    required SettingsService settings,
-  }) : _settings = settings {
+  CalloutRuntimeController({required SettingsService settings})
+    : _settings = settings {
     _speechService = CalloutSpeechService();
     _speechService.init().then((_) {
       _speechService.setEnabled(true);
