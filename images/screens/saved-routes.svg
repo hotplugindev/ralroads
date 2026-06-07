@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+  <title id="title">Saved routes placeholder</title>
+  <desc id="desc">Empty screenshot placeholder for the RalRoads saved routes screen.</desc>
+  <rect width="390" height="844" rx="34" fill="#07110f"/>
+  <rect x="18" y="18" width="354" height="808" rx="28" fill="#0b1513" stroke="#1f3b35" stroke-width="2"/>
+  <rect x="64" y="230" width="262" height="54" rx="12" fill="#10231f"/>
+  <rect x="64" y="304" width="262" height="54" rx="12" fill="#10231f"/>
+  <rect x="64" y="378" width="262" height="54" rx="12" fill="#10231f"/>
+  <path d="M100 258h50m-50 74h86m-86 74h64" stroke="#8ce9dc" stroke-width="8" stroke-linecap="round"/>
+  <text x="195" y="510" text-anchor="middle" fill="#f2fffb" font-family="Arial, sans-serif" font-size="28" font-weight="700">Saved Routes</text>
+  <text x="195" y="546" text-anchor="middle" fill="#8fb9b2" font-family="Arial, sans-serif" font-size="16">screenshot placeholder</text>
+</svg>

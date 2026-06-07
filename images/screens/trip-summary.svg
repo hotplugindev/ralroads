@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+  <title id="title">Trip summary placeholder</title>
+  <desc id="desc">Empty screenshot placeholder for the RalRoads trip summary screen.</desc>
+  <rect width="390" height="844" rx="34" fill="#07110f"/>
+  <rect x="18" y="18" width="354" height="808" rx="28" fill="#0b1513" stroke="#1f3b35" stroke-width="2"/>
+  <rect x="82" y="244" width="226" height="42" rx="10" fill="#10231f"/>
+  <rect x="82" y="314" width="226" height="42" rx="10" fill="#10231f"/>
+  <rect x="82" y="384" width="226" height="42" rx="10" fill="#10231f"/>
+  <path d="M110 265h82m-82 70h128m-128 70h96" stroke="#8ce9dc" stroke-width="8" stroke-linecap="round"/>
+  <text x="195" y="510" text-anchor="middle" fill="#f2fffb" font-family="Arial, sans-serif" font-size="28" font-weight="700">Trip Summary</text>
+  <text x="195" y="546" text-anchor="middle" fill="#8fb9b2" font-family="Arial, sans-serif" font-size="16">screenshot placeholder</text>
+</svg>

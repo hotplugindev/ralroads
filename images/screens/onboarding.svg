@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+  <title id="title">Onboarding placeholder</title>
+  <desc id="desc">Empty screenshot placeholder for the RalRoads onboarding screen.</desc>
+  <rect width="390" height="844" rx="34" fill="#07110f"/>
+  <rect x="18" y="18" width="354" height="808" rx="28" fill="#0b1513" stroke="#1f3b35" stroke-width="2"/>
+  <circle cx="195" cy="308" r="56" fill="#005f52"/>
+  <path d="M170 309h50m-19-19 19 19-19 19" fill="none" stroke="#8ce9dc" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="195" y="420" text-anchor="middle" fill="#f2fffb" font-family="Arial, sans-serif" font-size="28" font-weight="700">Onboarding</text>
+  <text x="195" y="456" text-anchor="middle" fill="#8fb9b2" font-family="Arial, sans-serif" font-size="16">screenshot placeholder</text>
+</svg>

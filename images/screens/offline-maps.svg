@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+  <title id="title">Offline maps placeholder</title>
+  <desc id="desc">Empty screenshot placeholder for the RalRoads offline maps screen.</desc>
+  <rect width="390" height="844" rx="34" fill="#07110f"/>
+  <rect x="18" y="18" width="354" height="808" rx="28" fill="#0b1513" stroke="#1f3b35" stroke-width="2"/>
+  <path d="M108 264l58-28 58 28 58-28v154l-58 28-58-28-58 28V264z" fill="#10231f" stroke="#8ce9dc" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M166 236v154m58-126v154" stroke="#8ce9dc" stroke-width="6"/>
+  <text x="195" y="500" text-anchor="middle" fill="#f2fffb" font-family="Arial, sans-serif" font-size="28" font-weight="700">Offline Maps</text>
+  <text x="195" y="536" text-anchor="middle" fill="#8fb9b2" font-family="Arial, sans-serif" font-size="16">screenshot placeholder</text>
+</svg>

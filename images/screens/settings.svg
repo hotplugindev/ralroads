@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+  <title id="title">Settings placeholder</title>
+  <desc id="desc">Empty screenshot placeholder for the RalRoads settings screen.</desc>
+  <rect width="390" height="844" rx="34" fill="#07110f"/>
+  <rect x="18" y="18" width="354" height="808" rx="28" fill="#0b1513" stroke="#1f3b35" stroke-width="2"/>
+  <circle cx="195" cy="320" r="54" fill="none" stroke="#8ce9dc" stroke-width="14"/>
+  <circle cx="195" cy="320" r="16" fill="#8ce9dc"/>
+  <path d="M195 236v36m0 96v36m84-84h-36m-96 0h-36m59-59-25-25m110 110-25-25m0-60 25-25m-110 110 25-25" stroke="#8ce9dc" stroke-width="10" stroke-linecap="round"/>
+  <text x="195" y="470" text-anchor="middle" fill="#f2fffb" font-family="Arial, sans-serif" font-size="28" font-weight="700">Settings</text>
+  <text x="195" y="506" text-anchor="middle" fill="#8fb9b2" font-family="Arial, sans-serif" font-size="16">screenshot placeholder</text>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+  <title id="title">Drive HUD placeholder</title>
+  <desc id="desc">Empty screenshot placeholder for the RalRoads drive HUD screen.</desc>
+  <rect width="390" height="844" rx="34" fill="#050807"/>
+  <rect x="18" y="18" width="354" height="808" rx="28" fill="#0b1513" stroke="#1f3b35" stroke-width="2"/>
+  <rect x="54" y="94" width="282" height="82" rx="18" fill="#005f52"/>
+  <path d="M91 136h28v-26" fill="none" stroke="#b9fff5" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M119 110l19 19" fill="none" stroke="#b9fff5" stroke-width="8" stroke-linecap="round"/>
+  <path d="M196 248c-20 86 66 102 32 196-13 38 9 74 51 94" fill="none" stroke="#08aeea" stroke-width="14" stroke-linecap="round"/>
+  <rect x="42" y="614" width="306" height="116" rx="18" fill="#0f1d1a" stroke="#18352f"/>
+  <text x="195" y="486" text-anchor="middle" fill="#f2fffb" font-family="Arial, sans-serif" font-size="28" font-weight="700">Drive HUD</text>
+  <text x="195" y="522" text-anchor="middle" fill="#8fb9b2" font-family="Arial, sans-serif" font-size="16">screenshot placeholder</text>
+</svg>

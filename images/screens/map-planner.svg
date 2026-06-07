@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+  <title id="title">Map planner placeholder</title>
+  <desc id="desc">Empty screenshot placeholder for the RalRoads map planner screen.</desc>
+  <rect width="390" height="844" rx="34" fill="#07110f"/>
+  <rect x="18" y="18" width="354" height="808" rx="28" fill="#0b1513" stroke="#1f3b35" stroke-width="2"/>
+  <path d="M121 338c38-72 100 58 148-16" fill="none" stroke="#08aeea" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="121" cy="338" r="15" fill="#ef4444" stroke="#fff" stroke-width="5"/>
+  <circle cx="269" cy="322" r="15" fill="#facc15" stroke="#fff" stroke-width="5"/>
+  <text x="195" y="420" text-anchor="middle" fill="#f2fffb" font-family="Arial, sans-serif" font-size="28" font-weight="700">Route Planner</text>
+  <text x="195" y="456" text-anchor="middle" fill="#8fb9b2" font-family="Arial, sans-serif" font-size="16">screenshot placeholder</text>
+</svg>

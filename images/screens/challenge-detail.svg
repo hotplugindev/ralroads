@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" role="img" aria-labelledby="title desc">
+  <title id="title">Challenge detail placeholder</title>
+  <desc id="desc">Empty screenshot placeholder for the RalRoads challenge detail screen.</desc>
+  <rect width="390" height="844" rx="34" fill="#07110f"/>
+  <rect x="18" y="18" width="354" height="808" rx="28" fill="#0b1513" stroke="#1f3b35" stroke-width="2"/>
+  <rect x="70" y="230" width="250" height="64" rx="14" fill="#10231f"/>
+  <rect x="70" y="318" width="250" height="64" rx="14" fill="#10231f"/>
+  <rect x="70" y="406" width="250" height="64" rx="14" fill="#10231f"/>
+  <circle cx="104" cy="262" r="14" fill="#8ce9dc"/>
+  <circle cx="104" cy="350" r="14" fill="#facc15"/>
+  <circle cx="104" cy="438" r="14" fill="#ef4444"/>
+  <text x="195" y="540" text-anchor="middle" fill="#f2fffb" font-family="Arial, sans-serif" font-size="28" font-weight="700">Challenge Detail</text>
+  <text x="195" y="576" text-anchor="middle" fill="#8fb9b2" font-family="Arial, sans-serif" font-size="16">screenshot placeholder</text>
+</svg>
