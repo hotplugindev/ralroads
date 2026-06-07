@@ -1,14 +1,20 @@
 <div align="center">
-  <img src="images/logo.png" width="148" alt="RalRoads logo">
+  <img src="images/logo.png" width="150" alt="RalRoads logo">
 
   # RalRoads
 
-  **A road-aware co-driver for planning routes, recording drives, and sharing clean rally-style challenges.**
+  **Plan the road. Hear the next corner. Keep the drive.**
 
-  RalRoads is an Android-first Flutter app that turns ordinary routes into readable pacenotes, live driving callouts, local trip history, and optional Matrix-powered community challenges.
+  RalRoads is a Flutter navigation companion for drivers who want more than a blue line. It turns routes into readable pacenotes, speaks callouts at driving speed, records trips, and lets clean segments become local or Matrix-powered challenges.
 </div>
 
-## Product Tour
+<br>
+
+| Plan | Drive | Compete |
+| --- | --- | --- |
+| Build road-aware routes with waypoints, warnings, speed context, and generated pacenotes. | Follow a dark live HUD with timed voice callouts, route progress, rerouting, and trip capture. | Save segments, validate attempts, and sync social challenges through an optional Matrix account. |
+
+## Screens
 
 | Onboarding | Navigate | Route Planner |
 | --- | --- | --- |
@@ -22,144 +28,155 @@
 | --- | --- | --- |
 | <img src="images/screens/trips.svg" width="230" alt="Trips screen placeholder"> | <img src="images/screens/challenges.svg" width="230" alt="Challenges screen placeholder"> | <img src="images/screens/community.svg" width="230" alt="Community screen placeholder"> |
 
-The images above are placeholders. Replace the files in `images/screens/` with current app screenshots when they are ready.
+Screenshot placeholders live in `images/screens/`. Replace those files with current captures when the app screens are ready.
 
-## What It Does
+## Why It Exists
 
-RalRoads sits between a normal navigation app and a rally roadbook. It plans a route, analyzes the road geometry, enriches it with available OpenStreetMap context, and presents the drive as a clear sequence of upcoming corners, junctions, roundabouts, warnings, and distance cues.
+Most navigation apps tell you where to go. RalRoads is built around what a driver needs to know next.
 
-The app is local-first where it matters: saved routes, trips, segments, attempts, settings, and social cache data live on device. Online services are used for routing, maps, search, OSM metadata, and optional Matrix sync.
+Before a drive, it gives you a route you can inspect: corners, junctions, roundabouts, warnings, speed-limit context, and road metadata where available. During a drive, it behaves more like a calm co-driver: the next callout is visible, the voice cue is timed by speed and distance, and the HUD stays focused on the road ahead.
 
-## Highlights
+Afterward, the drive is not lost. Trips can become summaries, exports, private segments, validated attempts, or shared challenges.
 
-- **Route planning**: search places, choose start and destination, add waypoints, preview geometry, and save only the routes you decide to keep.
-- **Pacenote generation**: convert route geometry into straights, corners, opens/tightens, junctions, roundabouts, exits, warnings, and advisory context.
-- **Drive HUD**: follow the route with a dark map, live speed, speed-limit display, upcoming callout banner, voice toggle, warning controls, progress, ETA, and reroute support.
-- **Timed callouts**: spoken callouts are scheduled by distance and speed so the driver hears the next instruction before it matters.
-- **Saved route management**: searchable and filterable saved routes with useful names based on start, destination, and creation date.
-- **Trip recording**: record local drives, review summaries, inspect GPS quality, and share exported run data.
-- **Segments and attempts**: crop a finished trip into a private segment, validate future attempts, and keep clean runs separate from poor-GPS runs.
-- **Challenges**: create local rally challenges from saved segments, track active and past challenges, and compare attempts.
-- **Matrix community layer**: optionally connect a Matrix account for profiles, friends, groups, notifications, directory events, shared segments, and challenge sync.
-- **Offline readiness**: saved route data remains available locally, with a dedicated offline maps area for supported platforms.
+## Core Experience
 
-## App Areas
+### Route Planning
 
-| Area | Purpose |
+- Search places, choose a start and destination, add waypoints, and preview the result on a MapLibre map.
+- Generate pacenotes from route geometry: straights, corners, opens, tightens, junctions, roundabouts, and exits.
+- Add road context from OpenStreetMap and Overpass, including warnings, traffic lights, surfaces, speed bumps, tunnels, bridges, and speed limits when available.
+- Save only the routes the user explicitly wants to keep, with names based on start, destination, and creation date.
+
+### Live Driving
+
+- Dark driving HUD with the next callout, current speed, speed-limit sign, remaining distance, ETA, and route progress.
+- Spoken callouts scheduled by distance and speed so instructions arrive before the decision point.
+- Voice, warning, follow-camera, and debug controls designed for quick in-drive use.
+- Rerouting and optional trip recording during navigation.
+
+### Trips, Segments, And Challenges
+
+- Record local trips privately by default.
+- Review trip summaries with distance, time, quality, points, and export/share actions.
+- Crop clean drives into reusable private segments.
+- Validate challenge attempts with GPS quality and rule checks.
+- Create active or past rally-style challenges from saved segments.
+
+### Matrix Community
+
+- Connect a Matrix account when social sync is useful, or keep the app local-only.
+- Manage profile, friends, groups, notifications, blocks, and directory events.
+- Share segments and challenge activity through Matrix-backed sync.
+
+## App Map
+
+| Area | What the user gets |
 | --- | --- |
-| Onboarding | Set up OpenRouteService, local profile, Matrix connection, and readiness state. |
-| Navigate | Plan new routes, reopen recent saved routes, manage offline maps, and tune navigation settings. |
-| Route Preview | Review route shape, warnings, speed limits, pacenotes, and start driving. |
-| Drive | Run the live navigation HUD with callouts, progress, rerouting, and optional trip recording. |
-| Trips | Record local drives, review summaries, and export/share completed trip data. |
-| Segments | Turn clean parts of trips into reusable challenge segments. |
-| Challenges | Create, join, inspect, and validate rally-style challenge attempts. |
-| Community | Manage Matrix identity, friends, groups, notifications, blocks, and synced directory data. |
-| Settings | Manage ORS, Matrix, voice, warnings, route profile, map behavior, and recording preferences. |
+| **Onboarding** | ORS setup, profile creation, optional Matrix connection, and first-run readiness. |
+| **Navigate** | New route planning, recent saved routes, offline maps, and navigation settings. |
+| **Route Preview** | A final roadbook-style review before driving. |
+| **Drive HUD** | Live navigation, callouts, warnings, route progress, and trip capture. |
+| **Saved Routes** | Searchable and filterable local route library. |
+| **Trips** | Recorded drives, summaries, exports, and segment creation entry points. |
+| **Segments** | Reusable roads for attempts and challenges. |
+| **Challenges** | Local or synced rally-style competitions. |
+| **Community** | Matrix identity, friends, groups, notifications, and sharing. |
+| **Settings** | ORS, Matrix, voice, warnings, map behavior, route profile, and recording preferences. |
 
-## How It Works
+## How RalRoads Builds A Drive
 
-1. Choose a start, destination, and optional waypoints.
-2. RalRoads requests route geometry from OpenRouteService.
-3. Local analysis turns the geometry into pacenotes and callout points.
-4. OpenStreetMap and Overpass metadata add road warnings, traffic lights, surfaces, speed-limit context, and roundabout detail when available.
-5. You preview the route, save it if useful, and start driving.
-6. GPS route matching tracks progress, schedules callouts, and updates the HUD.
-7. Finished drives can become trip summaries, shareable exports, segments, attempts, or challenges.
+1. The user chooses a route.
+2. OpenRouteService returns route geometry.
+3. Local analysis converts that geometry into pacenotes and callout anchors.
+4. OpenStreetMap and Overpass add road metadata where it can be found.
+5. The route preview shows the roadbook before the drive starts.
+6. GPS route matching tracks progress and schedules the next callout.
+7. Finished drives can become history, exports, segments, attempts, or challenges.
 
-## Setup
+## Tech Stack
 
-RalRoads is a Flutter project.
+| Layer | Tools |
+| --- | --- |
+| App | Flutter, Dart, Material 3 |
+| Maps | MapLibre GL, OpenFreeMap, OpenStreetMap |
+| Routing and search | OpenRouteService |
+| Road metadata | Overpass, OpenStreetMap |
+| Local data | Drift, SQLite, Hive |
+| Credentials | Flutter Secure Storage |
+| Location and sensors | Geolocator, sensors, compass |
+| Voice | Flutter TTS |
+| Sharing | Share Plus |
+| Social sync | Matrix |
+
+## Getting Started
 
 ```sh
 flutter pub get
 flutter run
 ```
 
-Online route planning requires an OpenRouteService API key. Add one in the app from **Settings** or pass one during development:
+Online route planning requires an OpenRouteService API key. Add one inside **Settings**, or pass one during development:
 
 ```sh
 flutter run --dart-define=ORS_API_KEY=your_key_here
 ```
 
-Keys saved in Settings take priority over the development key.
+Saved Settings keys take priority over development keys.
 
-## Development
-
-Useful commands:
+## Development Commands
 
 ```sh
-flutter pub get
 flutter analyze
 flutter test
-flutter run
 ```
 
-Regenerate generated database code after Drift schema changes:
+Regenerate Drift code after database schema changes:
 
 ```sh
 dart run build_runner build
 ```
 
-Regenerate launcher icons after changing the app logo:
+Regenerate launcher icons after changing the logo:
 
 ```sh
 dart run flutter_launcher_icons
 ```
 
-## Data Sources And Packages
+## Screenshot Slots
 
-| Purpose | Source |
+The README uses stable placeholder files so screenshots can be refreshed without editing markdown.
+
+| Placeholder | Screen |
 | --- | --- |
-| App framework | Flutter / Dart |
-| Maps | MapLibre GL |
-| Map style/data | OpenFreeMap / OpenStreetMap |
-| Routing | OpenRouteService |
-| Place search | OpenRouteService geocoding, with fallback providers where configured |
-| Road metadata | Overpass / OpenStreetMap |
-| Local database | Drift / SQLite |
-| Legacy route storage | Hive |
-| Secure credentials | Flutter Secure Storage |
-| GPS and sensors | Geolocator, sensors, compass |
-| Voice | Flutter TTS |
-| Sharing | Share Plus |
-| Federation/social sync | Matrix |
+| `images/screens/onboarding.svg` | First-run setup |
+| `images/screens/navigate.svg` | Main navigation tab |
+| `images/screens/map-planner.svg` | Route planner |
+| `images/screens/route-preview.svg` | Route preview and roadbook |
+| `images/screens/drive-hud.svg` | Live driving HUD |
+| `images/screens/saved-routes.svg` | Saved routes |
+| `images/screens/offline-maps.svg` | Offline maps |
+| `images/screens/settings.svg` | Settings |
+| `images/screens/matrix-connection.svg` | Matrix connection |
+| `images/screens/trips.svg` | Trips dashboard |
+| `images/screens/trip-recording.svg` | Trip recording |
+| `images/screens/trip-summary.svg` | Trip summary |
+| `images/screens/segment-creation.svg` | Segment creation |
+| `images/screens/segment-detail.svg` | Segment detail |
+| `images/screens/attempt-recording.svg` | Attempt recording |
+| `images/screens/challenges.svg` | Challenges dashboard |
+| `images/screens/challenge-detail.svg` | Challenge detail |
+| `images/screens/community.svg` | Community dashboard |
 
-## Screenshot Placeholders
+## Limits
 
-Stable placeholder files live in `images/screens/`:
-
-| File | Screen |
-| --- | --- |
-| `onboarding.svg` | First-run setup |
-| `navigate.svg` | Main navigation tab |
-| `map-planner.svg` | Route planner |
-| `route-preview.svg` | Route preview and roadbook |
-| `drive-hud.svg` | Live driving HUD |
-| `saved-routes.svg` | Saved routes management |
-| `offline-maps.svg` | Offline map management |
-| `settings.svg` | Settings |
-| `matrix-connection.svg` | Matrix connection |
-| `trips.svg` | Trips dashboard |
-| `trip-recording.svg` | Trip recording |
-| `trip-summary.svg` | Trip summary |
-| `segment-creation.svg` | Segment creation |
-| `segment-detail.svg` | Segment detail |
-| `attempt-recording.svg` | Attempt recording |
-| `challenges.svg` | Challenges dashboard |
-| `challenge-detail.svg` | Challenge detail |
-| `community.svg` | Community dashboard |
-
-## Current Limits
-
-- Route planning, online search, OSM metadata, and Matrix sync require network access.
-- OSM and Overpass metadata can be incomplete, duplicated, outdated, or locally inconsistent.
-- Pacenotes are generated from geometry and best-effort context; they are useful driving aids, not official instructions.
-- Offline map support depends on platform capabilities and downloaded regions.
-- Matrix features are optional and depend on the selected homeserver and account state.
+- Online planning, search, road metadata, and Matrix sync require network access.
+- OpenStreetMap and Overpass metadata can be incomplete, duplicated, stale, or locally inconsistent.
+- Pacenotes are generated from geometry and available context. They are helpful driving aids, not official road instructions.
+- Offline map behavior depends on platform support and downloaded regions.
+- Matrix features are optional and depend on the selected homeserver.
 
 ## Safety
 
-RalRoads is an assistance tool. Always follow road signs, traffic laws, local restrictions, current conditions, and your own judgment.
+RalRoads is an assistance tool. Always follow road signs, local traffic laws, current conditions, and your own judgment.
 
-Speed camera and enforcement warnings may be restricted or illegal in some places. Enable them only where permitted.
+Speed camera or enforcement warnings may be restricted or illegal in some places. Enable them only where permitted.
