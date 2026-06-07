@@ -822,27 +822,47 @@ void main() {
     expect(scheduler.queue.length, lessThan(4));
   });
 
-  test('CalloutScheduler queues severe corner with enough lead distance', () {
+  test('CalloutScheduler scales lead distance with speed', () {
     final speechService = FakeCalloutSpeechService();
     final scheduler = CalloutScheduler(
       speechService: speechService,
       settings: FakeSettingsService(PacenoteStyle.rally),
     );
 
-    const note = PaceNote(
-      id: 'n-lead',
-      distanceFromStart: 125,
+    const nearNote = PaceNote(
+      id: 'n-near',
+      distanceFromStart: 40,
       direction: 'right',
       severity: 1,
       type: PaceNoteType.right,
       text: '',
     );
+    const farNote = PaceNote(
+      id: 'n-far',
+      distanceFromStart: 55,
+      direction: 'left',
+      severity: 1,
+      type: PaceNoteType.left,
+      text: '',
+    );
 
-    speechService.speak('busy', () {});
-    scheduler.loadRouteData(notes: const [note], warnings: const []);
-    scheduler.update(0, 10);
+    scheduler.loadRouteData(
+      notes: const [nearNote, farNote],
+      warnings: const [],
+    );
+    scheduler.update(0, 5);
 
-    expect(scheduler.queue.map((item) => item.id), contains('n-lead'));
+    expect(scheduler.spokenIds, contains('n-near'));
+    expect(scheduler.spokenIds, isNot(contains('n-far')));
+
+    final fastScheduler = CalloutScheduler(
+      speechService: FakeCalloutSpeechService(),
+      settings: FakeSettingsService(PacenoteStyle.rally),
+    );
+    fastScheduler.loadRouteData(notes: const [farNote], warnings: const []);
+    fastScheduler.update(0, 25);
+
+    expect(fastScheduler.spokenIds, contains('n-far'));
   });
 }
 

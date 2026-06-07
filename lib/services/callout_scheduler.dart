@@ -201,32 +201,32 @@ class CalloutScheduler extends ChangeNotifier {
     double baseLead = 4.0;
     switch (callout.priority) {
       case CalloutPriority.critical:
-        baseLead = callout.estimatedSpeakingDuration + 4.5;
+        baseLead = callout.estimatedSpeakingDuration + 2.0;
         break;
       case CalloutPriority.high:
-        baseLead = callout.estimatedSpeakingDuration + 3.5;
+        baseLead = callout.estimatedSpeakingDuration + 1.6;
         break;
       case CalloutPriority.normal:
-        baseLead = callout.estimatedSpeakingDuration + 2.5;
+        baseLead = callout.estimatedSpeakingDuration + 1.2;
         break;
       case CalloutPriority.low:
       case CalloutPriority.informational:
-        baseLead = callout.estimatedSpeakingDuration + 1.5;
+        baseLead = callout.estimatedSpeakingDuration + 0.8;
         break;
     }
     return baseLead;
   }
 
   double _calculateTriggerDistance(ScheduledCallout callout, double speedMps) {
-    final effectiveSpeed = math.max(speedMps, 8.0);
+    final effectiveSpeed = speedMps.clamp(2.0, 38.0).toDouble();
     final speechAndReactionDistance =
         effectiveSpeed * _calculateLeadTime(callout);
     final baseDistance = switch (callout.priority) {
-      CalloutPriority.critical => 85.0,
-      CalloutPriority.high => 75.0,
-      CalloutPriority.normal => 60.0,
-      CalloutPriority.low => 45.0,
-      CalloutPriority.informational => 35.0,
+      CalloutPriority.critical => 38.0,
+      CalloutPriority.high => 34.0,
+      CalloutPriority.normal => 30.0,
+      CalloutPriority.low => 26.0,
+      CalloutPriority.informational => 24.0,
     };
     final source = callout.source;
     var semanticBoost = 0.0;
@@ -236,14 +236,20 @@ class CalloutScheduler extends ChangeNotifier {
           source.type == PaceNoteType.hairpinLeft ||
           source.type == PaceNoteType.hairpinRight ||
           source.type == PaceNoteType.hairpin) {
-        semanticBoost = 25.0;
+        semanticBoost = 12.0;
       } else if (source.severity <= 2) {
-        semanticBoost = 15.0;
+        semanticBoost = 16.0;
       }
     }
+    final maxDistance = switch (effectiveSpeed) {
+      < 8.0 => 55.0,
+      < 14.0 => 80.0,
+      < 22.0 => 115.0,
+      _ => 170.0,
+    };
     return math
         .max(baseDistance + semanticBoost, speechAndReactionDistance)
-        .clamp(30.0, 320.0);
+        .clamp(25.0, maxDistance);
   }
 
   double _estimateSpeechDuration(String text) {
