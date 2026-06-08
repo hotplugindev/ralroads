@@ -2,8 +2,10 @@ import 'package:dio/dio.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matrix/matrix.dart';
 import 'package:ralroads/database/app_database.dart';
 import 'package:ralroads/online/matrix/matrix_account_service.dart';
+import 'package:ralroads/online/matrix/matrix_client_service.dart';
 import 'package:ralroads/online/matrix/matrix_sync_service.dart';
 import 'package:ralroads/online/matrix/matrix_encryption_helper.dart';
 import 'package:ralroads/models/route_point.dart';
@@ -57,15 +59,15 @@ void main() {
   });
 
   group('MatrixEncryptionHelper', () {
-    test('encrypts and decrypts segment/attempt JSON payloads', () {
+    test('encrypts and decrypts segment/attempt JSON payloads', () async {
       final keyBytes = MatrixEncryptionHelper.generateRandomKey();
       const payload = '{"id":"seg-123","points":[{"lat":45.0,"lon":10.0}]}';
 
-      final encrypted = MatrixEncryptionHelper.encryptPayload(
+      final encrypted = await MatrixEncryptionHelper.encryptPayload(
         payload,
         keyBytes,
       );
-      final decrypted = MatrixEncryptionHelper.decryptPayload(
+      final decrypted = await MatrixEncryptionHelper.decryptPayload(
         encrypted,
         keyBytes,
       );
@@ -443,6 +445,15 @@ void main() {
               updatedAt: Value(now),
             ),
           );
+      final fakeClientService = _FakeClientService(
+        database: database,
+        secureCredentials: secureCredentials,
+      );
+      final fakeMatrixAccount = MatrixAccountService(
+        database: database,
+        secureCredentials: secureCredentials,
+        clientService: fakeClientService,
+      );
       await secureCredentials.writeString(
         SecureCredentialKey.matrixAccessToken,
         'test-access-token',
@@ -457,35 +468,19 @@ void main() {
         roomId: '!room-abc',
       );
 
-      var putCalled = false;
-      final dio = Dio();
-      dio.httpClientAdapter = MockHttpClientAdapter((options) async {
-        if (options.path.contains('!room-abc') &&
-            options.path.contains('evt-out-1')) {
-          putCalled = true;
-          final data = options.data as Map<String, dynamic>;
-          expect(data['id'], 'seg-1');
-          expect(options.headers['Authorization'], 'Bearer test-access-token');
-        }
-        return ResponseBody.fromString(
-          '{}',
-          200,
-          headers: {
-            Headers.contentTypeHeader: [Headers.jsonContentType],
-          },
-        );
-      });
-
       final syncService = MatrixSyncService(
         repositories: repositories,
         secureCredentials: secureCredentials,
-        matrixAccount: matrixAccount,
-        dio: dio,
+        matrixAccount: fakeMatrixAccount,
       );
 
       await syncService.processOutbox();
 
-      expect(putCalled, isTrue);
+      expect(fakeClientService.fakeClient.requests, hasLength(1));
+      final request = fakeClientService.fakeClient.requests.single;
+      expect(request.type, RequestType.PUT);
+      expect(request.action, contains(Uri.encodeComponent('!room-abc')));
+      expect(request.data['id'], 'seg-1');
 
       final event = await (database.select(
         database.outgoingMatrixEvents,
@@ -493,4 +488,59 @@ void main() {
       expect(event!.state, 'sent');
     });
   });
+}
+
+class _FakeClientService extends MatrixClientService {
+  _FakeClientService({
+    required super.database,
+    required super.secureCredentials,
+  });
+
+  final fakeClient = _FakeMatrixClient();
+
+  @override
+  Client get client => fakeClient;
+}
+
+class _SdkRequest {
+  const _SdkRequest({
+    required this.type,
+    required this.action,
+    required this.data,
+  });
+
+  final RequestType type;
+  final String action;
+  final Map<String, dynamic> data;
+}
+
+class _FakeMatrixClient implements Client {
+  final requests = <_SdkRequest>[];
+
+  @override
+  String? get userID => '@user:matrix.org';
+
+  @override
+  String? get accessToken => 'test-access-token';
+
+  @override
+  Future<Map<String, Object?>> request(
+    RequestType type,
+    String action, {
+    dynamic data = '',
+    String contentType = 'application/json',
+    Map<String, Object?>? query,
+  }) async {
+    requests.add(
+      _SdkRequest(
+        type: type,
+        action: action,
+        data: Map<String, dynamic>.from(data as Map),
+      ),
+    );
+    return <String, Object?>{};
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

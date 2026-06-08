@@ -80,12 +80,16 @@ class FakeMatrixClientService extends MatrixClientService {
   });
 
   final FakeMatrixClient _fakeClient = FakeMatrixClient();
+  final encryptedRooms = <String>{};
 
   @override
   matrix_sdk.Client get client => _fakeClient;
 
   @override
   Future<void> init() async {}
+
+  @override
+  bool isRoomEncrypted(String roomId) => encryptedRooms.contains(roomId);
 }
 
 void main() {
@@ -278,6 +282,7 @@ void main() {
           geometry: [RoutePoint(lat: 44.0, lon: 7.0, distanceFromStart: 0)],
         ),
       );
+      clientService.encryptedRooms.add('!room-abc:matrix.org');
 
       // 2. Share Segment
       await socialController.shareSegment('!room-abc:matrix.org', 'seg-1');
@@ -295,6 +300,35 @@ void main() {
           jsonDecode(events.first.payloadJson) as Map<String, dynamic>;
       expect(payload['mxc_uri'], uploads.first.id);
       expect(payload['package_type'], 'segment');
+    });
+
+    test('shareSegment refuses unencrypted rooms', () async {
+      await repositories.profiles.createOrUpdateLocalProfile(
+        const LocalProfileInput(
+          id: 'matrix--alice-matrix-org',
+          displayName: 'Alice',
+        ),
+      );
+      await repositories.segments.createLocalSegment(
+        const LocalSegmentInput(
+          id: 'seg-1',
+          versionId: 'seg-version-1',
+          name: 'Col de Turini',
+          distanceMeters: 5200,
+          safetyStatus: 'suitable',
+          contentHash: 'hash-abc',
+          geometry: [RoutePoint(lat: 44.0, lon: 7.0, distanceFromStart: 0)],
+        ),
+      );
+
+      await expectLater(
+        socialController.shareSegment('!room-plain:matrix.org', 'seg-1'),
+        throwsException,
+      );
+      expect(
+        await database.select(database.outgoingMatrixEvents).get(),
+        isEmpty,
+      );
     });
   });
 }

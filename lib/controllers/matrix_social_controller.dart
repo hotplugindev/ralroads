@@ -64,6 +64,12 @@ class MatrixSocialController extends ChangeNotifier {
     }
   }
 
+  void _requireEncryptedRoom(String roomId) {
+    if (!_clientService.isRoomEncrypted(roomId)) {
+      throw Exception('Private Matrix sharing requires an encrypted room.');
+    }
+  }
+
   // ─── Friend Requests ────────────────────────────────────────────────────────
 
   Future<void> sendFriendRequest(String targetMatrixUserId) async {
@@ -417,6 +423,7 @@ class MatrixSocialController extends ChangeNotifier {
     _setBusy(true);
     try {
       // 1. Load data from DB
+      _requireEncryptedRoom(roomId);
       final segment = await _repositories.segments.getSegment(segmentId);
       if (segment == null) throw Exception('Segment not found.');
       final versionId = segment.currentVersionId;
@@ -475,7 +482,7 @@ class MatrixSocialController extends ChangeNotifier {
 
       // 3. Encrypt payload
       final key = MatrixEncryptionHelper.generateRandomKey();
-      final encryptedBytes = MatrixEncryptionHelper.encryptPayload(
+      final encryptedBytes = await MatrixEncryptionHelper.encryptPayload(
         jsonEncode(package),
         key,
       );
@@ -526,6 +533,7 @@ class MatrixSocialController extends ChangeNotifier {
     _setBusy(true);
     try {
       // 1. Load attempt details
+      _requireEncryptedRoom(roomId);
       final attempt = await (_repositories.attempts.database.select(
         _repositories.attempts.database.segmentAttempts,
       )..where((row) => row.id.equals(attemptId))).getSingleOrNull();
@@ -573,7 +581,7 @@ class MatrixSocialController extends ChangeNotifier {
 
       // 3. Encrypt payload
       final key = MatrixEncryptionHelper.generateRandomKey();
-      final encryptedBytes = MatrixEncryptionHelper.encryptPayload(
+      final encryptedBytes = await MatrixEncryptionHelper.encryptPayload(
         jsonEncode(package),
         key,
       );

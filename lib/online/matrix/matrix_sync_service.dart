@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'package:dio/dio.dart';
 import 'package:matrix/matrix.dart';
 import '../../database/app_database.dart';
@@ -17,7 +18,10 @@ class MatrixSyncService {
     Dio? dio,
   }) {
     _ingestor = MatrixEventIngestor(repositories: repositories, dio: dio);
-    _outboxWorker = MatrixOutboxWorker(repositories: repositories, dio: dio);
+    _outboxWorker = MatrixOutboxWorker(
+      repositories: repositories,
+      clientService: matrixAccount.clientService,
+    );
   }
 
   final AppRepositories repositories;
@@ -44,54 +48,13 @@ class MatrixSyncService {
     _clientService.init().then((_) {
       if (!_running) return;
 
-      // 1. Subscribe to events stream
       _eventSubscription = _client.onEvent.stream.listen((update) async {
-        var eventUpdate = update;
-        final room = _client.getRoomById(update.roomID);
-        if (room != null) {
-          eventUpdate = await update.decrypt(room);
-        }
-        final content = eventUpdate.content;
-        final eventId = content['event_id'] as String?;
-        final eventType = content['type'] as String?;
-        final payload = content['content'] as Map<String, dynamic>?;
-        final sender = content['sender'] as String?;
-        final originServerTs =
-            content['origin_server_ts'] as int? ??
-            DateTime.now().millisecondsSinceEpoch;
-
-        if (eventId == null || eventType == null || payload == null) return;
-
-        final session = await matrixAccount.restoreSession();
-        if (session == null) return;
-
-        final token = await secureCredentials.readString(
-          SecureCredentialKey.matrixAccessToken,
-        );
-        if (token == null) return;
-
-        await _ingestor.ingestEvent(
-          eventId: eventId,
-          roomId: update.roomID,
-          eventType: eventType,
-          content: payload,
-          originServerTs: originServerTs,
-          sender: sender,
-          currentUserId: session.matrixUserId,
-          homeserverUrl: session.homeserverUrl,
-          accessToken: token,
-        );
+        await _handleEventUpdate(update);
       });
 
-      // 2. Subscribe to sync stream for auto-joining invites
       _syncSubscription = _client.onSync.stream.listen((_) async {
-        for (final room in _client.rooms) {
-          if (room.membership == Membership.invite) {
-            try {
-              await room.join();
-            } catch (_) {}
-          }
-        }
+        // Invitations are deliberately not auto-joined. The UI must surface
+        // them and call the explicit accept/decline path.
       });
 
       // 3. Process outbox periodically
@@ -103,10 +66,63 @@ class MatrixSyncService {
       // Trigger initial outbox check
       processOutbox();
 
-      // Start background sync loop
-      _client.backgroundSync = false;
-      _client.backgroundSync = true;
+      _clientService.startSync();
     });
+  }
+
+  Future<void> _handleEventUpdate(EventUpdate update) async {
+    try {
+      var eventUpdate = update;
+      final room = _client.getRoomById(update.roomID);
+      if (room != null) {
+        eventUpdate = await update.decrypt(room);
+      }
+      final raw = eventUpdate.content;
+      final eventId = raw['event_id'] as String?;
+      final eventType = raw['type'] as String?;
+      final sender = raw['sender'] as String?;
+      final payload = raw['content'];
+      final originServerTs =
+          raw['origin_server_ts'] as int? ??
+          DateTime.now().millisecondsSinceEpoch;
+
+      if (eventId == null ||
+          eventType == null ||
+          payload is! Map<String, dynamic>) {
+        developer.log(
+          'Quarantined malformed Matrix event update.',
+          name: 'ralroads.matrix.sync',
+        );
+        return;
+      }
+
+      final session = await matrixAccount.restoreSession();
+      if (session == null) return;
+
+      final token = await secureCredentials.readString(
+        SecureCredentialKey.matrixAccessToken,
+      );
+      if (token == null) return;
+
+      await _ingestor.ingestEvent(
+        eventId: eventId,
+        roomId: update.roomID,
+        eventType: eventType,
+        content: payload,
+        originServerTs: originServerTs,
+        sender: sender,
+        currentUserId: session.matrixUserId,
+        homeserverUrl: session.homeserverUrl,
+        accessToken: token,
+      );
+    } catch (error, stackTrace) {
+      developer.log(
+        'Matrix event ingestion failed.',
+        name: 'ralroads.matrix.sync',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   void stop() {
@@ -117,7 +133,7 @@ class MatrixSyncService {
     _eventSubscription = null;
     _syncSubscription?.cancel();
     _syncSubscription = null;
-    _client.backgroundSync = false;
+    _clientService.stopSync();
   }
 
   Future<void> processOutbox() async {
@@ -128,10 +144,7 @@ class MatrixSyncService {
     );
     if (token == null) return;
 
-    await _outboxWorker.process(
-      homeserverUrl: session.homeserverUrl,
-      accessToken: token,
-    );
+    await _outboxWorker.process();
   }
 
   Future<void> importSegment(Map<String, dynamic> package) =>

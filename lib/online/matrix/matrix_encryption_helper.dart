@@ -1,38 +1,61 @@
+import 'dart:convert';
 import 'dart:typed_data';
-import 'package:encrypt/encrypt.dart';
+import 'package:cryptography/cryptography.dart';
 
 class MatrixEncryptionHelper {
   static Uint8List generateRandomKey() {
-    final key = Key.fromSecureRandom(32);
-    return key.bytes;
+    return Uint8List.fromList(SecretKeyData.random(length: 32).bytes);
   }
 
-  static Uint8List encryptPayload(String jsonStr, Uint8List keyBytes) {
-    final key = Key(keyBytes);
-    // Use a fixed or simple IV derived from key for deterministic/simple decoding
-    // or a random IV appended to the payload. A random IV is standard:
-    final iv = IV.fromSecureRandom(16);
-    final encrypter = Encrypter(AES(key, mode: AESMode.cbc));
-    final encrypted = encrypter.encrypt(jsonStr, iv: iv);
+  static Future<Uint8List> encryptPayload(
+    String jsonStr,
+    Uint8List keyBytes,
+  ) async {
+    final algorithm = AesGcm.with256bits();
+    final secretKey = SecretKey(keyBytes);
+    final nonce = algorithm.newNonce();
+    final secretBox = await algorithm.encrypt(
+      utf8.encode(jsonStr),
+      secretKey: secretKey,
+      nonce: nonce,
+    );
 
-    // Combine IV + CipherText
-    final combined = Uint8List(iv.bytes.length + encrypted.bytes.length);
-    combined.setRange(0, iv.bytes.length, iv.bytes);
-    combined.setRange(iv.bytes.length, combined.length, encrypted.bytes);
+    final combined = Uint8List(
+      nonce.length + secretBox.mac.bytes.length + secretBox.cipherText.length,
+    );
+    combined.setRange(0, nonce.length, nonce);
+    combined.setRange(
+      nonce.length,
+      nonce.length + secretBox.mac.bytes.length,
+      secretBox.mac.bytes,
+    );
+    combined.setRange(
+      nonce.length + secretBox.mac.bytes.length,
+      combined.length,
+      secretBox.cipherText,
+    );
     return combined;
   }
 
-  static String decryptPayload(Uint8List combinedBytes, Uint8List keyBytes) {
-    if (combinedBytes.length < 16) {
+  static Future<String> decryptPayload(
+    Uint8List combinedBytes,
+    Uint8List keyBytes,
+  ) async {
+    const nonceLength = 12;
+    const macLength = 16;
+    if (combinedBytes.length < nonceLength + macLength) {
       throw Exception('Invalid encrypted payload: too short.');
     }
-    final key = Key(keyBytes);
-    final ivBytes = combinedBytes.sublist(0, 16);
-    final cipherBytes = combinedBytes.sublist(16);
-
-    final iv = IV(ivBytes);
-    final encrypter = Encrypter(AES(key, mode: AESMode.cbc));
-    final decrypted = encrypter.decrypt(Encrypted(cipherBytes), iv: iv);
-    return decrypted;
+    final algorithm = AesGcm.with256bits();
+    final nonce = combinedBytes.sublist(0, nonceLength);
+    final mac = Mac(
+      combinedBytes.sublist(nonceLength, nonceLength + macLength),
+    );
+    final cipherText = combinedBytes.sublist(nonceLength + macLength);
+    final clearBytes = await algorithm.decrypt(
+      SecretBox(cipherText, nonce: nonce, mac: mac),
+      secretKey: SecretKey(keyBytes),
+    );
+    return utf8.decode(clearBytes);
   }
 }

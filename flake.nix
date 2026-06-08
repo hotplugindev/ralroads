@@ -1,5 +1,5 @@
 {
-  description = "Flutter dev shell matching NixOS flutter setup";
+  description = "Minimal Flutter dev shell";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
@@ -17,53 +17,23 @@
           };
         };
 
-        androidComposition = pkgs.androidenv.composeAndroidPackages {
-          buildToolsVersions = [
-            "35.0.0"
-            "34.0.0"
-          ];
-
-          platformVersions = [
-            "35"
-            "34"
-          ];
-
-          abiVersions = [
-            "x86_64"
-            "arm64-v8a"
-          ];
-
-          includeEmulator = true;
-          includeSystemImages = true;
-
-          systemImageTypes = [
-            "google_apis_playstore"
-          ];
-        };
-
-        androidSdk = androidComposition.androidsdk;
+        # Force a completely empty SDK composition so it doesn't pull 19GB of data
+        minimalAndroidSdk = (pkgs.androidenv.composeAndroidPackages {
+          includeEmulator = false;
+          includeSystemImages = false;
+          includeSources = false;
+        }).androidsdk;
       in
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             flutter
-            androidSdk
-            jdk17
             android-tools
+            minimalAndroidSdk
           ];
 
-          ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
-          ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
-          JAVA_HOME = "${pkgs.jdk17}";
-
-          shellHook = ''
-            export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
-
-            echo "Flutter: $(flutter --version | head -n 1)"
-            echo "Dart:    $(dart --version 2>&1)"
-            echo "Java:    $(java -version 2>&1 | head -n 1)"
-            echo "SDK:     $ANDROID_HOME"
-          '';
+          ANDROID_HOME = "${minimalAndroidSdk}/libexec/android-sdk";
+          ANDROID_SDK_ROOT = "${minimalAndroidSdk}/libexec/android-sdk";
         };
       });
 }

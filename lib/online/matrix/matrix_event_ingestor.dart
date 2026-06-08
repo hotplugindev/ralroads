@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
@@ -115,13 +116,27 @@ class MatrixEventIngestor {
   Future<void> _handlePlainSegment(Map<String, dynamic> content) async {
     try {
       await importSegment(content);
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      developer.log(
+        'Matrix segment import failed.',
+        name: 'ralroads.matrix.ingest',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   Future<void> _handlePlainAttempt(Map<String, dynamic> content) async {
     try {
       await importAttempt(content);
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      developer.log(
+        'Matrix attempt import failed.',
+        name: 'ralroads.matrix.ingest',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   Future<void> importProfileEvent(
@@ -400,7 +415,7 @@ class MatrixEventIngestor {
       final combinedBytes = Uint8List.fromList(response.data!);
       final keyBytes = base64.decode(keyBase64);
 
-      final jsonStr = MatrixEncryptionHelper.decryptPayload(
+      final jsonStr = await MatrixEncryptionHelper.decryptPayload(
         combinedBytes,
         keyBytes,
       );
@@ -411,7 +426,14 @@ class MatrixEventIngestor {
       } else if (packageType == 'attempt') {
         await importAttempt(package);
       }
-    } catch (_) {}
+    } catch (error, stackTrace) {
+      developer.log(
+        'Matrix shared package import failed.',
+        name: 'ralroads.matrix.ingest',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   Future<void> importSegment(Map<String, dynamic> package) async {

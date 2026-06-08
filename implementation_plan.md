@@ -1,5 +1,73 @@
 # RalRoads Local-First Navigation And Matrix Challenge Platform Plan
 
+## Matrix Audit And Remediation Checkpoint - 2026-06-08
+
+Official SDK reference:
+
+- Resolved SDK: `matrix` `0.25.6` from `pubspec.lock`.
+- Documentation/source inspected: pub.dev Matrix Dart SDK API docs and local `matrix-0.25.6` SDK source.
+- Relevant SDK contracts: `Client.init`, `Client.login`, `Client.checkHomeserver`, `Client.backgroundSync`, `Client.onEvent`, `Client.onSync`, `Client.onSyncStatus`, `Client.request`, `Client.uploadContent`, `Room.encrypted`, `Room.sendEvent`, `Room.join`, `Room.enableEncryption`, and SDK database builders.
+
+Current Matrix implementation inventory:
+
+- `MatrixClientService`: canonical application-scoped SDK owner. Now constructs one SDK `Client` with `HiveCollectionsDatabase` persistence, restores sessions, validates restored sessions with an authenticated profile call, exposes connection/sync streams, and owns idempotent background sync start/stop.
+- `MatrixAccountService`: thin account/session adapter. It delegates login/logout to `MatrixClientService`, stores SDK-issued token/device secrets in secure storage, and stores non-secret session metadata in Drift.
+- `MatrixSyncService`: app-level event/outbox coordinator. It subscribes once to SDK event/sync streams, parses event envelope fields from SDK event JSON instead of `content`, decrypts through SDK when possible, logs malformed events, and no longer auto-joins invitations.
+- `MatrixEventIngestor`: RalRoads event importer for profile, friend, group, directory, challenge, segment, attempt, and shared-package events. It still needs first-class quarantine tables and complete canonical schema/signature verification.
+- `MatrixOutboxWorker`: durable outgoing-event/media worker. Now uses SDK `Client.request` and `Client.uploadContent`, not raw Dio Matrix HTTP.
+- `MatrixMediaService`: thin SDK media upload/download URL adapter.
+- `MatrixServerConfig`: homeserver parser/discovery helper. It preserves reverse-proxy paths and tests cover domains, URLs, Matrix IDs, localhost, invalid schemes, and discovery basics. It still needs richer error typing and SDK `checkHomeserver` integration.
+- `MatrixEncryptionHelper`: standalone package encryption helper. Upgraded from AES-CBC to AES-GCM. It is not Matrix E2EE and must only be treated as offline/package encryption.
+- `MatrixSocialController`: friend/group/share controller. It uses the SDK client for room creation, invites, joins, and state events. Segment/attempt private sharing now refuses unencrypted rooms.
+- Drift Matrix tables: `matrix_sessions`, `matrix_devices`, outgoing event/media queues, sync cursors, cached directory events, rooms, groups, friendships, friend requests, blocked users. Missing: Matrix invitations, room classifications, event quarantine, outbox dependency states, SDK diagnostic snapshots, package media references, and challenge revision/source tables.
+- UI entry points: onboarding login, Settings login, Community login, app startup restore through `AppSessionController.load`, logout through `AccountConnectionController.disconnectMatrix`, Community social actions, group join/invite, segment/attempt sharing, and challenge outbox queueing.
+- Tests: homeserver parsing/discovery, Matrix login adapter, sync ingestion, outbox, social controller, onboarding/settings. No real two-account homeserver integration has run in this environment.
+
+Defects found and fixed in this checkpoint:
+
+- SDK client had no SDK database persistence. Fixed by adding `HiveCollectionsDatabase('ralroads_matrix_sdk', appSupportDir)`.
+- Sync was marked connected because Drift session/token existed. Fixed restoration to initialize SDK and validate with an authenticated profile request before emitting connected.
+- Multiple services toggled `backgroundSync`. Fixed by moving start/stop ownership into `MatrixClientService`.
+- Sync auto-joined every invitation. Removed; invitations must wait for explicit user accept/decline.
+- Event ingestion read `event_id`, `type`, `sender`, and `origin_server_ts` from event `content`. Fixed to read SDK event envelope JSON and pass only payload content to ingestor.
+- Matrix outbox sent events and uploaded media with raw Dio and bearer tokens. Fixed to use SDK `Client.request` and `Client.uploadContent`.
+- AES-CBC helper lacked authentication. Replaced with AES-GCM.
+- Private segment/attempt sharing could queue into plaintext rooms. Fixed with an SDK room encryption guard.
+- Several Matrix catches silently swallowed errors. Replaced in active sync/ingest/outbox paths with sanitized structured `dart:developer` logging.
+
+Canonical replacement architecture:
+
+- One SDK `Client`, created only by `MatrixClientService`, owns homeserver, login, token/session state, SDK database, crypto cache, sync, rooms, invitations, media, logout, and reconnect.
+- `MatrixAccountService` remains only as a UI/session metadata adapter and must not perform raw login HTTP.
+- `MatrixSyncService` subscribes to SDK streams and coordinates ingestion/outbox, but does not implement a second `/sync` loop and does not join invites.
+- All outgoing Matrix traffic goes through the durable Drift outbox and SDK operations.
+- Incoming pipeline target: SDK event -> SDK decryption -> room classification -> typed RalRoads event validation -> hash/signature verification -> repository API -> Drift streams.
+- Trust labels remain only `Local`, `Locally validated`, `Shared / Unverified`, and `Group trusted`.
+
+Migration strategy:
+
+- Preserve existing Drift `matrix_sessions` rows and secure `matrixAccessToken` / refresh token / device ID.
+- On next startup, initialize the SDK database and restore the SDK with existing token/user/device metadata.
+- If secure credentials and Drift metadata disagree, prefer transparent re-login over destructive cleanup; local trips/routes/segments/challenges must remain.
+- Logout stops SDK sync and clears Matrix SDK/server session plus secure Matrix secrets, but does not delete local navigation data.
+- Existing queued outbox rows continue to work because event IDs are used as Matrix transaction IDs.
+
+Security risks remaining:
+
+- Full Matrix E2EE bootstrap, cross-signing, device verification, unknown-device UX, key backup/recovery, and encrypted media policy are incomplete.
+- Shared package events still include package keys in event content; this is acceptable only when the target Matrix room is encrypted and still needs stronger schema documentation.
+- No first-class quarantined-event table exists yet.
+- Event schemas do not yet implement canonical JSON, Ed25519 signatures, previous revision hashes, compatibility ranges, or complete payload limits.
+- Media downloads still need SDK download path, size limits, content hash verification before import, cache invalidation, retry/cancel UX, and encrypted media verification.
+- Room classification is still partial and groups/directories can be inferred from event content rather than a canonical classifier.
+
+Test strategy:
+
+- Keep current unit/widget tests for homeserver parsing, login adapter, session restore, social actions, ingestion, outbox, and onboarding/settings.
+- Added/updated tests for SDK outbox request path, AES-GCM round trip, encrypted-room sharing guard, and no auto-join behavior in code path.
+- Next required tests: invite accept/decline/block persistence, canonical room classifier, corrupted session restore, expired token, SDK database missing, secure token missing, malformed/redacted/encrypted SDK events, media hash failures, outbox dependency ordering, and challenge/attempt package verification.
+- Final acceptance still requires real two-account Matrix testing across real homeservers; this could not be completed in this environment because no credentials were provided.
+
 ## Baseline Stabilization
 
 - `flutter pub get`: passed.
